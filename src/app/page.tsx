@@ -1,6 +1,5 @@
 import { HomeComponent } from '../component/main-'
-import { SectionContainer } from '../containers'
-import { Header, CallNav2, Footer } from '../component/main-'
+
 import Image from 'next/image'
 
 export default function Home() {
