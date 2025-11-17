@@ -66,7 +66,7 @@ call :SelectNodeVersion
 :: 3. Install npm packages
 IF EXIST "%DEPLOYMENT_TARGET%\package.json" (
   pushd "%DEPLOYMENT_TARGET%"
-  call :ExecuteCmd npm install --production
+  call :ExecuteCmd npm install
   IF !ERRORLEVEL! NEQ 0 goto error
   popd
 )
@@ -76,11 +76,31 @@ IF EXIST "%DEPLOYMENT_TARGET%\package.json" (
   pushd "%DEPLOYMENT_TARGET%"
   call :ExecuteCmd npm run build
   IF !ERRORLEVEL! NEQ 0 goto error
+  
+  :: 5. Copy static files for standalone mode
+  IF EXIST ".next\standalone" (
+    echo Copying static files for standalone mode...
+    IF EXIST ".next\static" (
+      xcopy /E /I /Y ".next\static" ".next\standalone\.next\static"
+    )
+    IF EXIST "public" (
+      xcopy /E /I /Y "public" ".next\standalone\public"
+    )
+  )
   popd
 )
 
 ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 goto end
+
+:: Select Node Version
+:SelectNodeVersion
+IF DEFINED NODE_VERSION (
+  echo Using Node version: %NODE_VERSION%
+  :: Azure App Service에서 Node 버전 설정
+  call npm config set node-version %NODE_VERSION%
+)
+exit /b 0
 
 :: Execute command routine that will echo out when error
 :ExecuteCmd
