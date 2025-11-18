@@ -80,11 +80,19 @@ IF EXIST "%DEPLOYMENT_TARGET%\package.json" (
   :: 5. Copy static files for standalone mode
   IF EXIST ".next\standalone" (
     echo Copying static files for standalone mode...
+    :: Create directories if they don't exist
+    IF NOT EXIST ".next\standalone\.next" mkdir ".next\standalone\.next"
     IF EXIST ".next\static" (
       xcopy /E /I /Y ".next\static" ".next\standalone\.next\static"
+      IF !ERRORLEVEL! NEQ 0 echo Warning: Failed to copy .next\static
     )
     IF EXIST "public" (
       xcopy /E /I /Y "public" ".next\standalone\public"
+      IF !ERRORLEVEL! NEQ 0 echo Warning: Failed to copy public folder
+    )
+    :: Copy package.json to standalone folder for proper module resolution
+    IF EXIST "package.json" (
+      copy /Y "package.json" ".next\standalone\package.json"
     )
   )
   popd
