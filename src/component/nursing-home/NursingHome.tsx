@@ -4,8 +4,9 @@ import NursingHomeMenu from './organisms/NursingHomeMenu';
 import DayNightCareMenu from './organisms/DayNightCareMenu';
 import ShortTermCareMenu from './organisms/ShortTermCareMenu';
 import TabHost from './TabHost';
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { logout, checkAuth } from '../../utils/auth';
 
 const HEADER_HEIGHT = 56; // 14 * 4(px)
 const SIDEBAR_WIDTH = 256; // 64 * 4(px)
@@ -18,6 +19,22 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
   const router = useRouter();
   const pathname = usePathname();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // 인증 체크 및 강제 로그아웃
+  useEffect(() => {
+    const verifyAuth = async () => {
+      const isAuthenticated = await checkAuth();
+      if (!isAuthenticated) {
+        await logout();
+        router.push('/login');
+      }
+    };
+    verifyAuth();
+    
+    // 주기적으로 인증 상태 확인 (5분마다)
+    const interval = setInterval(verifyAuth, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [router]);
   
   const handleLogoClick = () => {
     if (pathname?.includes('nursingHome')) {
@@ -31,13 +48,19 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
     }
   };
   
-  const handleMainMoveClick = () => {
+  const handleMainMoveClick = async () => {
     setShowConfirmModal(true);
   };
   
-  const handleConfirmMove = () => {
+  const handleConfirmMove = async () => {
     setShowConfirmModal(false);
+    await logout();
     router.push('/');
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
   };
   
   const handleCancelMove = () => {
@@ -96,7 +119,12 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
           {/* <span className="text-sm">dhmaster ▼</span> */}
           {/* <button className="px-2 py-1 bg-blue-700 rounded text-xs">회사변경</button> */}
           {/* <button className="px-2 py-1 bg-blue-700 rounded text-xs">비밀번호 변경</button> */}
-          <button className="px-2 py-1 bg-blue-700 rounded text-xs">로그아웃</button>
+          <button 
+            onClick={handleLogout}
+            className="px-2 py-1 bg-blue-700 rounded text-xs hover:bg-blue-800 transition-colors"
+          >
+            로그아웃
+          </button>
         </div>
       </header>
       {/* 왼쪽 메뉴 고정 */}
@@ -111,7 +139,7 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
         className="min-h-screen p-0"
         style={{ marginLeft: SIDEBAR_WIDTH, marginTop: HEADER_HEIGHT }}
       >
-        {children || <TabHost />}
+        <TabHost />
       </main>
 
       {/* 확인 모달 */}
