@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { checkAuth } from '../../utils/auth';
 
 export default function LoginPage() {
@@ -260,9 +261,9 @@ export default function LoginPage() {
                 />
                 <span className="ml-2 Tab:ml-3 PC:ml-4 text-gray-600 cursor-pointer">아이디 저장</span>
               </label>
-              <a href="#" className="text-blue-600 hover:text-blue-700">
+              {/* <Link href="/forgot-password" className="text-blue-600 hover:text-blue-700">
                 비밀번호 찾기
-              </a>
+              </Link> */}
             </div>
           </div>
         </div>
