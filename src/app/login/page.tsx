@@ -13,6 +13,9 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [pageType, setPageType] = useState<string>('');
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertType, setAlertType] = useState<'success' | 'error'>('success');
 
   useEffect(() => {
     const type = searchParams.get('type');
@@ -54,23 +57,71 @@ export default function LoginPage() {
     setError('');
   };
 
+  // 로그인 API 요청 함수 (추후 실제 API 연동 시 이 함수만 수정하면 됩니다)
+  const loginRequest = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
+    // TODO: 실제 API 요청 코드 작성
+    // 예시:
+    // try {
+    //   const response = await fetch('/api/login', {
+    //     method: 'POST',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body: JSON.stringify({ username, password }),
+    //   });
+    //   const data = await response.json();
+    //   if (response.ok) {
+    //     return { success: true };
+    //   } else {
+    //     return { success: false, message: data.message || '로그인에 실패했습니다.' };
+    //   }
+    // } catch (error) {
+    //   return { success: false, message: '서버 오류가 발생했습니다.' };
+    // }
+
+    // 임시: 무조건 성공하도록 설정
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // API 요청 시뮬레이션
+    return { success: true };
+  };
+
+  const showAlertMessage = (message: string, type: 'success' | 'error') => {
+    setAlertMessage(message);
+    setAlertType(type);
+    setShowAlert(true);
+  };
+
+  const handleCloseAlert = () => {
+    setShowAlert(false);
+    if (alertType === 'success') {
+      const redirectPath = getRedirectPath();
+      router.push(redirectPath);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
-    // 로그인 로직 (추후 API 연동)
+    // 입력값 검증
+    if (!formData.username || !formData.password) {
+      setError('아이디와 비밀번호를 입력해주세요.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      // 임시 로그인 처리
-      if (formData.username && formData.password) {
-        // 로그인 성공 시 해당 페이지로 이동
-        const redirectPath = getRedirectPath();
-        router.push(redirectPath);
+      // 로그인 API 요청
+      const result = await loginRequest(formData.username, formData.password);
+
+      if (result.success) {
+        // 로그인 성공
+        showAlertMessage('로그인 성공했습니다', 'success');
       } else {
-        setError('아이디와 비밀번호를 입력해주세요.');
+        // 로그인 실패
+        showAlertMessage(result.message || '로그인 실패했습니다', 'error');
       }
     } catch (err) {
-      setError('로그인에 실패했습니다. 다시 시도해주세요.');
+      // 예외 발생 시
+      showAlertMessage('로그인 실패했습니다', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -164,6 +215,47 @@ export default function LoginPage() {
           <p className="mt-1 PC:mt-2">© {new Date().getFullYear()} All rights reserved</p>
         </div>
       </div>
+
+      {/* 알림 모달 */}
+      {showAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 Tab:p-8 PC:p-10 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className={`mx-auto flex items-center justify-center h-12 Tab:h-14 PC:h-16 w-12 Tab:w-14 PC:w-16 rounded-full mb-4 PC:mb-6 ${
+                alertType === 'success' ? 'bg-green-100' : 'bg-red-100'
+              }`}>
+                {alertType === 'success' ? (
+                  <svg className="h-6 Tab:h-7 PC:h-8 w-6 Tab:w-7 PC:w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="h-6 Tab:h-7 PC:h-8 w-6 Tab:w-7 PC:w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+              </div>
+              <h3 className={`text-lg Tab:text-xl PC:text-2xl font-bold mb-4 PC:mb-6 ${
+                alertType === 'success' ? 'text-green-900' : 'text-red-900'
+              }`}>
+                {alertType === 'success' ? '성공' : '실패'}
+              </h3>
+              <p className="text-sm Tab:text-base PC:text-lg text-gray-700 mb-6 Tab:mb-8 PC:mb-10">
+                {alertMessage}
+              </p>
+              <button
+                onClick={handleCloseAlert}
+                className={`w-full px-6 Tab:px-8 PC:px-10 py-2 Tab:py-2.5 PC:py-3 rounded-lg PC:rounded-xl transition-colors text-sm Tab:text-base PC:text-lg font-medium ${
+                  alertType === 'success'
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-red-600 text-white hover:bg-red-700'
+                }`}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
