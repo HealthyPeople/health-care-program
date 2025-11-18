@@ -101,7 +101,7 @@ export default function LoginPage() {
                 name="username"
                 value={formData.username}
                 onChange={handleChange}
-                className="w-full px-4 py-3 Tab:px-5 Tab:py-3.5 PC:px-6 PC:py-4 text-sm Tab:text-base PC:text-lg border border-gray-300 rounded-lg PC:rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+                className="w-full text-black px-4 py-3 Tab:px-5 Tab:py-3.5 PC:px-6 PC:py-4 text-sm Tab:text-base PC:text-lg border border-gray-300 rounded-lg PC:rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
                 placeholder="아이디를 입력하세요"
                 required
               />
@@ -118,7 +118,7 @@ export default function LoginPage() {
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full px-4 py-3 Tab:px-5 Tab:py-3.5 PC:px-6 PC:py-4 text-sm Tab:text-base PC:text-lg border border-gray-300 rounded-lg PC:rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+                className="w-full text-black px-4 py-3 Tab:px-5 Tab:py-3.5 PC:px-6 PC:py-4 text-sm Tab:text-base PC:text-lg border border-gray-300 rounded-lg PC:rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
                 placeholder="비밀번호를 입력하세요"
                 required
               />
