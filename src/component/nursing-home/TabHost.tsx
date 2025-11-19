@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import MemberInfoView from '@/component/nursing-home/pages/member-info/MemberInfoView';
 import DiseaseHistoryView from '@/component/nursing-home/pages/disease-history/DiseaseHistoryView';
 import MemberContractInfo from '@/component/nursing-home/pages/member-contract-info/MemberContractInfo';
@@ -14,6 +14,13 @@ interface TabItem {
   id: string; // href 기반 고유키
   title: string;
   href: string;
+}
+
+const STORAGE_KEY = 'tabHost_state';
+
+interface StoredState {
+  tabs: TabItem[];
+  activeId: string | null;
 }
 
 function renderInternal(href: string) {
@@ -74,6 +81,74 @@ export default function TabHost() {
   const [tabs, setTabs] = useState<TabItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // localStorage에서 상태 복원
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed: StoredState = JSON.parse(stored);
+        if (parsed.tabs && parsed.tabs.length > 0) {
+          setTabs(parsed.tabs);
+          // 현재 pathname과 일치하는 탭이 있으면 활성화
+          const matchingTab = parsed.tabs.find(t => t.href === pathname);
+          if (matchingTab) {
+            setActiveId(matchingTab.id);
+          } else if (parsed.activeId) {
+            // 저장된 활성 탭이 있으면 사용
+            const activeTab = parsed.tabs.find(t => t.id === parsed.activeId);
+            if (activeTab) {
+              setActiveId(activeTab.id);
+              router.push(activeTab.href);
+            } else {
+              // 없으면 첫 번째 탭
+              setActiveId(parsed.tabs[0].id);
+              router.push(parsed.tabs[0].href);
+            }
+          } else {
+            // 모두 없으면 첫 번째 탭
+            setActiveId(parsed.tabs[0].id);
+            router.push(parsed.tabs[0].href);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('탭 상태 복원 실패:', error);
+    }
+  }, []); // 마운트 시 한 번만 실행
+
+  // pathname 변경 시 현재 URL과 일치하는 탭 활성화
+  useEffect(() => {
+    if (pathname && tabs.length > 0) {
+      const matchingTab = tabs.find(t => t.href === pathname);
+      if (matchingTab && matchingTab.id !== activeId) {
+        setActiveId(matchingTab.id);
+      }
+    }
+  }, [pathname, tabs, activeId]);
+
+  // 탭 상태 변경 시 localStorage에 저장
+  useEffect(() => {
+    if (tabs.length > 0) {
+      const state: StoredState = {
+        tabs,
+        activeId,
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (error) {
+        console.error('탭 상태 저장 실패:', error);
+      }
+    } else {
+      // 탭이 없으면 저장된 상태도 삭제
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (error) {
+        console.error('탭 상태 삭제 실패:', error);
+      }
+    }
+  }, [tabs, activeId]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -101,23 +176,24 @@ export default function TabHost() {
   };
 
   const closeTab = (id: string) => {
-    setTabs((prev) => prev.filter((t) => t.id !== id));
-    setActiveId((curr) => {
-      if (curr === id) {
-        const remain = tabs.filter((t) => t.id !== id);
-        if (remain.length > 0) {
-          const newActiveTab = remain[remain.length - 1];
-          // 탭이 닫힐 때 남은 탭의 URL로 이동
-          router.push(newActiveTab.href);
-          return newActiveTab.id;
-        } else {
-          // 모든 탭이 닫힐 때 기본 페이지로 이동
-          router.push('/nursingHome');
-          return null;
-        }
+    const updatedTabs = tabs.filter((t) => t.id !== id);
+    setTabs(updatedTabs);
+    
+    if (activeId === id) {
+      if (updatedTabs.length > 0) {
+        const newActiveTab = updatedTabs[updatedTabs.length - 1];
+        // 탭이 닫힐 때 남은 탭의 URL로 이동
+        router.push(newActiveTab.href);
+        setActiveId(newActiveTab.id);
+      } else {
+        // 모든 탭이 닫힐 때 기본 페이지로 이동
+        const basePath = pathname?.includes('dayNightCare') ? '/dayNightCare' 
+          : pathname?.includes('shortTermCare') ? '/shortTermCare' 
+          : '/nursingHome';
+        router.push(basePath);
+        setActiveId(null);
       }
-      return curr;
-    });
+    }
   };
 
   if (tabs.length === 0) {
@@ -149,9 +225,20 @@ export default function TabHost() {
       </div>
       {/* 컨텐츠 */}
       <div className="flex-1 bg-white">
-        {activeTab && (renderInternal(activeTab.href) || (
-          <iframe src={activeTab.href} className="w-full h-[70vh]" />
-        ))}
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeId;
+          const content = renderInternal(tab.href);
+          return (
+            <div
+              key={tab.id}
+              className={`h-full ${isActive ? 'block' : 'hidden'}`}
+            >
+              {content || (
+                <iframe src={tab.href} className="w-full h-[70vh]" />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
