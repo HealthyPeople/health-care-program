@@ -1,6 +1,41 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { checkAuth } from '@/utils/auth';
 
 export const HomeComponent = () => {
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // 로그인 상태 확인
+    checkAuth().then((authenticated) => {
+      setIsAuthenticated(authenticated);
+    });
+  }, []);
+
+  const handleMoveClick = async (type: 'nursingHome' | 'dayNightCare' | 'shortTermCare', e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    
+    // 로그인 상태 확인
+    const authenticated = await checkAuth();
+    
+    if (authenticated) {
+      // 로그인되어 있으면 해당 페이지로 직접 이동
+      if (type === 'nursingHome') {
+        router.push('/nursingHome');
+      } else if (type === 'dayNightCare') {
+        router.push('/dayNightCare');
+      } else if (type === 'shortTermCare') {
+        router.push('/shortTermCare');
+      }
+    } else {
+      // 로그인되어 있지 않으면 로그인 페이지로 이동 (새 창)
+      window.open(`/login?type=${type}`, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <>
       <div className="flex flex-col">
@@ -16,8 +51,7 @@ export const HomeComponent = () => {
             </div>
             <a
               href="/login?type=nursingHome"
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={(e) => handleMoveClick('nursingHome', e)}
               className="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
             >
               이동
@@ -49,8 +83,7 @@ export const HomeComponent = () => {
             </div>
             <a
               href="/login?type=dayNightCare"
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={(e) => handleMoveClick('dayNightCare', e)}
               className="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
             >
               이동
@@ -82,8 +115,7 @@ export const HomeComponent = () => {
             </div>
             <a
               href="/login?type=shortTermCare"
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={(e) => handleMoveClick('shortTermCare', e)}
               className="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
             >
               이동

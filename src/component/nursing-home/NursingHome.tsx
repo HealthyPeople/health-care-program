@@ -129,7 +129,7 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
       </header>
       {/* 왼쪽 메뉴 고정 */}
       <aside
-        className="fixed z-40 top-14 left-0 h-[calc(100vh-56px)] bg-white border-r border-gray-200"
+        className="fixed z-40 top-14 left-0 h-[calc(100vh-56px)] bg-white border-r border-gray-200 overflow-y-auto"
         style={{ width: SIDEBAR_WIDTH, top: HEADER_HEIGHT }}
       >
         {renderMenu()}

@@ -43,7 +43,7 @@ export default function DayNightCareMenu() {
   const makeGroupKey = (section: string, group: string) => `${section}::${group}`;
 
   return (
-    <nav className="w-64 min-h-screen bg-white border-r border-gray-200 p-4">
+    <nav className="w-64 h-full bg-white p-4">
       {/* 메뉴 검색 */}
       <div className="mb-3">
         <input
