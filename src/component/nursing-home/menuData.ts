@@ -92,7 +92,8 @@ export const sections3: Sections3 = {
   },
   '간호 서비스': {
     '질병 및 건강관리': [
-      { name: '활력증상 등록', link: '/nursingHome/vital-signs' },
+      { name: '활력증상 등록(일상)', link: '/nursingHome/vital-signs' },
+      { name: '활력증상 등록(주기)', link: '/nursingHome/vital-signs-periodic' },
       { name: '수급자건강검진내역 등록', link: '/nursingHome/health-examination' },
       { name: '수급자질병내역 등록', link: '/nursingHome/disease-history' },
     ],
