@@ -1,161 +1,272 @@
 "use client";
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function GuardianInfo() {
+	const [selectedGuardianIndex, setSelectedGuardianIndex] = useState<number | null>(null);
+	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [formData, setFormData] = useState({
+		recipientName: '',
+		guardianName: '',
+		relationship: '',
+		isMainGuardian: false,
+		relationshipDetails: '',
+		phoneNumber: '',
+		address: '',
+		hospitalUsed: '',
+		attendingPhysician: '',
+		hospitalAddress: ''
+	});
+
+	// 보호자 목록 데이터
+	const guardianList = [
+		{ id: 1, serialNo: 1, name: '홍길동', contractDate: '27.07.25', endDate: '28.05.11', content: '동안 4911' },
+		{ id: 2, serialNo: 2, name: '김영희', contractDate: '28.05.11', endDate: '28.05.11', content: '' },
+	];
+
+	// 수급자 목록 데이터 (CounselingRecord와 동일한 형식)
+	const memberList = [
+		{ id: 1, serialNo: 1, status: '입소', name: '홍길동', gender: '남', grade: '1', age: '50' },
+		{ id: 2, serialNo: 2, status: '퇴소', name: '김영희', gender: '여', grade: '2', age: '70' },
+	];
+
+	const handleSelectGuardian = (index: number) => {
+		setSelectedGuardianIndex(index);
+		// 선택된 보호자 정보를 폼에 로드
+	};
+
+	const handleFormChange = (field: string, value: string | boolean) => {
+		setFormData(prev => ({ ...prev, [field]: value }));
+	};
+
 	return (
 		<div className="min-h-screen bg-white text-black">
-			<div className="mx-auto max-w-[1200px] p-4">
-				<div className="flex gap-4">
-					{/* 좌측: 수급자 목록 */}
-					<aside className="w-72 shrink-0">
-						<div className="border border-blue-300 rounded-lg overflow-hidden bg-white shadow-sm">
-							<div className="bg-blue-100 border-b border-blue-300 px-3 py-2 text-blue-900 font-semibold">수급자 목록</div>
-							{/* 상단 상태/검색 영역 */}
-							<div className="px-3 py-2 border-b border-blue-100 space-y-2">
-								<div className="text-xs text-blue-900/80">이름/전화/생년월일 검색</div>
-								<input className="w-full border border-blue-300 rounded px-2 py-1 text-sm bg-white" placeholder="예) 홍길동 / 010- / 50-01-01" />
-								<button className="w-full text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 py-1">검색</button>
+			<div className="flex h-[calc(100vh-56px)]">
+				{/* 좌측 패널: 수급자 목록 (CounselingRecord 스타일) */}
+				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
+					{/* 현황선택 헤더 */}
+					<div className="">
+						<div className="flex gap-2">
+							<div className="mb-3">
+								<h3 className="text-sm font-semibold text-blue-900">수급자 목록</h3>
 							</div>
-							{/* 목록 테이블 */}
-							<div className="max-h-[540px] overflow-auto">
-								<table className="w-full text-sm">
-									<thead className="sticky top-0 bg-blue-50 border-b border-blue-200">
-										<tr>
-											<th className="text-left px-2 py-2 text-blue-900 font-semibold">이름</th>
-											<th className="text-left px-2 py-2 text-blue-900 font-semibold">등급</th>
-										</tr>
-									</thead>
-									<tbody>
-										{[
-											{ name: '홍길동', grade: '1등급' },
-											{ name: '김영희', grade: '2등급' },
-											{ name: '이철수', grade: '3등급' },
-											{ name: '박민수', grade: '4등급' },
-											{ name: '최자영', grade: '5등급' },
-										].map((row, idx) => (
-										<tr key={idx} className="border-b border-blue-50 hover:bg-blue-50 cursor-pointer">
-											<td className="px-2 py-2">{row.name}</td>
-											<td className="px-2 py-2">{row.grade}</td>
+							<div className="h-6 flex-1 bg-white border border-blue-300 rounded flex items-center justify-center">
+								<select
+									value={selectedStatus}
+									onChange={(e) => setSelectedStatus(e.target.value)}
+									className="w-full h-full text-xs text-blue-900 bg-transparent border-none outline-none px-2 cursor-pointer"
+								>
+									<option value="">현황 전체</option>
+									<option value="입소">입소</option>
+									<option value="퇴소">퇴소</option>
+								</select>
+							</div>
+						</div>
+					</div>
+
+					{/* 수급자 목록 테이블 - 라운드 박스 */}
+					<div className="flex-1 border border-blue-300 rounded-lg overflow-hidden bg-white">
+						<div className="overflow-y-auto h-full">
+							<table className="w-full text-xs">
+								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
+									<tr>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">현황</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">수급자명</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">성별</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">등급</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">나이</th>
+									</tr>
+								</thead>
+								<tbody>
+									{memberList
+										.filter((member) => !selectedStatus || member.status === selectedStatus)
+										.map((member) => (
+										<tr
+											key={member.id}
+											className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer`}
+										>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.serialNo}</td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.status}</td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.name}</td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.gender}</td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.grade}</td>
+											<td className="text-center px-2 py-1.5">{member.age}</td>
 										</tr>
 									))}
-									</tbody>
-								</table>
-							</div>
+								</tbody>
+							</table>
 						</div>
-					</aside>
+					</div>
+				</div>
 
-					{/* 우측: 보호자정보 상세 영역 */}
-					<section className="flex-1 space-y-4">
-						{/* 보호자정보 카드 */}
-						<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
-							<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
-								<h2 className="text-xl font-semibold text-blue-900">보호자정보</h2>
-								<div className="flex items-center gap-2">
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">주소검색</button>
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">저장</button>
-								</div>
-							</div>
+				{/* 중간 패널: 보호자 목록 */}
+				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
+					<div className="mb-3">
+						<h3 className="text-sm font-semibold text-blue-900">보호자 목록</h3>
+					</div>
+					<div className="flex-1 border border-blue-300 rounded-lg overflow-hidden bg-white">
+						<div className="overflow-y-auto h-full">
+							<table className="w-full text-xs">
+								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
+									<tr>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">보호자명</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold">계약기간</th>
+									</tr>
+								</thead>
+								<tbody>
+									{guardianList.map((guardian, index) => (
+										<tr
+											key={guardian.id}
+											onClick={() => handleSelectGuardian(index)}
+											className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+												selectedGuardianIndex === index ? 'bg-blue-100 border-2 border-blue-400' : ''
+											}`}
+										>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{guardian.serialNo}</td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{guardian.name}</td>
+											<td className="text-center px-2 py-1.5">
+												{guardian.contractDate} ~ {guardian.endDate || '___'}
+											</td>
+										</tr>
+									))}
+									<tr>
+										<td colSpan={3} className="text-center px-2 py-1.5 text-gray-400 text-xs">...</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
 
-							<div className="p-4">
-								<div className="grid grid-cols-12 gap-4">
-									{/* 입력 필드 영역 */}
-									<div className="col-span-12 grid grid-cols-12 gap-3">
-										{/* 1행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자명</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">보호자명</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
+				{/* 우측 패널: 보호자 정보 */}
+				<div className="flex-1 overflow-y-auto p-4 bg-white">
+					<div className="mb-4">
+						<h2 className="text-lg font-semibold text-blue-900 mb-4">보호자 정보</h2>
+						
+						{/* 수급자명 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">수급자명</label>
+							<input
+								type="text"
+								value={formData.recipientName}
+								onChange={(e) => handleFormChange('recipientName', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+							/>
+						</div>
+						<div className="border-t border-blue-200 my-4"></div>
 
-										{/* 2행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">관계</label>
-											<select className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white">
-												<option>배우자</option>
-												<option>자녀</option>
-												<option>부모</option>
-												<option>형제자매</option>
-												<option>기타</option>
-											</select>
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">주민번호</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" placeholder="ex) 900101-1******" />
-										</div>
-
-										{/* 3행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">연락처</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" placeholder="ex) 010-0000-0000" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">비상연락처</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" placeholder="ex) 010-0000-0000" />
-										</div>
-
-										{/* 4행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">주소</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">직업</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-
-										{/* 5행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">동거여부</label>
-											<select className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white">
-												<option>동거</option>
-												<option>별거</option>
-											</select>
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">비고</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-									</div>
-								</div>
-							</div>
+						{/* 보호자명 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">보호자명</label>
+							<input
+								type="text"
+								value={formData.guardianName}
+								onChange={(e) => handleFormChange('guardianName', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+							/>
 						</div>
 
-						{/* 하단 2컬럼 카드: 대리인 정보 / 연락처 이력 */}
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-							{/* 대리인 정보 */}
-							<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
-								<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
-									<h3 className="text-lg font-semibold text-blue-900">대리인 정보</h3>
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">대리인 관리</button>
-								</div>
-								<div className="p-4 space-y-2 text-sm">
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">대리인명</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">관계</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">연락처</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">위임일자</span><span className="flex-1 border-b border-blue-200" /></div>
-								</div>
-							</div>
-
-							{/* 연락처 이력 */}
-							<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
-								<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
-									<h3 className="text-lg font-semibold text-blue-900">연락처 이력</h3>
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">이력 관리</button>
-								</div>
-								<div className="p-4 space-y-2 text-sm">
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">변경일자</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">변경내용</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">변경사유</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">등록자</span><span className="flex-1 border-b border-blue-200" /></div>
-								</div>
+						{/* 관계 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">관계</label>
+							<div className="flex items-center gap-2 flex-1">
+								<select
+									value={formData.relationship}
+									onChange={(e) => handleFormChange('relationship', e.target.value)}
+									className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+								>
+									<option value="">선택</option>
+									<option value="보호자">보호자</option>
+									<option value="딸">딸</option>
+									<option value="아들">아들</option>
+									<option value="며느리">며느리</option>
+									<option value="기타">기타</option>
+								</select>
+								<label className="flex items-center gap-2 cursor-pointer">
+									<input
+										type="checkbox"
+										checked={formData.isMainGuardian}
+										onChange={(e) => handleFormChange('isMainGuardian', e.target.checked)}
+										className="w-4 h-4 border-blue-300 rounded"
+									/>
+									<span className="text-sm text-blue-900">주 보호자</span>
+								</label>
 							</div>
 						</div>
-					</section>
+
+						{/* 관계내용 */}
+						<div className="mb-4">
+							<label className="block text-sm text-blue-900 font-medium mb-2">관계내용</label>
+							<textarea
+								value={formData.relationshipDetails}
+								onChange={(e) => handleFormChange('relationshipDetails', e.target.value)}
+								className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+								rows={3}
+								placeholder="동거 여부, 성별 등"
+							/>
+						</div>
+
+						{/* 전화번호 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">전화번호</label>
+							<input
+								type="text"
+								value={formData.phoneNumber}
+								onChange={(e) => handleFormChange('phoneNumber', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+								placeholder="예) 010-0000-0000"
+							/>
+						</div>
+
+						{/* 주소 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">주소</label>
+							<input
+								type="text"
+								value={formData.address}
+								onChange={(e) => handleFormChange('address', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+							/>
+						</div>
+
+						<div className="border-t border-blue-200 my-4"></div>
+
+						{/* 이용병원 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">이용병원</label>
+							<input
+								type="text"
+								value={formData.hospitalUsed}
+								onChange={(e) => handleFormChange('hospitalUsed', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+							/>
+						</div>
+
+						{/* 주치의 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">주치의</label>
+							<input
+								type="text"
+								value={formData.attendingPhysician}
+								onChange={(e) => handleFormChange('attendingPhysician', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+							/>
+						</div>
+
+						{/* 병원주소 */}
+						<div className="mb-4 flex items-center gap-2">
+							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">병원주소</label>
+							<input
+								type="text"
+								value={formData.hospitalAddress}
+								onChange={(e) => handleFormChange('hospitalAddress', e.target.value)}
+								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+							/>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
-    );
+	);
 }
