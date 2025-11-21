@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import ConnectionRecordView from '../../../component/nursing-home/pages/connection-record/ConnectionRecord'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function ConnectionRecordPage() {
+  return <ConnectionRecordView />
 }

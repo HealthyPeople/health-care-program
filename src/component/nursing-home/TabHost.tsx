@@ -11,6 +11,7 @@ import OutingProcessing from '@/component/nursing-home/pages/outing-processing/O
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
 import CounselingRecord from '@/component/nursing-home/pages/counseling-record/CounselingRecord';
+import ConnectionRecord from '@/component/nursing-home/pages/connection-record/ConnectionRecord';
 import VitalSigns from '@/component/nursing-home/pages/vital-signs/VitalSigns';
 import VitalSignsPeriodic from '@/component/nursing-home/pages/vital-signs-periodic/VitalSignsPeriodic';
 import OutpatientRecord from '@/component/nursing-home/pages/outpatient-record/OutpatientRecord';
@@ -70,7 +71,7 @@ function renderInternal(href: string) {
     case '/nursingHome/fact-verification':
       return <MemberInfoView />;
     case '/nursingHome/connection-record':
-      return <MemberInfoView />;
+      return <ConnectionRecord />;
     case '/nursingHome/status-change-observation':
       return <MemberInfoView />;
     case '/nursingHome/fact-verification-record-detail-detail':
