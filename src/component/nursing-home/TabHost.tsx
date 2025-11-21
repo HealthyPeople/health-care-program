@@ -7,11 +7,13 @@ import DiseaseHistoryView from '@/component/nursing-home/pages/disease-history/D
 import MemberContractInfo from '@/component/nursing-home/pages/member-contract-info/MemberContractInfo';
 import GuardianInfo from '@/component/nursing-home/pages/guardian-info/GuardianInfo';
 import DailyBeneficiaryPerformance from '@/component/nursing-home/pages/daily-beneficiary-performance/DailyBeneficiaryPerformance';
+import OutingProcessing from '@/component/nursing-home/pages/outing-processing/OutingProcessing';
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
 import CounselingRecord from '@/component/nursing-home/pages/counseling-record/CounselingRecord';
 import VitalSigns from '@/component/nursing-home/pages/vital-signs/VitalSigns';
 import VitalSignsPeriodic from '@/component/nursing-home/pages/vital-signs-periodic/VitalSignsPeriodic';
+import OutpatientRecord from '@/component/nursing-home/pages/outpatient-record/OutpatientRecord';
 
 interface TabItem {
   id: string; // href 기반 고유키
@@ -42,7 +44,7 @@ function renderInternal(href: string) {
     case '/nursingHome/snack-bulk-registration':
       return <DailyBeneficiaryPerformance />;
     case '/nursingHome/outing-processing':
-      return <DailyBeneficiaryPerformance />;
+      return <OutingProcessing />;
 
     case '/nursingHome/medication-time':
       return <MemberInfoView />;
@@ -63,6 +65,8 @@ function renderInternal(href: string) {
       return <VitalSigns />;
     case '/nursingHome/vital-signs-periodic':
       return <VitalSignsPeriodic />;
+    case '/nursingHome/outpatient-record':
+      return <OutpatientRecord />;
     case '/nursingHome/fact-verification':
       return <MemberInfoView />;
     case '/nursingHome/connection-record':

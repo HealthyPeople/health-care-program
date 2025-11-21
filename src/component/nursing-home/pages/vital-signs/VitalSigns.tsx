@@ -44,6 +44,7 @@ export default function VitalSigns() {
 			author: '김간호사'
 		}
 	]);
+	const [nextId, setNextId] = useState(3);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -85,6 +86,33 @@ export default function VitalSigns() {
 				setEditingRowId(null);
 			}
 		}
+	};
+
+	// 행 추가 함수
+	const handleAddRow = () => {
+		const newNumber = vitalSignsData.length > 0 
+			? Math.max(...vitalSignsData.map(row => row.number)) + 1 
+			: 1;
+		
+		const newRow = {
+			id: nextId,
+			checked: false,
+			number: newNumber,
+			status: '',
+			beneficiaryName: '',
+			livingRoom: '',
+			bloodPressure: '',
+			pulse: '',
+			bodyTemperature: '',
+			respiration: '',
+			oxygenSaturation: '',
+			nursingDetails: '',
+			author: ''
+		};
+		
+		setVitalSignsData(prev => [...prev, newRow]);
+		setNextId(prev => prev + 1);
+		setEditingRowId(newRow.id); // 새로 추가된 행을 수정 모드로 설정
 	};
 
 	// 날짜 포맷팅 (yyyy-mm-dd -> yyyy. mm. dd)
@@ -354,6 +382,16 @@ export default function VitalSigns() {
 								</tbody>
 							</table>
 						</div>
+					</div>
+
+					{/* 하단 추가 버튼 */}
+					<div className="flex justify-center mt-4">
+						<button
+							onClick={handleAddRow}
+							className="px-6 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+						>
+							추가
+						</button>
 					</div>
 				</div>
 			</div>

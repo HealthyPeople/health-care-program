@@ -1,5 +1,5 @@
-import DailyBeneficiaryPerformanceView from '../../../component/nursing-home/pages/daily-beneficiary-performance/DailyBeneficiaryPerformance'
+import OutingProcessingView from '../../../component/nursing-home/pages/outing-processing/OutingProcessing'
 
-export default function DailyBeneficiaryPerformancePage() {
-  return <DailyBeneficiaryPerformanceView />
+export default function OutingProcessingPage() {
+  return <OutingProcessingView />
 }
