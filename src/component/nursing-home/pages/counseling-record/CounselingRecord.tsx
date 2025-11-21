@@ -4,10 +4,11 @@ import React, { useState } from 'react';
 export default function CounselingRecord() {
 	const [selectedMember, setSelectedMember] = useState<number | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
+	const [selectedStatus, setSelectedStatus] = useState<string>('');
 	const [consultationDates, setConsultationDates] = useState<string[]>([
-		'2020.09.03',
-		'2015.09.01',
-		'2025.03.11'
+		'2020년09월03일',
+		'2015년09월01일',
+		'2025년03월11일'
 	]);
 	const [formData, setFormData] = useState({
 		beneficiary: '',
@@ -21,16 +22,30 @@ export default function CounselingRecord() {
 
 	// 좌측 수급자 목록 데이터
 	const [memberList, setMemberList] = useState([
-		{ id: 1, serialNo: 1, collectionAmount: '82', name: '200', gender: '남', status: '남', admission: '4', discharge: '91' },
-		{ id: 2, serialNo: 2, collectionAmount: '82', name: '200', gender: '남', status: '남', admission: '4', discharge: '91' },
+		{ id: 1, serialNo: 1, status: '입소', name: '박여울', gender: '여', grade: '1', age: '50' },
+		{ id: 2, serialNo: 2, status: '퇴소', name: '임동수', gender: '남', grade: '2', age: '70' },
 	]);
 
 	// 날짜 생성 함수
 	const handleCreateDate = () => {
 		const today = new Date();
-		const formattedDate = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
+		const formattedDate = `${today.getFullYear()}년${String(today.getMonth() + 1).padStart(2, '0')}월${String(today.getDate()).padStart(2, '0')}일`;
 		setConsultationDates(prev => [formattedDate, ...prev]);
 		setSelectedDateIndex(0);
+	};
+
+	// 날짜 형식 변환 함수 (YYYY.MM.DD -> YYYY년MM월DD일)
+	const formatDateDisplay = (dateStr: string) => {
+		// 이미 YYYY년MM월DD일 형식이면 그대로 반환
+		if (dateStr.includes('년') && dateStr.includes('월') && dateStr.includes('일')) {
+			return dateStr;
+		}
+		// YYYY.MM.DD 형식을 YYYY년MM월DD일로 변환
+		const parts = dateStr.split('.');
+		if (parts.length === 3) {
+			return `${parts[0]}년${parts[1]}월${parts[2]}일`;
+		}
+		return dateStr;
 	};
 
 	// 날짜 선택 함수
@@ -75,8 +90,20 @@ export default function CounselingRecord() {
 				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
 					{/* 현황선택 헤더 */}
 					<div className="mb-3">
-						<div className="h-6 mb-2 bg-white border border-blue-300 rounded"></div>
-						<h3 className="text-sm font-semibold text-blue-900">현황선택</h3>
+						<div className="flex gap-2 mb-2">
+							<div className="h-6 flex-1 bg-white border border-blue-300 rounded"></div>
+							<div className="h-6 flex-1 bg-white border border-blue-300 rounded flex items-center justify-center">
+								<select
+									value={selectedStatus}
+									onChange={(e) => setSelectedStatus(e.target.value)}
+									className="w-full h-full text-xs text-blue-900 bg-transparent border-none outline-none px-2 cursor-pointer"
+								>
+									<option value="">현황 전체</option>
+									<option value="입소">입소</option>
+									<option value="퇴소">퇴소</option>
+								</select>
+							</div>
+						</div>
 					</div>
 
 					{/* 수급자 목록 테이블 - 라운드 박스 */}
@@ -86,19 +113,17 @@ export default function CounselingRecord() {
 								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
 									<tr>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">수금액</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">성명</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">현황</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">수급자명</th>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">성별</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">상태</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">입소</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">퇴박</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">조사</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">태사</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold">동행자</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">등급</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">나이</th>
 									</tr>
 								</thead>
 								<tbody>
-									{memberList.map((member) => (
+									{memberList
+										.filter((member) => !selectedStatus || member.status === selectedStatus)
+										.map((member) => (
 										<tr
 											key={member.id}
 											onClick={() => handleSelectMember(member.id)}
@@ -107,15 +132,11 @@ export default function CounselingRecord() {
 											}`}
 										>
 											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.serialNo}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.collectionAmount}</td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.status}</td>
 											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.name}</td>
 											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.gender}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.status}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.admission}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.discharge}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100"></td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100"></td>
-											<td className="text-center px-2 py-1.5"></td>
+											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.grade}</td>
+											<td className="text-center px-2 py-1.5">{member.age}</td>
 										</tr>
 									))}
 								</tbody>
@@ -125,10 +146,10 @@ export default function CounselingRecord() {
 				</div>
 
 				{/* 우측 패널 (약 75%) */}
-				<div className="flex-1 flex flex-col bg-white">
-					{/* 상단: 상담 일자 */}
-					<div className="border-b border-blue-200 px-4 py-3 bg-blue-50">
-						<div className="flex items-center gap-3">
+				<div className="flex-1 flex bg-white">
+					{/* 좌측: 상담 일자 (세로 박스) */}
+					<div className="w-1/4 border-r border-blue-200 px-4 py-3 bg-blue-50 flex flex-col">
+						<div className="flex items-center justify-between mb-2">
 							<label className="text-sm font-medium text-blue-900">상담 일자</label>
 							<button
 								onClick={handleCreateDate}
@@ -137,23 +158,23 @@ export default function CounselingRecord() {
 								생성
 							</button>
 						</div>
-						<div className="mt-2 space-y-1">
+						<div className="flex flex-col space-y-1 flex-1 overflow-y-auto">
 							{consultationDates.map((date, index) => (
 								<div
 									key={index}
 									onClick={() => handleSelectDate(index)}
-									className={`px-2 py-1 text-xs cursor-pointer hover:bg-blue-100 rounded ${
+									className={`px-2 py-1 text-sm cursor-pointer hover:bg-blue-100 rounded ${
 										selectedDateIndex === index ? 'bg-blue-200 font-semibold' : ''
 									}`}
 								>
-									{index + 1}. {date}
+									{index + 1}. {formatDateDisplay(date)}
 								</div>
 							))}
-							<div className="px-2 py-1 text-xs text-gray-400">...</div>
+							<div className="px-2 py-1 text-sm text-gray-400">...</div>
 						</div>
 					</div>
 
-					{/* 중간: 상담 상세 폼 */}
+					{/* 우측: 상담 상세 폼 */}
 					<div className="flex-1 overflow-y-auto p-4">
 						{/* 첫 번째 행 */}
 						<div className="mb-4 flex items-center gap-4 flex-wrap">
@@ -167,7 +188,7 @@ export default function CounselingRecord() {
 								/>
 							</div>
 							<div className="flex items-center gap-2">
-								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담대신자</label>
+								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담대상자</label>
 								<input
 									type="text"
 									value={formData.consultationSubstitute}
