@@ -197,7 +197,7 @@ export default function DiseaseHistoryView() {
 						</div>
 						<button 
 							onClick={() => handleDateChange(1)}
-							className="flex items-center gap-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-blue-100 hover:bg-blue-200 text-blue-900"
+							className="flex items-center gap-1 px-3 py-1.5 text-sm border borㅎ햐gder-blue-300 rounded bg-blue-100 hover:bg-blue-200 text-blue-900"
 						>
 							<span>다음일</span>
 							<span>▶</span>
@@ -216,9 +216,6 @@ export default function DiseaseHistoryView() {
 
 				{/* 메인 컨텐츠 영역 - 통합 테이블 */}
 				<div className="border border-blue-300 rounded-lg overflow-hidden bg-white shadow-sm">
-					<div className="bg-blue-100 border-b border-blue-300 px-3 py-2">
-						<h2 className="text-sm font-semibold text-blue-900">활력증상</h2>
-					</div>
 					<div className="overflow-x-auto">
 						<table className="w-full text-sm">
 							<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
@@ -320,16 +317,7 @@ export default function DiseaseHistoryView() {
 											)}
 										</td>
 										<td className="text-center px-3 py-3 border-r border-blue-100">
-											{row.editing ? (
-												<input 
-													type="text" 
-													value={row.gender} 
-													onChange={(e) => handleDataChange(row.id, 'gender', e.target.value)}
-													className="w-full px-2 py-1 border border-blue-300 rounded bg-white text-center" 
-												/>
-											) : (
-												<span>{row.gender}</span>
-											)}
+										<span>{row.gender}</span>
 										</td>
 										<td className="text-center px-2 py-3 border-r border-blue-100">
 											<input 
