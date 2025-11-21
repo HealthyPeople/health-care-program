@@ -17,33 +17,54 @@ export default function VitalSignsPeriodic() {
 			id: 1,
 			checked: true,
 			number: 1,
-			status: '입소',
-			beneficiaryName: '공현자',
+			status: '입소중',
+			beneficiaryName: '권현철',
+			weight: '',
 			livingRoom: '1층',
-			bloodPressure: '90/60',
-			pulse: '70',
-			bodyTemperature: '36.5',
-			respiration: '22',
-			oxygenSaturation: '99',
-			nursingDetails: '최고조',
-			author: '김간호사'
+			edema: false,
+			edemaArea: '',
+			edemaDegree: '',
+			bedsore: false,
+			bedsoreArea: '',
+			medication: false,
+			incontinence: false,
+			dressing: false,
+			painVAS: '',
+			nursingDetails: '',
+			author: '',
+			fall: false,
+			dehydration: false,
+			delirium: false,
+			problemBehavior: false,
+			nursingHistory: ''
 		},
 		{
 			id: 2,
-			checked: true,
+			checked: false,
 			number: 2,
-			status: '입소',
-			beneficiaryName: '김영분',
-			livingRoom: '2층',
-			bloodPressure: '90/60',
-			pulse: '81',
-			bodyTemperature: '37.1',
-			respiration: '11',
-			oxygenSaturation: '100',
-			nursingDetails: '최고조',
-			author: '김간호사'
+			status: '',
+			beneficiaryName: '',
+			weight: '',
+			livingRoom: '',
+			edema: false,
+			edemaArea: '',
+			edemaDegree: '',
+			bedsore: false,
+			bedsoreArea: '',
+			medication: false,
+			incontinence: false,
+			dressing: false,
+			painVAS: '',
+			nursingDetails: '',
+			author: '',
+			fall: false,
+			dehydration: false,
+			delirium: false,
+			problemBehavior: false,
+			nursingHistory: ''
 		}
 	]);
+	const [nextId, setNextId] = useState(3);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -60,7 +81,7 @@ export default function VitalSignsPeriodic() {
 	};
 
 	// 데이터 업데이트
-	const handleDataChange = (id: number, field: string, value: string) => {
+	const handleDataChange = (id: number, field: string, value: string | boolean) => {
 		setVitalSignsData(prev => prev.map(item => 
 			item.id === id ? { ...item, [field]: value } : item
 		));
@@ -85,6 +106,43 @@ export default function VitalSignsPeriodic() {
 				setEditingRowId(null);
 			}
 		}
+	};
+
+	// 행 추가 함수
+	const handleAddRow = () => {
+		const newNumber = vitalSignsData.length > 0 
+			? Math.max(...vitalSignsData.map(row => row.number)) + 1 
+			: 1;
+		
+		const newRow = {
+			id: nextId,
+			checked: false,
+			number: newNumber,
+			status: '',
+			beneficiaryName: '',
+			weight: '',
+			livingRoom: '',
+			edema: false,
+			edemaArea: '',
+			edemaDegree: '',
+			bedsore: false,
+			bedsoreArea: '',
+			medication: false,
+			incontinence: false,
+			dressing: false,
+			painVAS: '',
+			nursingDetails: '',
+			author: '',
+			fall: false,
+			dehydration: false,
+			delirium: false,
+			problemBehavior: false,
+			nursingHistory: ''
+		};
+		
+		setVitalSignsData(prev => [...prev, newRow]);
+		setNextId(prev => prev + 1);
+		setEditingRowId(newRow.id); // 새로 추가된 행을 수정 모드로 설정
 	};
 
 	// 날짜 포맷팅 (yyyy-mm-dd -> yyyy. mm. dd)
@@ -186,174 +244,286 @@ export default function VitalSignsPeriodic() {
 										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">현황</th>
 										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">수급자명</th>
 										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">생활실</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">혈압(mmHg)</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">맥박(/분)</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">체온(℃)</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">호흡(회)</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-24">산소포화도(%SpO2)</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-80">간호내역</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-32">작성자</th>
-										<th className="text-center px-3 py-2 text-blue-900 font-semibold w-32">작업</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">체중</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">부종</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">부종 부위</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">부종 정도</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">욕창</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">욕창 부위</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">약물투여</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">소변/대변실금</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">드레싱 실시</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">통증 (VAS)</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">낙상</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">탈수</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 whitespace-nowrap">섬망</th>
+										<th className="text-center px-3 py-2 text-blue-900 font-semibold">문제행동</th>
 									</tr>
 								</thead>
 								<tbody>
 									{vitalSignsData.map((row) => (
-										<tr 
-											key={row.id} 
-											className="border-b border-blue-50 hover:bg-blue-50"
-										>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="checkbox"
-													checked={row.checked}
-													onChange={() => handleCheckboxChange(row.id)}
-													className="cursor-pointer"
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">{row.number}</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.status}
-													onChange={(e) => handleDataChange(row.id, 'status', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.beneficiaryName}
-													onChange={(e) => handleDataChange(row.id, 'beneficiaryName', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.livingRoom}
-													onChange={(e) => handleDataChange(row.id, 'livingRoom', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.bloodPressure}
-													onChange={(e) => handleDataChange(row.id, 'bloodPressure', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-													placeholder="예: 120/80"
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.pulse}
-													onChange={(e) => handleDataChange(row.id, 'pulse', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.bodyTemperature}
-													onChange={(e) => handleDataChange(row.id, 'bodyTemperature', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.respiration}
-													onChange={(e) => handleDataChange(row.id, 'respiration', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.oxygenSaturation}
-													onChange={(e) => handleDataChange(row.id, 'oxygenSaturation', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<input
-													type="text"
-													value={row.nursingDetails}
-													onChange={(e) => handleDataChange(row.id, 'nursingDetails', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-													placeholder="간호내역 입력"
-												/>
-											</td>
-											<td className="text-center px-3 py-3 border-r border-blue-100">
-												<select
-													value={row.author}
-													onChange={(e) => handleDataChange(row.id, 'author', e.target.value)}
-													disabled={editingRowId !== row.id}
-													className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
-														editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-													}`}
-												>
-													<option value="">선택</option>
-													{employeeList.map((employee) => (
-														<option key={employee} value={employee}>
-															{employee}
-														</option>
-													))}
-												</select>
-											</td>
-											<td className="text-center px-3 py-3">
-												<div className="flex justify-center gap-2">
-													<button
-														onClick={() => handleEditClick(row.id)}
-														className={`px-3 py-1 text-xs border rounded font-medium ${
-															editingRowId === row.id
-																? 'border-green-400 bg-green-200 hover:bg-green-300 text-green-900'
-																: 'border-blue-400 bg-blue-200 hover:bg-blue-300 text-blue-900'
+										<React.Fragment key={row.id}>
+											<tr className="border-b border-blue-50 hover:bg-blue-50">
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.checked}
+														onChange={() => handleCheckboxChange(row.id)}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">{row.number}</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="text"
+														value={row.status}
+														onChange={(e) => handleDataChange(row.id, 'status', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+														}`}
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="text"
+														value={row.beneficiaryName}
+														onChange={(e) => handleDataChange(row.id, 'beneficiaryName', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+														}`}
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="text"
+														value={row.livingRoom}
+														onChange={(e) => handleDataChange(row.id, 'livingRoom', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+														}`}
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="text"
+														value={row.weight}
+														onChange={(e) => handleDataChange(row.id, 'weight', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+														}`}
+														placeholder="체중 입력"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.edema}
+														onChange={(e) => handleDataChange(row.id, 'edema', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="text"
+														value={row.edemaArea}
+														onChange={(e) => handleDataChange(row.id, 'edemaArea', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+														}`}
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<select
+														value={row.edemaDegree}
+														onChange={(e) => handleDataChange(row.id, 'edemaDegree', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
 														}`}
 													>
-														{editingRowId === row.id ? '저장' : '수정'}
-													</button>
-													<button
-														onClick={() => handleDeleteClick(row.id)}
-														className="px-3 py-1 text-xs border border-red-400 rounded bg-red-200 hover:bg-red-300 text-red-900 font-medium"
-													>
-														삭제
-													</button>
-												</div>
-											</td>
-										</tr>
+														<option value="">선택</option>
+														<option value="+">+</option>
+														<option value="++">++</option>
+														<option value="+++">+++</option>
+													</select>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.bedsore}
+														onChange={(e) => handleDataChange(row.id, 'bedsore', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="text"
+														value={row.bedsoreArea}
+														onChange={(e) => handleDataChange(row.id, 'bedsoreArea', e.target.value)}
+														disabled={editingRowId !== row.id}
+														className={`w-full px-2 py-1 border border-blue-300 rounded text-center ${
+															editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+														}`}
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.medication}
+														onChange={(e) => handleDataChange(row.id, 'medication', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.incontinence}
+														onChange={(e) => handleDataChange(row.id, 'incontinence', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.dressing}
+														onChange={(e) => handleDataChange(row.id, 'dressing', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<div className="flex items-center justify-center gap-1">
+														<input
+															type="text"
+															value={row.painVAS}
+															onChange={(e) => handleDataChange(row.id, 'painVAS', e.target.value)}
+															disabled={editingRowId !== row.id}
+															className={`w-16 px-2 py-1 border border-blue-300 rounded text-center ${
+																editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+															}`}
+															placeholder="1~10"
+														/>
+													</div>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.fall}
+														onChange={(e) => handleDataChange(row.id, 'fall', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.dehydration}
+														onChange={(e) => handleDataChange(row.id, 'dehydration', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3 border-r border-blue-100">
+													<input
+														type="checkbox"
+														checked={row.delirium}
+														onChange={(e) => handleDataChange(row.id, 'delirium', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+												<td className="text-center px-3 py-3">
+													<input
+														type="checkbox"
+														checked={row.problemBehavior}
+														onChange={(e) => handleDataChange(row.id, 'problemBehavior', e.target.checked)}
+														disabled={editingRowId !== row.id}
+														className="cursor-pointer"
+													/>
+												</td>
+											</tr>
+											{/* 두 번째 줄: 작성자, 간호내역, 작업 */}
+											<tr className="border-b border-blue-50 bg-blue-25">
+												<td colSpan={2} className="px-3 py-2 border-r border-blue-100"></td>
+												<td colSpan={17} className="px-3 py-2">
+													<div className="flex items-center gap-4 w-full">
+														<div className="flex items-center gap-2 flex-shrink-0">
+															<label className="text-xs text-blue-900 font-medium whitespace-nowrap">작성자</label>
+															<select
+																value={row.author}
+																onChange={(e) => handleDataChange(row.id, 'author', e.target.value)}
+																disabled={editingRowId !== row.id}
+																className={`px-2 py-1 text-xs border border-blue-300 rounded ${
+																	editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+																}`}
+															>
+																<option value="">선택</option>
+																{employeeList.map((employee) => (
+																	<option key={employee} value={employee}>
+																		{employee}
+																	</option>
+																))}
+															</select>
+														</div>
+														<div className="flex items-center gap-2 flex-1">
+															<label className="text-xs text-blue-900 font-medium whitespace-nowrap flex-shrink-0">간호내역</label>
+															<textarea
+																value={row.nursingHistory}
+																onChange={(e) => handleDataChange(row.id, 'nursingHistory', e.target.value)}
+																disabled={editingRowId !== row.id}
+																className={`w-full px-2 py-1 text-xs border border-blue-300 rounded ${
+																	editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+																}`}
+																rows={2}
+															/>
+														</div>
+														<div className="flex items-center gap-2 flex-shrink-0">
+															<div className="flex gap-2">
+																<button
+																	onClick={() => handleEditClick(row.id)}
+																	className={`px-3 py-1 text-xs border rounded font-medium ${
+																		editingRowId === row.id
+																			? 'border-green-400 bg-green-200 hover:bg-green-300 text-green-900'
+																			: 'border-blue-400 bg-blue-200 hover:bg-blue-300 text-blue-900'
+																	}`}
+																>
+																	{editingRowId === row.id ? '저장' : '수정'}
+																</button>
+																<button
+																	onClick={() => handleDeleteClick(row.id)}
+																	className="px-3 py-1 text-xs border border-red-400 rounded bg-red-200 hover:bg-red-300 text-red-900 font-medium"
+																>
+																	삭제
+																</button>
+															</div>
+														</div>
+													</div>
+												</td>
+											</tr>
+										</React.Fragment>
 									))}
 								</tbody>
 							</table>
 						</div>
+					</div>
+
+					{/* 하단 추가 버튼 */}
+					<div className="flex justify-center mt-4">
+						<button
+							onClick={handleAddRow}
+							className="px-6 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+						>
+							추가
+						</button>
 					</div>
 				</div>
 			</div>
