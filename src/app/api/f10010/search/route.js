@@ -25,7 +25,8 @@ export async function GET(req) {
         f10010.P_NM,
         f10010.P_BRDT,
         f10010.P_TEL,
-        f10010.P_HP
+        f10010.P_HP,
+        f10010.P_SEX
       FROM [돌봄시설DB].[dbo].[F10010] f10010
       WHERE f10010.ANCD IN (${ancdList})
     `;
