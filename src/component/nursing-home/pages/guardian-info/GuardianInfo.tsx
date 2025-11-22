@@ -1,9 +1,44 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+interface MemberData {
+	ANCD: string;
+	PNUM: string;
+	P_NM: string;
+	P_SEX: string;
+	P_GRD: string;
+	P_BRDT: string;
+	P_ST: string;
+	[key: string]: any;
+}
+
+interface GuardianData {
+	ANCD: string;
+	PNUM: string;
+	BHNUM: string;
+	BHNM: string;
+	BHREL: string;
+	BHETC: string;
+	BHJB: string;
+	P_ZIP: string;
+	P_ADDR: string;
+	P_TEL: string;
+	P_HP: string;
+	P_EMAIL: string;
+	CONGU: string;
+	[key: string]: any;
+}
 
 export default function GuardianInfo() {
-	const [selectedGuardianIndex, setSelectedGuardianIndex] = useState<number | null>(null);
+	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
+	const [selectedGuardian, setSelectedGuardian] = useState<GuardianData | null>(null);
 	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [memberList, setMemberList] = useState<MemberData[]>([]);
+	const [guardianList, setGuardianList] = useState<GuardianData[]>([]);
+	const [loading, setLoading] = useState(false);
+	const [loadingGuardians, setLoadingGuardians] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
+	const itemsPerPage = 10;
 	const [formData, setFormData] = useState({
 		recipientName: '',
 		guardianName: '',
@@ -17,22 +52,142 @@ export default function GuardianInfo() {
 		hospitalAddress: ''
 	});
 
-	// 보호자 목록 데이터
-	const guardianList = [
-		{ id: 1, serialNo: 1, name: '홍길동', contractDate: '27.07.25', endDate: '28.05.11', content: '동안 4911' },
-		{ id: 2, serialNo: 2, name: '김영희', contractDate: '28.05.11', endDate: '28.05.11', content: '' },
-	];
-
-	// 수급자 목록 데이터 (CounselingRecord와 동일한 형식)
-	const memberList = [
-		{ id: 1, serialNo: 1, status: '입소', name: '홍길동', gender: '남', grade: '1', age: '50' },
-		{ id: 2, serialNo: 2, status: '퇴소', name: '김영희', gender: '여', grade: '2', age: '70' },
-	];
-
-	const handleSelectGuardian = (index: number) => {
-		setSelectedGuardianIndex(index);
-		// 선택된 보호자 정보를 폼에 로드
+	// 수급자 목록 조회
+	const fetchMembers = async () => {
+		setLoading(true);
+		try {
+			const response = await fetch('/api/f10010');
+			const result = await response.json();
+			
+			if (result.success) {
+				setMemberList(result.data);
+			}
+		} catch (err) {
+			console.error('수급자 목록 조회 오류:', err);
+		} finally {
+			setLoading(false);
+		}
 	};
+
+	// 보호자 목록 조회 (수급자 선택 시)
+	const fetchGuardians = async (ancd: string, pnum: string) => {
+		if (!ancd || !pnum) {
+			setGuardianList([]);
+			return;
+		}
+
+		setLoadingGuardians(true);
+		try {
+			const response = await fetch(`/api/f10020?ancd=${ancd}&pnum=${pnum}`);
+			const result = await response.json();
+			
+			if (result.success) {
+				setGuardianList(result.data);
+			}
+		} catch (err) {
+			console.error('보호자 목록 조회 오류:', err);
+		} finally {
+			setLoadingGuardians(false);
+		}
+	};
+
+	// 수급자 선택 시 보호자 목록 조회
+	const handleSelectMember = (member: MemberData) => {
+		setSelectedMember(member);
+		setFormData(prev => ({ ...prev, recipientName: member.P_NM || '' }));
+		fetchGuardians(member.ANCD, member.PNUM);
+		// 보호자 선택 초기화
+		setSelectedGuardian(null);
+		resetForm();
+	};
+
+	// 보호자 선택 시 폼에 데이터 로드
+	const handleSelectGuardian = (guardian: GuardianData) => {
+		setSelectedGuardian(guardian);
+		
+		// 관계 코드를 한글로 변환
+		const relationshipMap: { [key: string]: string } = {
+			'10': '남편',
+			'11': '부인',
+			'20': '아들',
+			'21': '딸',
+			'22': '며느리',
+			'23': '사위',
+			'31': '손주'
+		};
+
+		const relationshipText = guardian.BHREL 
+			? (relationshipMap[guardian.BHREL] || guardian.BHREL)
+			: (guardian.P_TEL || '');
+
+		setFormData({
+			recipientName: selectedMember?.P_NM || '',
+			guardianName: guardian.BHNM || '',
+			relationship: relationshipText,
+			isMainGuardian: guardian.BHJB === 'Y' || guardian.CONGU === 'Y',
+			relationshipDetails: guardian.BHETC || '',
+			phoneNumber: guardian.P_HP || '',
+			address: guardian.P_ADDR || '',
+			hospitalUsed: selectedMember?.HSPT || '',
+			attendingPhysician: selectedMember?.DTNM || '',
+			hospitalAddress: ''
+		});
+	};
+
+	// 폼 초기화
+	const resetForm = () => {
+		setFormData({
+			recipientName: selectedMember?.P_NM || '',
+			guardianName: '',
+			relationship: '',
+			isMainGuardian: false,
+			relationshipDetails: '',
+			phoneNumber: '',
+			address: '',
+			hospitalUsed: selectedMember?.HSPT || '',
+			attendingPhysician: selectedMember?.DTNM || '',
+			hospitalAddress: ''
+		});
+	};
+
+	// 나이 계산 함수
+	const calculateAge = (birthDate: string) => {
+		if (!birthDate) return '-';
+		try {
+			const year = parseInt(birthDate.substring(0, 4));
+			const currentYear = new Date().getFullYear();
+			return (currentYear - year).toString();
+		} catch {
+			return '-';
+		}
+	};
+
+	// 필터링된 수급자 목록
+	const filteredMembers = memberList.filter((member) => {
+		if (!selectedStatus) return true;
+		if (selectedStatus === '입소') return member.P_ST === '1';
+		if (selectedStatus === '퇴소') return member.P_ST === '9';
+		return true;
+	});
+
+	// 페이지네이션 계산
+	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const currentMembers = filteredMembers.slice(startIndex, endIndex);
+
+	const handlePageChange = (page: number) => {
+		setCurrentPage(page);
+	};
+
+	useEffect(() => {
+		fetchMembers();
+	}, []);
+
+	// 상태 필터 변경 시 페이지 초기화
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [selectedStatus]);
 
 	const handleFormChange = (field: string, value: string | boolean) => {
 		setFormData(prev => ({ ...prev, [field]: value }));
@@ -64,8 +219,8 @@ export default function GuardianInfo() {
 					</div>
 
 					{/* 수급자 목록 테이블 - 라운드 박스 */}
-					<div className="flex-1 border border-blue-300 rounded-lg overflow-hidden bg-white">
-						<div className="overflow-y-auto h-full">
+					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white flex flex-col">
+						<div className="overflow-y-auto">
 							<table className="w-full text-xs">
 								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
 									<tr>
@@ -78,24 +233,94 @@ export default function GuardianInfo() {
 									</tr>
 								</thead>
 								<tbody>
-									{memberList
-										.filter((member) => !selectedStatus || member.status === selectedStatus)
-										.map((member) => (
-										<tr
-											key={member.id}
-											className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer`}
-										>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.serialNo}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.status}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.name}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.gender}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.grade}</td>
-											<td className="text-center px-2 py-1.5">{member.age}</td>
+									{loading ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">로딩 중...</td>
 										</tr>
-									))}
+									) : filteredMembers.length === 0 ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">수급자 데이터가 없습니다</td>
+										</tr>
+									) : (
+										currentMembers.map((member, index) => (
+											<tr
+												key={`${member.ANCD}-${member.PNUM}-${index}`}
+												onClick={() => handleSelectMember(member)}
+												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
+												}`}
+											>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">{startIndex + index + 1}</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">
+													{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
+												</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.P_NM || '-'}</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">
+													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
+												</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">
+													{member.P_GRD === '0' ? '등급외' : member.P_GRD ? `${member.P_GRD}등급` : '-'}
+												</td>
+												<td className="text-center px-2 py-1.5">{calculateAge(member.P_BRDT)}</td>
+											</tr>
+										))
+									)}
 								</tbody>
 							</table>
 						</div>
+						{/* 페이지네이션 */}
+						{totalPages > 1 && (
+							<div className="p-2 border-t border-blue-200 bg-white">
+								<div className="flex items-center justify-center gap-1">
+									<button
+										onClick={() => handlePageChange(1)}
+										disabled={currentPage === 1}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&lt;&lt;
+									</button>
+									<button
+										onClick={() => handlePageChange(currentPage - 1)}
+										disabled={currentPage === 1}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&lt;
+									</button>
+									
+									{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+										const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+										return (
+											<button
+												key={pageNum}
+												onClick={() => handlePageChange(pageNum)}
+												className={`px-2 py-1 text-xs border rounded ${
+													currentPage === pageNum
+														? 'bg-blue-500 text-white border-blue-500'
+														: 'border-blue-300 hover:bg-blue-50'
+												}`}
+											>
+												{pageNum}
+											</button>
+										);
+									})}
+									
+									<button
+										onClick={() => handlePageChange(currentPage + 1)}
+										disabled={currentPage === totalPages}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&gt;
+									</button>
+									<button
+										onClick={() => handlePageChange(totalPages)}
+										disabled={currentPage === totalPages}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&gt;&gt;
+									</button>
+								</div>
+							</div>
+						)}
 					</div>
 				</div>
 
@@ -104,35 +329,52 @@ export default function GuardianInfo() {
 					<div className="mb-3">
 						<h3 className="text-sm font-semibold text-blue-900">보호자 목록</h3>
 					</div>
-					<div className="flex-1 border border-blue-300 rounded-lg overflow-hidden bg-white">
+					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white">
 						<div className="overflow-y-auto h-full">
 							<table className="w-full text-xs">
 								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
 									<tr>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">보호자명</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold">계약기간</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold">계약기간햐</th>
 									</tr>
 								</thead>
 								<tbody>
-									{guardianList.map((guardian, index) => (
-										<tr
-											key={guardian.id}
-											onClick={() => handleSelectGuardian(index)}
-											className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-												selectedGuardianIndex === index ? 'bg-blue-100 border-2 border-blue-400' : ''
-											}`}
-										>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{guardian.serialNo}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{guardian.name}</td>
-											<td className="text-center px-2 py-1.5">
-												{guardian.contractDate} ~ {guardian.endDate || '___'}
+									{loadingGuardians ? (
+										<tr>
+											<td colSpan={3} className="text-center px-2 py-4 text-blue-900/60">로딩 중...</td>
+										</tr>
+									) : guardianList.length === 0 ? (
+										<tr>
+											<td colSpan={3} className="text-center px-2 py-4 text-blue-900/60">
+												{selectedMember ? '보호자 데이터가 없습니다' : '수급자를 선택해주세요'}
 											</td>
 										</tr>
-									))}
-									<tr>
-										<td colSpan={3} className="text-center px-2 py-1.5 text-gray-400 text-xs">...</td>
-									</tr>
+									) : (
+										guardianList.map((guardian, index) => {
+											// 계약일자와 종료일자는 F10110에서 가져와야 하지만, 현재는 F10020만 있으므로 INDT 사용
+											const contractDate = guardian.INDT ? guardian.INDT.substring(2, 10).replace(/-/g, '.') : '-';
+											
+											return (
+												<tr
+													key={`${guardian.ANCD}-${guardian.PNUM}-${guardian.BHNUM || index}`}
+													onClick={() => handleSelectGuardian(guardian)}
+													className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+														selectedGuardian?.ANCD === guardian.ANCD && 
+														selectedGuardian?.PNUM === guardian.PNUM &&
+														selectedGuardian?.BHNUM === guardian.BHNUM
+															? 'bg-blue-100 border-2 border-blue-400' : ''
+													}`}
+												>
+													<td className="text-center px-2 py-1.5 border-r border-blue-100">{index + 1}</td>
+													<td className="text-center px-2 py-1.5 border-r border-blue-100">{guardian.BHNM || '-'}</td>
+													<td className="text-center px-2 py-1.5">
+														{contractDate} ~ ___
+													</td>
+												</tr>
+											);
+										})
+									)}
 								</tbody>
 							</table>
 						</div>
@@ -171,18 +413,12 @@ export default function GuardianInfo() {
 						<div className="mb-4 flex items-center gap-2">
 							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">관계</label>
 							<div className="flex items-center gap-2 flex-1">
-								<select
+								<input
+									type="text"
 									value={formData.relationship}
 									onChange={(e) => handleFormChange('relationship', e.target.value)}
 									className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
-								>
-									<option value="">선택</option>
-									<option value="보호자">보호자</option>
-									<option value="딸">딸</option>
-									<option value="아들">아들</option>
-									<option value="며느리">며느리</option>
-									<option value="기타">기타</option>
-								</select>
+								/>
 								<label className="flex items-center gap-2 cursor-pointer">
 									<input
 										type="checkbox"
