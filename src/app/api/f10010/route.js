@@ -1,4 +1,5 @@
 import { connPool } from '../../../config/server';
+import { NextRequest } from 'next/server';
 
 export async function GET(req) {
   try {
@@ -13,44 +14,56 @@ export async function GET(req) {
       });
     }
 
-    // F10110과 F10020 테이블을 조인해서 수급자 정보 조회
-    const result = await pool.request().query(`
+    // URL에서 검색어 추출
+    const searchParams = req.nextUrl.searchParams;
+    const searchName = searchParams.get('name') || '';
+
+    // F10010 테이블에서 수급자 정보 조회
+    let query = `
       SELECT TOP 1000 
-        f10110.ANCD,
-        f10110.PNUM,
-        f10110.CDT,
-        f10110.SVSDT,
-        f10110.SVEDT,
-        f10110.INSPER,
-        f10110.USRPER,
-        f10110.USRGU,
-        f10110.USRINFO,
-        f10110.USRINFO_AMT,
-        f10110.EAMT,
-        f10110.ETAMT,
-        f10110.ESAMT,
-        f10110.EDAYAMT,
-        f10110.CHGU,
-        f10110.INDT,
-        f10110.ETC,
-        f10110.INEMPNO,
-        f10110.INEMPNM,
-        f10110.P_GRD,
-        f10020.BHNUM,
-        f10020.BHNM,
-        f10020.BHREL,
-        f10020.BHETC,
-        f10020.BHJB,
-        f10020.P_ZIP,
-        f10020.P_ADDR,
-        f10020.P_TEL,
-        f10020.P_HP,
-        f10020.P_EMAIL,
-        f10020.CONGU
-      FROM [돌봄시설DB].[dbo].[F10110] f10110
-      LEFT JOIN [돌봄시설DB].[dbo].[F10020] f10020 ON f10110.ANCD = f10020.ANCD AND f10110.PNUM = f10020.PNUM
-      ORDER BY f10110.ANCD, f10110.INDT DESC
-    `);
+        [ANCD],
+        [PNUM],
+        [P_NM],
+        [P_BRDT],
+        [P_NO],
+        [P_SEX],
+        [P_ZIP],
+        [P_ADDR],
+        [P_TEL],
+        [P_GRD],
+        [P_YYNO],
+        [P_YYDT],
+        [P_ST],
+        [P_CINFO],
+        [P_CTDT],
+        [P_SDT],
+        [P_EDT],
+        [HCANUM],
+        [HCAINFO],
+        [HSPT],
+        [DTNM],
+        [DTTEL],
+        [INDT],
+        [ETC],
+        [INEMPNO],
+        [INEMPNM],
+        [P_HP],
+        [P_YYSDT],
+        [P_YYEDT]
+      FROM [돌봄시설DB].[dbo].[F10010]
+    `;
+
+    const request = pool.request();
+
+    // 이름 검색 조건 추가
+    if (searchName && searchName.trim() !== '') {
+      query += ` WHERE [P_NM] LIKE @searchName`;
+      request.input('searchName', `%${searchName.trim()}%`);
+    }
+
+    query += ` ORDER BY [ANCD], [INDT] DESC`;
+
+    const result = await request.query(query);
     
     return new Response(JSON.stringify({ 
       success: true, 
