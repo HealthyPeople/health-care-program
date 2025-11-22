@@ -148,7 +148,7 @@ export default function GuardianInfo() {
 			guardianName: guardian.BHNM || '',
 			relationship: relationshipText,
 			isMainGuardian: guardian.BHJB === '1',
-			relationshipDetails: guardian.BHETC || '',
+			relationshipDetails: guardian.P_EMAIL || '없음',
 			phoneNumber: guardian.P_HP || '',
 			address: guardian.P_ADDR || '',
 			hospitalUsed: selectedMember?.HSPT || '',
@@ -471,14 +471,13 @@ export default function GuardianInfo() {
 
 						{/* 관계내용 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">관계내용</label>
+							{/* <label className="block text-sm text-blue-900 font-medium mb-2">관계내용</label> */}
+							<label className="block text-sm text-blue-900 font-medium mb-2">기타사항</label>
 							<textarea
-								// value={formData.relationshipDetails}
-								value={"현재 보호자정보 테이블 F10020에 관계내용 필드를 새롭게 생성해야함. 현재 없는정보임"}
+								value={formData.relationshipDetails}
 								onChange={(e) => handleFormChange('relationshipDetails', e.target.value)}
 								className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 								rows={3}
-								placeholder="동거 여부, 성별 등"
 							/>
 						</div>
 
@@ -530,7 +529,7 @@ export default function GuardianInfo() {
 						</div>
 
 						{/* 병원주소 */}
-						<div className="mb-4 flex items-center gap-2">
+						{/* <div className="mb-4 flex items-center gap-2">
 							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">병원주소</label>
 							<input
 								type="text"
@@ -538,7 +537,7 @@ export default function GuardianInfo() {
 								onChange={(e) => handleFormChange('hospitalAddress', e.target.value)}
 								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
 							/>
-						</div>
+						</div> */}
 					</div>
 				</div>
 			</div>
