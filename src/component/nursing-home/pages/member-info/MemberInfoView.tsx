@@ -428,19 +428,44 @@ export default function MemberInfoView() {
 											<div className="flex items-center gap-2">
 												<span className="w-24 text-blue-900/80">관계</span>
 												<span className="flex-1 border-b border-blue-200">
-													{selectedMember.BHREL || '-'}
+													{
+														selectedMember.BHREL === '10' 
+															? '남편'
+															: selectedMember.BHREL === '11'
+																? '부인'
+																: selectedMember.BHREL === '20'
+																	? '아들'
+																	: selectedMember.BHREL === '21'
+																		? '딸'
+																		: selectedMember.BHREL === '22'
+																			? '며느리'
+																			: selectedMember.BHREL === '23'
+																				? '사위'
+																				: selectedMember.BHREL === '31'
+																					? '손주'
+																					: !selectedMember.BHREL || selectedMember.BHREL === null || selectedMember.BHREL === ''
+																						? (selectedMember.GUARDIAN_P_TEL || '-')
+																						: (selectedMember.BHREL || selectedMember.BHETC || '-')
+													}
 												</span>
 											</div>
 											<div className="flex items-center gap-2">
 												<span className="w-24 text-blue-900/80">연락처</span>
 												<span className="flex-1 border-b border-blue-200">
-													{selectedMember.P_TEL || selectedMember.P_HP || '-'}
+													{selectedMember.GUARDIAN_P_HP || '-'}
 												</span>
 											</div>
 											<div className="flex items-center gap-2">
 												<span className="w-24 text-blue-900/80">주소</span>
 												<span className="flex-1 border-b border-blue-200">
-													{selectedMember.P_ADDR || '-'}
+													{selectedMember.GUARDIAN_P_ADDR || '-'}
+												</span>
+											</div>
+											<div className="flex items-center gap-2">
+												{/* <span className="w-24 text-blue-900/80">이메일</span> */}
+												<span className="w-24 text-blue-900/80">기타</span>
+												<span className="flex-1 border-b border-blue-200">
+													{selectedMember.P_EMAIL || '-'}
 												</span>
 											</div>
 										</div>

@@ -59,7 +59,17 @@ export async function GET(req) {
         f10110.[USRINFO],
         f10110.[EAMT],
         f10110.[ETAMT],
-        f10110.[ESAMT]
+        f10110.[ESAMT],
+        f10020.[BHNM],
+        f10020.[BHREL],
+        f10020.[BHETC],
+        f10020.[BHJB],
+        f10020.[P_ZIP] as GUARDIAN_P_ZIP,
+        f10020.[P_ADDR] as GUARDIAN_P_ADDR,
+        f10020.[P_TEL] as GUARDIAN_P_TEL,
+        f10020.[P_HP] as GUARDIAN_P_HP,
+        f10020.[P_EMAIL],
+        f10020.[CONGU]
       FROM [돌봄시설DB].[dbo].[F10010] f10010
       LEFT JOIN (
         SELECT 
@@ -79,6 +89,8 @@ export async function GET(req) {
       ) f10110 ON f10010.[ANCD] = f10110.[ANCD] 
                AND f10010.[PNUM] = f10110.[PNUM]
                AND f10110.rn = 1
+      LEFT JOIN [돌봄시설DB].[dbo].[F10020] f10020 ON f10010.[ANCD] = f10020.[ANCD] 
+                                                    AND f10010.[PNUM] = f10020.[PNUM]
     `;
 
     const request = pool.request();
