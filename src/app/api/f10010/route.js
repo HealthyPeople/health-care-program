@@ -18,50 +18,78 @@ export async function GET(req) {
     const searchParams = req.nextUrl.searchParams;
     const searchName = searchParams.get('name') || '';
 
-    // F10010 테이블에서 수급자 정보 조회
+    // F10010 테이블과 F10110 테이블을 조인해서 수급자 정보 및 계약정보 조회
+    // F10110에서 각 (ANCD, PNUM) 조합에 대해 최신 1건만 가져오기 위해 서브쿼리 사용
     let query = `
       SELECT TOP 1000 
-        [ANCD],
-        [PNUM],
-        [P_NM],
-        [P_BRDT],
-        [P_NO],
-        [P_SEX],
-        [P_ZIP],
-        [P_ADDR],
-        [P_TEL],
-        [P_GRD],
-        [P_YYNO],
-        [P_YYDT],
-        [P_ST],
-        [P_CINFO],
-        [P_CTDT],
-        [P_SDT],
-        [P_EDT],
-        [HCANUM],
-        [HCAINFO],
-        [HSPT],
-        [DTNM],
-        [DTTEL],
-        [INDT],
-        [ETC],
-        [INEMPNO],
-        [INEMPNM],
-        [P_HP],
-        [P_YYSDT],
-        [P_YYEDT]
-      FROM [돌봄시설DB].[dbo].[F10010]
+        f10010.[ANCD],
+        f10010.[PNUM],
+        f10010.[P_NM],
+        f10010.[P_BRDT],
+        f10010.[P_NO],
+        f10010.[P_SEX],
+        f10010.[P_ZIP],
+        f10010.[P_ADDR],
+        f10010.[P_TEL],
+        f10010.[P_GRD],
+        f10010.[P_YYNO],
+        f10010.[P_YYDT],
+        f10010.[P_ST],
+        f10010.[P_CINFO],
+        f10010.[P_CTDT],
+        f10010.[P_SDT],
+        f10010.[P_EDT],
+        f10010.[HCANUM],
+        f10010.[HCAINFO],
+        f10010.[HSPT],
+        f10010.[DTNM],
+        f10010.[DTTEL],
+        f10010.[INDT],
+        f10010.[ETC],
+        f10010.[INEMPNO],
+        f10010.[INEMPNM],
+        f10010.[P_HP],
+        f10010.[P_YYSDT],
+        f10010.[P_YYEDT],
+        f10110.[SVSDT],
+        f10110.[SVEDT],
+        f10110.[INSPER],
+        f10110.[USRPER],
+        f10110.[USRGU],
+        f10110.[USRINFO],
+        f10110.[EAMT],
+        f10110.[ETAMT],
+        f10110.[ESAMT]
+      FROM [돌봄시설DB].[dbo].[F10010] f10010
+      LEFT JOIN (
+        SELECT 
+          [ANCD],
+          [PNUM],
+          [SVSDT],
+          [SVEDT],
+          [INSPER],
+          [USRPER],
+          [USRGU],
+          [USRINFO],
+          [EAMT],
+          [ETAMT],
+          [ESAMT],
+          ROW_NUMBER() OVER (PARTITION BY [ANCD], [PNUM] ORDER BY [INDT] DESC) as rn
+        FROM [돌봄시설DB].[dbo].[F10110]
+      ) f10110 ON f10010.[ANCD] = f10110.[ANCD] 
+               AND f10010.[PNUM] = f10110.[PNUM]
+               AND f10110.rn = 1
     `;
 
     const request = pool.request();
 
     // 이름 검색 조건 추가
     if (searchName && searchName.trim() !== '') {
-      query += ` WHERE [P_NM] LIKE @searchName`;
+      query += ` WHERE f10010.[P_NM] LIKE @searchName`;
       request.input('searchName', `%${searchName.trim()}%`);
     }
 
-    query += ` ORDER BY [ANCD], [INDT] DESC`;
+    query += ` ORDER BY f10010.[ANCD], f10010.[INDT] DESC`;
 
     const result = await request.query(query);
     
