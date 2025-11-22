@@ -26,6 +26,8 @@ interface GuardianData {
 	P_HP: string;
 	P_EMAIL: string;
 	CONGU: string;
+	SVSDT?: string;
+	SVEDT?: string;
 	[key: string]: any;
 }
 
@@ -70,7 +72,7 @@ export default function GuardianInfo() {
 	};
 
 	// 보호자 목록 조회 (수급자 선택 시)
-	const fetchGuardians = async (ancd: string, pnum: string) => {
+	const fetchGuardians = async (ancd: string, pnum: string, autoSelectFirst: boolean = false) => {
 		if (!ancd || !pnum) {
 			setGuardianList([]);
 			return;
@@ -78,14 +80,35 @@ export default function GuardianInfo() {
 
 		setLoadingGuardians(true);
 		try {
-			const response = await fetch(`/api/f10020?ancd=${ancd}&pnum=${pnum}`);
+			const url = `/api/f10020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
+			const response = await fetch(url);
 			const result = await response.json();
 			
 			if (result.success) {
-				setGuardianList(result.data);
+				// 빈 배열이거나 null/undefined인 경우 빈 배열로 설정
+				const guardianData = Array.isArray(result.data) ? result.data : [];
+				console.log('보호자 목록 조회 결과:', { ancd, pnum, count: guardianData.length, data: guardianData });
+				setGuardianList(guardianData);
+				
+				// 첫 번째 보호자 자동 선택
+				if (autoSelectFirst && guardianData.length > 0) {
+					handleSelectGuardian(guardianData[0]);
+				} else if (guardianData.length === 0) {
+					// 보호자가 없으면 선택 해제 및 폼 초기화
+					setSelectedGuardian(null);
+					resetForm();
+				}
+			} else {
+				console.error('보호자 목록 조회 실패:', result.error);
+				setGuardianList([]);
+				setSelectedGuardian(null);
+				resetForm();
 			}
 		} catch (err) {
 			console.error('보호자 목록 조회 오류:', err);
+			setGuardianList([]);
+			setSelectedGuardian(null);
+			resetForm();
 		} finally {
 			setLoadingGuardians(false);
 		}
@@ -95,10 +118,10 @@ export default function GuardianInfo() {
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
 		setFormData(prev => ({ ...prev, recipientName: member.P_NM || '' }));
-		fetchGuardians(member.ANCD, member.PNUM);
 		// 보호자 선택 초기화
 		setSelectedGuardian(null);
-		resetForm();
+		// 보호자 목록 조회 시 첫 번째 보호자 자동 선택
+		fetchGuardians(member.ANCD, member.PNUM, true);
 	};
 
 	// 보호자 선택 시 폼에 데이터 로드
@@ -124,7 +147,7 @@ export default function GuardianInfo() {
 			recipientName: selectedMember?.P_NM || '',
 			guardianName: guardian.BHNM || '',
 			relationship: relationshipText,
-			isMainGuardian: guardian.BHJB === 'Y' || guardian.CONGU === 'Y',
+			isMainGuardian: guardian.BHJB === '1',
 			relationshipDetails: guardian.BHETC || '',
 			phoneNumber: guardian.P_HP || '',
 			address: guardian.P_ADDR || '',
@@ -336,7 +359,7 @@ export default function GuardianInfo() {
 									<tr>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">보호자명</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold">계약기간햐</th>
+										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold">계약기간</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -347,13 +370,28 @@ export default function GuardianInfo() {
 									) : guardianList.length === 0 ? (
 										<tr>
 											<td colSpan={3} className="text-center px-2 py-4 text-blue-900/60">
-												{selectedMember ? '보호자 데이터가 없습니다' : '수급자를 선택해주세요'}
+												{selectedMember ? '보호자 없음' : '수급자를 선택해주세요'}
 											</td>
 										</tr>
 									) : (
 										guardianList.map((guardian, index) => {
-											// 계약일자와 종료일자는 F10110에서 가져와야 하지만, 현재는 F10020만 있으므로 INDT 사용
-											const contractDate = guardian.INDT ? guardian.INDT.substring(2, 10).replace(/-/g, '.') : '-';
+											// 계약기간: F10110의 SVSDT(시작일)와 SVEDT(종료일) 사용
+											const formatDate = (dateStr: string) => {
+												if (!dateStr) return '-';
+												try {
+													return dateStr.substring(0, 10).replace(/-/g, '.');
+												} catch {
+													return dateStr;
+												}
+											};
+											
+											const startDate = formatDate(guardian.SVSDT || '');
+											const endDate = formatDate(guardian.SVEDT || '');
+											const contractPeriod = startDate !== '-' && endDate !== '-'
+												? `${startDate} ~ ${endDate}`
+												: startDate !== '-'
+													? `${startDate} ~ -`
+													: '-';
 											
 											return (
 												<tr
@@ -369,7 +407,7 @@ export default function GuardianInfo() {
 													<td className="text-center px-2 py-1.5 border-r border-blue-100">{index + 1}</td>
 													<td className="text-center px-2 py-1.5 border-r border-blue-100">{guardian.BHNM || '-'}</td>
 													<td className="text-center px-2 py-1.5">
-														{contractDate} ~ ___
+														{contractPeriod}
 													</td>
 												</tr>
 											);
@@ -435,7 +473,8 @@ export default function GuardianInfo() {
 						<div className="mb-4">
 							<label className="block text-sm text-blue-900 font-medium mb-2">관계내용</label>
 							<textarea
-								value={formData.relationshipDetails}
+								// value={formData.relationshipDetails}
+								value={"현재 보호자정보 테이블 F10020에 관계내용 필드를 새롭게 생성해야함. 현재 없는정보임"}
 								onChange={(e) => handleFormChange('relationshipDetails', e.target.value)}
 								className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 								rows={3}
