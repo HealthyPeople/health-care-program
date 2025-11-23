@@ -22,6 +22,11 @@ import CaseManagement from '@/component/nursing-home/pages/case-management/CaseM
 import MonthlyLongtermSummary from '@/component/nursing-home/pages/monthly-longterm-summary/MonthlyLongtermSummary';
 import GuardianMeeting from '@/component/nursing-home/pages/guardian-meeting/GuardianMeeting';
 import BeneficiaryStatusInquiry from '@/component/nursing-home/pages/beneficiary-status-inquiry/BeneficiaryStatusInquiry';
+import LongtermCareRegistration from '@/component/nursing-home/pages/longterm-care-registration/LongtermCareRegistration';
+import IntensiveExcretionObservation from '@/component/nursing-home/pages/intensive-excretion-observation/IntensiveExcretionObservation';
+import ExcretionObservation from '@/component/nursing-home/pages/excretion-observation/ExcretionObservation';
+import BathService from '@/component/nursing-home/pages/bath-service/BathService';
+import PositionChangeRecord from '@/component/nursing-home/pages/position-change-record/PositionChangeRecord';
 import OutingProcessing from '@/component/nursing-home/pages/outing-processing/OutingProcessing';
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
@@ -109,6 +114,16 @@ function renderInternal(href: string) {
       return <GuardianMeeting />;
     case '/nursingHome/beneficiary-status-inquiry':
       return <BeneficiaryStatusInquiry />;
+    case '/nursingHome/longterm-care-registration':
+      return <LongtermCareRegistration />;
+    case '/nursingHome/intensive-excretion-observation':
+      return <IntensiveExcretionObservation />;
+    case '/nursingHome/excretion-observation':
+      return <ExcretionObservation />;
+    case '/nursingHome/bath-service':
+      return <BathService />;
+    case '/nursingHome/position-change-record':
+      return <PositionChangeRecord />;
     default:
       return null;
   }
