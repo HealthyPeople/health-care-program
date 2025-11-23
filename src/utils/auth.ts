@@ -17,6 +17,14 @@ export function deleteCookie(name: string) {
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
 }
 
+// 클라이언트에서 쿠키 설정
+export function setCookie(name: string, value: string, days: number = 1) {
+  if (typeof document === 'undefined') return;
+  const expires = new Date();
+  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+  document.cookie = `${name}=${value}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+}
+
 // 인증 상태 확인
 export async function checkAuth(): Promise<boolean> {
   try {

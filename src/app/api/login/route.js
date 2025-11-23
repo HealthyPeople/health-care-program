@@ -4,6 +4,53 @@ import crypto from 'crypto';
 
 export async function POST(req) {
   try {
+    // TESTMODE 환경변수 확인 (대소문자 무시, 공백 및 따옴표 제거)
+    const testModeEnv = process.env.TESTMODE 
+      ? String(process.env.TESTMODE).toLowerCase().trim().replace(/['"]/g, '')
+      : '';
+    const testMode = testModeEnv === 'true';
+    
+    // 디버깅: 환경변수 값 확인
+    console.log(`[LOGIN API] TESTMODE env value: "${process.env.TESTMODE}", parsed: ${testMode}`);
+    
+    // TESTMODE가 활성화된 경우 IP 확인 (DB 접근 전에 먼저 체크)
+    if (testMode) {
+      // 다양한 헤더에서 IP 확인
+      const forwardedFor = req.headers.get('x-forwarded-for');
+      const realIp = req.headers.get('x-real-ip');
+      const cfConnectingIp = req.headers.get('cf-connecting-ip'); // Cloudflare
+      
+      let clientIp = 'unknown';
+      // IP 우선순위: x-forwarded-for > x-real-ip > cf-connecting-ip
+      if (forwardedFor) {
+        clientIp = forwardedFor.split(',')[0].trim();
+      } else if (realIp) {
+        clientIp = realIp.trim();
+      } else if (cfConnectingIp) {
+        clientIp = cfConnectingIp.trim();
+      }
+      
+      // 허용된 IP
+      const allowedIp = '14.37.170.65';
+      const isAllowedIp = clientIp === allowedIp;
+      
+      console.log(`[TESTMODE] Client IP: ${clientIp}, Allowed IP: ${allowedIp}, Is Allowed: ${isAllowedIp}`);
+      
+      // 허용된 IP가 아닌 경우 특별한 응답 반환 (클라이언트에서 쿠키 설정하도록)
+      if (!isAllowedIp) {
+        return NextResponse.json(
+          { 
+            success: true, 
+            message: 'IP접근제한으로 데이터 확인불가',
+            ipRestricted: true,
+            allowMockLogin: true // 클라이언트에서 쿠키 설정하도록 플래그
+          },
+          { status: 200 }
+        );
+      }
+    }
+
+    // TESTMODE가 비활성화되었거나 허용된 IP인 경우에만 DB 접근
     const pool = await connPool;
     if (!pool) {
       return NextResponse.json(
@@ -23,6 +70,7 @@ export async function POST(req) {
       );
     }
 
+    // 정상 로그인 처리 (TESTMODE가 비활성화되었거나 허용된 IP인 경우)
     // 1단계: 고객코드(ANCD)와 사용자ID(UID)로 사용자 존재 여부 확인
     const userCheckQuery = `
       SELECT ANCD, UID, UPW
@@ -69,11 +117,12 @@ export async function POST(req) {
       expiresAt: expiresAt.toISOString(),
     };
 
-    // 응답 생성
+    // 응답 생성 (정상 로그인)
     const response = NextResponse.json(
       {
         success: true,
         message: '로그인 성공했습니다',
+        ipRestricted: false,
         user: {
           ancd: userInfo.ancd,
           uid: userInfo.uid,
@@ -103,8 +152,17 @@ export async function POST(req) {
     return response;
   } catch (err) {
     console.error('로그인 오류:', err);
+    console.error('에러 상세:', {
+      message: err?.message,
+      stack: err?.stack,
+      name: err?.name
+    });
     return NextResponse.json(
-      { success: false, message: '로그인 처리 중 오류가 발생했습니다.' },
+      { 
+        success: false, 
+        message: '로그인 처리 중 오류가 발생했습니다.',
+        error: process.env.NODE_ENV === 'development' ? err?.message : undefined
+      },
       { status: 500 }
     );
   }
