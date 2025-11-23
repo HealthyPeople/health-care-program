@@ -8,6 +8,13 @@ import MemberContractInfo from '@/component/nursing-home/pages/member-contract-i
 import GuardianInfo from '@/component/nursing-home/pages/guardian-info/GuardianInfo';
 import DailyBeneficiaryPerformance from '@/component/nursing-home/pages/daily-beneficiary-performance/DailyBeneficiaryPerformance';
 import DailyLongtermCare from '@/component/nursing-home/pages/daily-longterm-care/DailyLongtermCare';
+import SnackBulkRegistration from '@/component/nursing-home/pages/snack-bulk-registration/SnackBulkRegistration';
+import MedicationTime from '@/component/nursing-home/pages/medication-time/MedicationTime';
+import LongtermPhysicalActivity from '@/component/nursing-home/pages/longterm-physical-activity/LongtermPhysicalActivity';
+import LongtermNursingInstruction from '@/component/nursing-home/pages/longterm-nursing-instruction/LongtermNursingInstruction';
+import LongtermFunctionalCognitive from '@/component/nursing-home/pages/longterm-functional-cognitive/LongtermFunctionalCognitive';
+import LongtermBeneficiaryStatus from '@/component/nursing-home/pages/longterm-beneficiary-status/LongtermBeneficiaryStatus';
+import LongtermRecordFormat from '@/component/nursing-home/pages/longterm-record-format/LongtermRecordFormat';
 import OutingProcessing from '@/component/nursing-home/pages/outing-processing/OutingProcessing';
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
@@ -44,22 +51,22 @@ function renderInternal(href: string) {
     case '/nursingHome/daily-longterm-care':
       return <DailyLongtermCare />;
     case '/nursingHome/snack-bulk-registration':
-      return <DailyBeneficiaryPerformance />;
+      return <SnackBulkRegistration />;
     case '/nursingHome/outing-processing':
       return <OutingProcessing />;
 
     case '/nursingHome/medication-time':
-      return <MemberInfoView />;
+      return <MedicationTime />;
     case '/nursingHome/longterm-physical-activity':
-      return <MemberInfoView />;
+      return <LongtermPhysicalActivity />;
     case '/nursingHome/longterm-nursing-instruction':
-      return <MemberInfoView />;
+      return <LongtermNursingInstruction />;
     case '/nursingHome/longterm-functional-cognitive':
-      return <MemberInfoView />;
+      return <LongtermFunctionalCognitive />;
     case '/nursingHome/longterm-beneficiary-status':
-      return <MemberInfoView />;
+      return <LongtermBeneficiaryStatus />;
     case '/nursingHome/longterm-record-format':
-      return <MemberInfoView />;
+      return <LongtermRecordFormat />;
 
     case '/nursingHome/counseling-record':
       return <CounselingRecord />;

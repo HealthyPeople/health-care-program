@@ -50,11 +50,19 @@ export async function logout(): Promise<void> {
     // 클라이언트에서도 쿠키 삭제
     deleteCookie('auth_token');
     deleteCookie('user_info');
+    // 탭 상태 초기화
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tabHost_state');
+    }
   } catch (error) {
     console.error('로그아웃 오류:', error);
     // 오류가 발생해도 클라이언트 쿠키는 삭제
     deleteCookie('auth_token');
     deleteCookie('user_info');
+    // 탭 상태 초기화
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tabHost_state');
+    }
   }
 }
 

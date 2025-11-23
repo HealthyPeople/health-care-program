@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import LongtermPhysicalActivity from '../../../component/nursing-home/pages/longterm-physical-activity/LongtermPhysicalActivity'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function LongtermPhysicalActivityPage() {
+  return <LongtermPhysicalActivity />
 }

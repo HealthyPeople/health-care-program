@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import LongtermBeneficiaryStatus from '../../../component/nursing-home/pages/longterm-beneficiary-status/LongtermBeneficiaryStatus'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function LongtermBeneficiaryStatusPage() {
+  return <LongtermBeneficiaryStatus />
 }

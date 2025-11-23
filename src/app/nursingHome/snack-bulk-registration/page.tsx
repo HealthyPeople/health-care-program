@@ -1,5 +1,5 @@
-import DailyBeneficiaryPerformanceView from '../../../component/nursing-home/pages/daily-beneficiary-performance/DailyBeneficiaryPerformance'
+import SnackBulkRegistration from '../../../component/nursing-home/pages/snack-bulk-registration/SnackBulkRegistration'
 
-export default function DailyBeneficiaryPerformancePage() {
-  return <DailyBeneficiaryPerformanceView />
+export default function SnackBulkRegistrationPage() {
+  return <SnackBulkRegistration />
 }

@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import LongtermRecordFormat from '../../../component/nursing-home/pages/longterm-record-format/LongtermRecordFormat'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function LongtermRecordFormatPage() {
+  return <LongtermRecordFormat />
 }

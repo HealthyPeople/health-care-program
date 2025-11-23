@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import MedicationTime from '../../../component/nursing-home/pages/medication-time/MedicationTime'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function MedicationTimePage() {
+  return <MedicationTime />
 }

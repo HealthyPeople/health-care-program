@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import LongtermFunctionalCognitive from '../../../component/nursing-home/pages/longterm-functional-cognitive/LongtermFunctionalCognitive'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function LongtermFunctionalCognitivePage() {
+  return <LongtermFunctionalCognitive />
 }
