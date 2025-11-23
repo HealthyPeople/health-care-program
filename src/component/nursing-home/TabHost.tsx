@@ -15,6 +15,13 @@ import LongtermNursingInstruction from '@/component/nursing-home/pages/longterm-
 import LongtermFunctionalCognitive from '@/component/nursing-home/pages/longterm-functional-cognitive/LongtermFunctionalCognitive';
 import LongtermBeneficiaryStatus from '@/component/nursing-home/pages/longterm-beneficiary-status/LongtermBeneficiaryStatus';
 import LongtermRecordFormat from '@/component/nursing-home/pages/longterm-record-format/LongtermRecordFormat';
+import FactVerification from '@/component/nursing-home/pages/fact-verification/FactVerification';
+import StatusChangeObservation from '@/component/nursing-home/pages/status-change-observation/StatusChangeObservation';
+import EmergencyRecord from '@/component/nursing-home/pages/emergency-record/EmergencyRecord';
+import CaseManagement from '@/component/nursing-home/pages/case-management/CaseManagement';
+import MonthlyLongtermSummary from '@/component/nursing-home/pages/monthly-longterm-summary/MonthlyLongtermSummary';
+import GuardianMeeting from '@/component/nursing-home/pages/guardian-meeting/GuardianMeeting';
+import BeneficiaryStatusInquiry from '@/component/nursing-home/pages/beneficiary-status-inquiry/BeneficiaryStatusInquiry';
 import OutingProcessing from '@/component/nursing-home/pages/outing-processing/OutingProcessing';
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
@@ -77,11 +84,13 @@ function renderInternal(href: string) {
     case '/nursingHome/outpatient-record':
       return <OutpatientRecord />;
     case '/nursingHome/fact-verification':
-      return <MemberInfoView />;
+      return <FactVerification />;
     case '/nursingHome/connection-record':
       return <ConnectionRecord />;
     case '/nursingHome/status-change-observation':
-      return <MemberInfoView />;
+      return <StatusChangeObservation />;
+    case '/nursingHome/emergency-record':
+      return <EmergencyRecord />;
     case '/nursingHome/fact-verification-record-detail-detail':
       return <MemberInfoView />;
 
@@ -92,6 +101,14 @@ function renderInternal(href: string) {
       return <EmployeeBasicInfo />;
     case '/nursingHome/program-plan-registration':
       return <ProgramPlanRegistration />;
+    case '/nursingHome/case-management':
+      return <CaseManagement />;
+    case '/nursingHome/monthly-longterm-summary':
+      return <MonthlyLongtermSummary />;
+    case '/nursingHome/guardian-meeting':
+      return <GuardianMeeting />;
+    case '/nursingHome/beneficiary-status-inquiry':
+      return <BeneficiaryStatusInquiry />;
     default:
       return null;
   }

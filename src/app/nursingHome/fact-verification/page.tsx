@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import FactVerification from '../../../component/nursing-home/pages/fact-verification/FactVerification'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function FactVerificationPage() {
+  return <FactVerification />
 }

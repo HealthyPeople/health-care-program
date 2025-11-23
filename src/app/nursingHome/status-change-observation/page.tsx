@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import StatusChangeObservation from '../../../component/nursing-home/pages/status-change-observation/StatusChangeObservation'
 
-export default function MemberInfoPage() {
-  return <MemberInfoView />
+export default function StatusChangeObservationPage() {
+  return <StatusChangeObservation />
 }
