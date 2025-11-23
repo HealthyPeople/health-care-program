@@ -90,7 +90,7 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50">
+    <div className="w-full min-h-screen bg-gray-50 h-fit">
       {/* 상단 헤더 고정 */}
       <header
         className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between bg-blue-600 h-14 px-6 text-white shadow w-full"

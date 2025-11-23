@@ -193,9 +193,6 @@ export default function DailyBeneficiaryPerformance() {
 								onChange={(e) => setSelectedDate(e.target.value)}
 								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white text-blue-900"
 							/>
-							<button className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-blue-100 hover:bg-blue-200 text-blue-900">
-								📅 달력선택
-							</button>
 						</div>
 						<button 
 							onClick={() => handleDateChange(1)}

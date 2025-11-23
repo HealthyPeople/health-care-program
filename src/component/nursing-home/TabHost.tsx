@@ -7,6 +7,7 @@ import DiseaseHistoryView from '@/component/nursing-home/pages/disease-history/D
 import MemberContractInfo from '@/component/nursing-home/pages/member-contract-info/MemberContractInfo';
 import GuardianInfo from '@/component/nursing-home/pages/guardian-info/GuardianInfo';
 import DailyBeneficiaryPerformance from '@/component/nursing-home/pages/daily-beneficiary-performance/DailyBeneficiaryPerformance';
+import DailyLongtermCare from '@/component/nursing-home/pages/daily-longterm-care/DailyLongtermCare';
 import OutingProcessing from '@/component/nursing-home/pages/outing-processing/OutingProcessing';
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
@@ -41,7 +42,7 @@ function renderInternal(href: string) {
     case '/nursingHome/daily-beneficiary-performance':
       return <DailyBeneficiaryPerformance />;
     case '/nursingHome/daily-longterm-care':
-      return <DailyBeneficiaryPerformance />;
+      return <DailyLongtermCare />;
     case '/nursingHome/snack-bulk-registration':
       return <DailyBeneficiaryPerformance />;
     case '/nursingHome/outing-processing':
@@ -243,7 +244,7 @@ export default function TabHost() {
           return (
             <div
               key={tab.id}
-              className={`h-full ${isActive ? 'block' : 'hidden'}`}
+              className={`h-full min-h-screen ${isActive ? 'block' : 'hidden'}`}
             >
               {content || (
                 <iframe src={tab.href} className="w-full h-[70vh]" />

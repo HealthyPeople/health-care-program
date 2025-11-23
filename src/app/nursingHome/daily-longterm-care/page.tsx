@@ -1,5 +1,5 @@
-import MemberInfoView from '../../../component/nursing-home/pages/member-info/MemberInfoView'
+import DailyLongtermCare from '../../../component/nursing-home/pages/daily-longterm-care/DailyLongtermCare'
 
 export default function DailyLongtermCarePage() {
-  return <MemberInfoView />
+  return <DailyLongtermCare />
 }

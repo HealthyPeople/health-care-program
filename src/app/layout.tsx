@@ -23,10 +23,10 @@ const metadata: Metadata = {
 export default function RootLayout({ children }: ReactNodeProps) {
   return (
     <RecoilRoot>
-      <html lang="kr">
-        <body className={inter.className}>
+      <html lang="kr" className="h-auto">
+        <body className={`${inter.className} h-auto`}>
           {/* <Header /> */}
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center w-full min-h-0">
             {/* <CallNav2 /> */}
             {children}
             <Footer />
