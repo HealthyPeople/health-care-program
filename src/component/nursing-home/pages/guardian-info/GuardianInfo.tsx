@@ -222,7 +222,7 @@ export default function GuardianInfo() {
 
 	return (
 		<div className="min-h-screen bg-white text-black">
-			<div className="flex h-[calc(100vh-56px)]">
+			<div className="flex h-[calc(80vh-56px)]">
 				{/* 좌측 패널: 수급자 목록 (CounselingRecord 스타일) */}
 				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
 					{/* 현황선택 헤더 */}
