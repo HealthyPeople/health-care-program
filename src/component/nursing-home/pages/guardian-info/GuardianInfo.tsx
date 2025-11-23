@@ -72,7 +72,7 @@ export default function GuardianInfo() {
 	};
 
 	// 보호자 목록 조회 (수급자 선택 시)
-	const fetchGuardians = async (ancd: string, pnum: string, autoSelectFirst: boolean = false) => {
+	const fetchGuardians = async (ancd: string, pnum: string, member: MemberData | null, autoSelectFirst: boolean = false) => {
 		if (!ancd || !pnum) {
 			setGuardianList([]);
 			return;
@@ -92,23 +92,23 @@ export default function GuardianInfo() {
 				
 				// 첫 번째 보호자 자동 선택
 				if (autoSelectFirst && guardianData.length > 0) {
-					handleSelectGuardian(guardianData[0]);
+					handleSelectGuardian(guardianData[0], member);
 				} else if (guardianData.length === 0) {
 					// 보호자가 없으면 선택 해제 및 폼 초기화
 					setSelectedGuardian(null);
-					resetForm();
+					resetForm(member);
 				}
 			} else {
 				console.error('보호자 목록 조회 실패:', result.error);
 				setGuardianList([]);
 				setSelectedGuardian(null);
-				resetForm();
+				resetForm(member);
 			}
 		} catch (err) {
 			console.error('보호자 목록 조회 오류:', err);
 			setGuardianList([]);
 			setSelectedGuardian(null);
-			resetForm();
+			resetForm(member);
 		} finally {
 			setLoadingGuardians(false);
 		}
@@ -121,12 +121,15 @@ export default function GuardianInfo() {
 		// 보호자 선택 초기화
 		setSelectedGuardian(null);
 		// 보호자 목록 조회 시 첫 번째 보호자 자동 선택
-		fetchGuardians(member.ANCD, member.PNUM, true);
+		fetchGuardians(member.ANCD, member.PNUM, member, true);
 	};
 
 	// 보호자 선택 시 폼에 데이터 로드
-	const handleSelectGuardian = (guardian: GuardianData) => {
+	const handleSelectGuardian = (guardian: GuardianData, member: MemberData | null = null) => {
 		setSelectedGuardian(guardian);
+		
+		// member 파라미터가 없으면 selectedMember 사용 (수동 선택 시)
+		const currentMember = member || selectedMember;
 		
 		// 관계 코드를 한글로 변환
 		const relationshipMap: { [key: string]: string } = {
@@ -144,31 +147,32 @@ export default function GuardianInfo() {
 			: (guardian.P_TEL || '');
 
 		setFormData({
-			recipientName: selectedMember?.P_NM || '',
+			recipientName: currentMember?.P_NM || '',
 			guardianName: guardian.BHNM || '',
 			relationship: relationshipText,
 			isMainGuardian: guardian.BHJB === '1',
 			relationshipDetails: guardian.P_EMAIL || '없음',
 			phoneNumber: guardian.P_HP || '',
 			address: guardian.P_ADDR || '',
-			hospitalUsed: selectedMember?.HSPT || '',
-			attendingPhysician: selectedMember?.DTNM || '',
+			hospitalUsed: currentMember?.HSPT || '',
+			attendingPhysician: currentMember?.DTNM || '',
 			hospitalAddress: ''
 		});
 	};
 
 	// 폼 초기화
-	const resetForm = () => {
+	const resetForm = (member: MemberData | null = null) => {
+		const currentMember = member || selectedMember;
 		setFormData({
-			recipientName: selectedMember?.P_NM || '',
+			recipientName: currentMember?.P_NM || '',
 			guardianName: '',
 			relationship: '',
 			isMainGuardian: false,
 			relationshipDetails: '',
 			phoneNumber: '',
 			address: '',
-			hospitalUsed: selectedMember?.HSPT || '',
-			attendingPhysician: selectedMember?.DTNM || '',
+			hospitalUsed: currentMember?.HSPT || '',
+			attendingPhysician: currentMember?.DTNM || '',
 			hospitalAddress: ''
 		});
 	};
