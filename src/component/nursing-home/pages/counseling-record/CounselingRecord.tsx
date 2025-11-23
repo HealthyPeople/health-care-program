@@ -1,8 +1,19 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+interface MemberData {
+	ANCD: string;
+	PNUM: string;
+	P_NM: string;
+	P_SEX: string;
+	P_GRD: string;
+	P_BRDT: string;
+	P_ST: string;
+	[key: string]: any;
+}
 
 export default function CounselingRecord() {
-	const [selectedMember, setSelectedMember] = useState<number | null>(null);
+	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [selectedStatus, setSelectedStatus] = useState<string>('');
 	const [consultationDates, setConsultationDates] = useState<string[]>([
@@ -20,11 +31,67 @@ export default function CounselingRecord() {
 		actionTaken: ''
 	});
 
-	// 좌측 수급자 목록 데이터
-	const [memberList, setMemberList] = useState([
-		{ id: 1, serialNo: 1, status: '입소', name: '박여울', gender: '여', grade: '1', age: '50' },
-		{ id: 2, serialNo: 2, status: '퇴소', name: '임동수', gender: '남', grade: '2', age: '70' },
-	]);
+	// 수급자 목록 데이터
+	const [memberList, setMemberList] = useState<MemberData[]>([]);
+	const [loading, setLoading] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
+	const itemsPerPage = 10;
+
+	// 수급자 목록 조회
+	const fetchMembers = async () => {
+		setLoading(true);
+		try {
+			const response = await fetch('/api/f10010');
+			const result = await response.json();
+			
+			if (result.success) {
+				setMemberList(result.data);
+			}
+		} catch (err) {
+			console.error('수급자 목록 조회 오류:', err);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	// 나이 계산 함수
+	const calculateAge = (birthDate: string) => {
+		if (!birthDate) return '-';
+		try {
+			const year = parseInt(birthDate.substring(0, 4));
+			const currentYear = new Date().getFullYear();
+			return (currentYear - year).toString();
+		} catch {
+			return '-';
+		}
+	};
+
+	// 필터링된 수급자 목록
+	const filteredMembers = memberList.filter((member) => {
+		if (!selectedStatus) return true;
+		if (selectedStatus === '입소') return member.P_ST === '1';
+		if (selectedStatus === '퇴소') return member.P_ST === '9';
+		return true;
+	});
+
+	// 페이지네이션 계산
+	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const currentMembers = filteredMembers.slice(startIndex, endIndex);
+
+	const handlePageChange = (page: number) => {
+		setCurrentPage(page);
+	};
+
+	useEffect(() => {
+		fetchMembers();
+	}, []);
+
+	// 상태 필터 변경 시 페이지 초기화
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [selectedStatus]);
 
 	// 날짜 생성 함수
 	const handleCreateDate = () => {
@@ -55,8 +122,9 @@ export default function CounselingRecord() {
 	};
 
 	// 수급자 선택 함수
-	const handleSelectMember = (id: number) => {
-		setSelectedMember(id);
+	const handleSelectMember = (member: MemberData) => {
+		setSelectedMember(member);
+		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
 		// 여기서 해당 수급자의 정보를 불러올 수 있습니다
 	};
 
@@ -89,9 +157,11 @@ export default function CounselingRecord() {
 				{/* 좌측 패널 (약 25%) */}
 				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
 					{/* 현황선택 헤더 */}
-					<div className="mb-3">
-						<div className="flex gap-2 mb-2">
-							<div className="h-6 flex-1 bg-white border border-blue-300 rounded"></div>
+					<div className="">
+						<div className="flex gap-2">
+							<div className="mb-3">
+								<h3 className="text-sm font-semibold text-blue-900">수급자 목록</h3>
+							</div>
 							<div className="h-6 flex-1 bg-white border border-blue-300 rounded flex items-center justify-center">
 								<select
 									value={selectedStatus}
@@ -107,8 +177,8 @@ export default function CounselingRecord() {
 					</div>
 
 					{/* 수급자 목록 테이블 - 라운드 박스 */}
-					<div className="flex-1 border border-blue-300 rounded-lg overflow-hidden bg-white">
-						<div className="overflow-y-auto h-full">
+					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white flex flex-col">
+						<div className="overflow-y-auto">
 							<table className="w-full text-xs">
 								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
 									<tr>
@@ -121,27 +191,94 @@ export default function CounselingRecord() {
 									</tr>
 								</thead>
 								<tbody>
-									{memberList
-										.filter((member) => !selectedStatus || member.status === selectedStatus)
-										.map((member) => (
-										<tr
-											key={member.id}
-											onClick={() => handleSelectMember(member.id)}
-											className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-												selectedMember === member.id ? 'bg-blue-100 border-2 border-blue-400' : ''
-											}`}
-										>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.serialNo}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.status}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.name}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.gender}</td>
-											<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.grade}</td>
-											<td className="text-center px-2 py-1.5">{member.age}</td>
+									{loading ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">로딩 중...</td>
 										</tr>
-									))}
+									) : filteredMembers.length === 0 ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">수급자 데이터가 없습니다</td>
+										</tr>
+									) : (
+										currentMembers.map((member, index) => (
+											<tr
+												key={`${member.ANCD}-${member.PNUM}-${index}`}
+												onClick={() => handleSelectMember(member)}
+												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
+												}`}
+											>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">{startIndex + index + 1}</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">
+													{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
+												</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.P_NM || '-'}</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">
+													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
+												</td>
+												<td className="text-center px-2 py-1.5 border-r border-blue-100">
+													{member.P_GRD === '0' ? '등급외' : member.P_GRD ? `${member.P_GRD}등급` : '-'}
+												</td>
+												<td className="text-center px-2 py-1.5">{calculateAge(member.P_BRDT)}</td>
+											</tr>
+										))
+									)}
 								</tbody>
 							</table>
 						</div>
+						{/* 페이지네이션 */}
+						{totalPages > 1 && (
+							<div className="p-2 border-t border-blue-200 bg-white">
+								<div className="flex items-center justify-center gap-1">
+									<button
+										onClick={() => handlePageChange(1)}
+										disabled={currentPage === 1}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&lt;&lt;
+									</button>
+									<button
+										onClick={() => handlePageChange(currentPage - 1)}
+										disabled={currentPage === 1}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&lt;
+									</button>
+									
+									{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+										const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+										return (
+											<button
+												key={pageNum}
+												onClick={() => handlePageChange(pageNum)}
+												className={`px-2 py-1 text-xs border rounded ${
+													currentPage === pageNum
+														? 'bg-blue-500 text-white border-blue-500'
+														: 'border-blue-300 hover:bg-blue-50'
+												}`}
+											>
+												{pageNum}
+											</button>
+										);
+									})}
+									
+									<button
+										onClick={() => handlePageChange(currentPage + 1)}
+										disabled={currentPage === totalPages}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&gt;
+									</button>
+									<button
+										onClick={() => handlePageChange(totalPages)}
+										disabled={currentPage === totalPages}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&gt;&gt;
+									</button>
+								</div>
+							</div>
+						)}
 					</div>
 				</div>
 
