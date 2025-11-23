@@ -46,13 +46,22 @@ export default function CounselingRecord() {
 	const [formData, setFormData] = useState({
 		beneficiary: '',
 		consultationSubstitute: '',
+		consultationSubstituteCode: '', // BHREL 코드 저장
 		consultationDate: '',
-		consultationTime: '',
+		startTime: '',
+		endTime: '',
 		consultant: '',
+		consultantCode: '', // EMPNO 저장
 		consultationMethod: '',
+		consultationMethodCode: '', // CSGU 코드 저장
 		consultationContent: '',
 		actionTaken: ''
 	});
+
+	// 상담사 자동완성 관련 상태
+	const [consultantSearchTerm, setConsultantSearchTerm] = useState('');
+	const [consultantSuggestions, setConsultantSuggestions] = useState<Array<{EMPNO: string; EMPNM: string}>>([]);
+	const [showConsultantDropdown, setShowConsultantDropdown] = useState(false);
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -111,6 +120,32 @@ export default function CounselingRecord() {
 		fetchMembers();
 	}, []);
 
+	// 상담사 검색어 변경 시 검색 (디바운싱)
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			if (consultantSearchTerm && consultantSearchTerm.trim() !== '') {
+				searchConsultants(consultantSearchTerm);
+			}
+		}, 300);
+
+		return () => clearTimeout(timer);
+	}, [consultantSearchTerm]);
+
+	// 외부 클릭 시 드롭다운 닫기
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			const target = event.target as HTMLElement;
+			if (!target.closest('.consultant-dropdown-container')) {
+				setShowConsultantDropdown(false);
+			}
+		};
+
+		if (showConsultantDropdown) {
+			document.addEventListener('mousedown', handleClickOutside);
+			return () => document.removeEventListener('mousedown', handleClickOutside);
+		}
+	}, [showConsultantDropdown]);
+
 	// 상태 필터 변경 시 페이지 초기화
 	useEffect(() => {
 		setCurrentPage(1);
@@ -143,10 +178,16 @@ export default function CounselingRecord() {
 					setSelectedDateIndex(0);
 					handleSelectDate(0, consultations[0], member);
 					setIsEditMode(false); // 상담 기록 로드 시 편집 모드 해제
+					setConsultantSearchTerm('');
+					setConsultantSuggestions([]);
+					setShowConsultantDropdown(false);
 				} else {
 					setSelectedDateIndex(null);
 					resetForm(member);
 					setIsEditMode(false); // 상담 기록 없을 때 편집 모드 해제
+					setConsultantSearchTerm('');
+					setConsultantSuggestions([]);
+					setShowConsultantDropdown(false);
 				}
 			} else {
 				console.error('상담 기록 조회 실패:', result.error);
@@ -186,10 +227,14 @@ export default function CounselingRecord() {
 		setFormData({
 			beneficiary: selectedMember?.P_NM || '',
 			consultationSubstitute: '',
+			consultationSubstituteCode: '',
 			consultationDate: formattedDate,
-			consultationTime: '',
+			startTime: '',
+			endTime: '',
 			consultant: '',
+			consultantCode: '',
 			consultationMethod: '',
+			consultationMethodCode: '',
 			consultationContent: '',
 			actionTaken: ''
 		});
@@ -281,17 +326,18 @@ export default function CounselingRecord() {
 			const consultationDate = formatDate(selectedConsultation.CSDT || '');
 			const startTime = formatTime(selectedConsultation.STM || '');
 			const endTime = formatTime(selectedConsultation.ETM || '');
-			const consultationTime = startTime && endTime
-				? `${startTime} ~ ${endTime}`
-				: startTime || endTime || '';
 
 			setFormData({
 				beneficiary: currentMember?.P_NM || '',
 				consultationSubstitute: selectedConsultation.BHRELNM || '',
+				consultationSubstituteCode: selectedConsultation.BHREL || '',
 				consultationDate: consultationDate,
-				consultationTime: consultationTime,
+				startTime: startTime,
+				endTime: endTime,
 				consultant: selectedConsultation.EMPNM || '',
+				consultantCode: selectedConsultation.EMPNO || '',
 				consultationMethod: methodMap[selectedConsultation.CSGU] || selectedConsultation.CSGU || '',
+				consultationMethodCode: selectedConsultation.CSGU || '',
 				consultationContent: selectedConsultation.CSINFO || '',
 				actionTaken: selectedConsultation.CSM || ''
 			});
@@ -312,13 +358,58 @@ export default function CounselingRecord() {
 		setFormData({
 			beneficiary: currentMember?.P_NM || '',
 			consultationSubstitute: '',
+			consultationSubstituteCode: '',
 			consultationDate: '',
-			consultationTime: '',
+			startTime: '',
+			endTime: '',
 			consultant: '',
+			consultantCode: '',
 			consultationMethod: '',
+			consultationMethodCode: '',
 			consultationContent: '',
 			actionTaken: ''
 		});
+		setConsultantSearchTerm('');
+		setConsultantSuggestions([]);
+		setShowConsultantDropdown(false);
+	};
+
+	// 상담사 검색 함수
+	const searchConsultants = async (searchTerm: string) => {
+		if (!searchTerm || searchTerm.trim() === '') {
+			setConsultantSuggestions([]);
+			setShowConsultantDropdown(false);
+			return;
+		}
+
+		try {
+			const url = `/api/f01010?name=${encodeURIComponent(searchTerm.trim())}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			
+			if (result.success && Array.isArray(result.data)) {
+				setConsultantSuggestions(result.data);
+				setShowConsultantDropdown(result.data.length > 0);
+			} else {
+				setConsultantSuggestions([]);
+				setShowConsultantDropdown(false);
+			}
+		} catch (err) {
+			console.error('상담사 검색 오류:', err);
+			setConsultantSuggestions([]);
+			setShowConsultantDropdown(false);
+		}
+	};
+
+	// 상담사 선택 함수
+	const handleSelectConsultant = (consultant: {EMPNO: string; EMPNM: string}) => {
+		setFormData(prev => ({
+			...prev,
+			consultant: consultant.EMPNM,
+			consultantCode: consultant.EMPNO
+		}));
+		setConsultantSearchTerm(consultant.EMPNM);
+		setShowConsultantDropdown(false);
 	};
 
 	// 폼 데이터 변경 함수
@@ -328,6 +419,15 @@ export default function CounselingRecord() {
 
 	// 수정 함수
 	const handleModify = () => {
+		// 수정 모드 진입 시 상담일자가 없으면 오늘 날짜로 설정
+		if (!formData.consultationDate) {
+			const today = new Date();
+			const year = today.getFullYear();
+			const month = String(today.getMonth() + 1).padStart(2, '0');
+			const day = String(today.getDate()).padStart(2, '0');
+			const formattedDate = `${year}-${month}-${day}`;
+			setFormData(prev => ({ ...prev, consultationDate: formattedDate }));
+		}
 		setIsEditMode(true);
 	};
 
@@ -643,28 +743,40 @@ export default function CounselingRecord() {
 						<div className="mb-4 flex items-center gap-4 flex-wrap">
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">수급자</label>
-								{isEditMode ? (
-									<input
-										type="text"
-										value={formData.beneficiary}
-										onChange={(e) => handleFormChange('beneficiary', e.target.value)}
-										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
-									/>
-								) : (
-									<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
-										{formData.beneficiary || '-'}
-									</span>
-								)}
+								<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
+									{formData.beneficiary || '-'}
+								</span>
 							</div>
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담대상자</label>
 								{isEditMode ? (
-									<input
-										type="text"
-										value={formData.consultationSubstitute}
-										onChange={(e) => handleFormChange('consultationSubstitute', e.target.value)}
+									<select
+										value={formData.consultationSubstituteCode}
+										onChange={(e) => {
+											const code = e.target.value;
+											const relationshipMap: { [key: string]: string } = {
+												'10': '남편',
+												'11': '부인',
+												'20': '아들',
+												'21': '딸',
+												'22': '며느리',
+												'23': '사위',
+												'31': '손주'
+											};
+											handleFormChange('consultationSubstituteCode', code);
+											handleFormChange('consultationSubstitute', relationshipMap[code] || '');
+										}}
 										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
-									/>
+									>
+										<option value="">선택하세요</option>
+										<option value="10">10.남편</option>
+										<option value="11">11.부인</option>
+										<option value="20">20.아들</option>
+										<option value="21">21.딸</option>
+										<option value="22">22.며느리</option>
+										<option value="23">23.사위</option>
+										<option value="31">31.손주</option>
+									</select>
 								) : (
 									<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
 										{formData.consultationSubstitute || '-'}
@@ -687,7 +799,7 @@ export default function CounselingRecord() {
 								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담일자</label>
 								{isEditMode ? (
 									<input
-										type="text"
+										type="date"
 										value={formData.consultationDate}
 										onChange={(e) => handleFormChange('consultationDate', e.target.value)}
 										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
@@ -701,27 +813,68 @@ export default function CounselingRecord() {
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담시간</label>
 								{isEditMode ? (
-									<input
-										type="text"
-										value={formData.consultationTime}
-										onChange={(e) => handleFormChange('consultationTime', e.target.value)}
-										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
-									/>
+									<div className="flex items-center gap-2">
+										<input
+											type="time"
+											value={formData.startTime}
+											onChange={(e) => handleFormChange('startTime', e.target.value)}
+											className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[100px]"
+										/>
+										<span className="text-sm text-blue-900">~</span>
+										<input
+											type="time"
+											value={formData.endTime}
+											onChange={(e) => handleFormChange('endTime', e.target.value)}
+											className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[100px]"
+										/>
+									</div>
 								) : (
 									<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
-										{formData.consultationTime || '-'}
+										{formData.startTime && formData.endTime 
+											? `${formData.startTime} ~ ${formData.endTime}`
+											: formData.startTime || formData.endTime || '-'}
 									</span>
 								)}
 							</div>
-							<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2 relative">
 								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담사</label>
 								{isEditMode ? (
-									<input
-										type="text"
-										value={formData.consultant}
-										onChange={(e) => handleFormChange('consultant', e.target.value)}
-										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
-									/>
+									<div className="relative consultant-dropdown-container">
+										<input
+											type="text"
+											value={consultantSearchTerm || formData.consultant}
+											onChange={(e) => {
+												const value = e.target.value;
+												setConsultantSearchTerm(value);
+												if (value) {
+													searchConsultants(value);
+												} else {
+													setConsultantSuggestions([]);
+													setShowConsultantDropdown(false);
+												}
+											}}
+											onFocus={() => {
+												if (consultantSuggestions.length > 0) {
+													setShowConsultantDropdown(true);
+												}
+											}}
+											className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
+											placeholder="상담사 검색"
+										/>
+										{showConsultantDropdown && consultantSuggestions.length > 0 && (
+											<div className="absolute z-10 w-full mt-1 bg-white border border-blue-300 rounded shadow-lg max-h-40 overflow-y-auto">
+												{consultantSuggestions.map((consultant, index) => (
+													<div
+														key={`${consultant.EMPNO}-${index}`}
+														onClick={() => handleSelectConsultant(consultant)}
+														className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 border-b border-blue-100 last:border-b-0"
+													>
+														{consultant.EMPNM}
+													</div>
+												))}
+											</div>
+										)}
+									</div>
 								) : (
 									<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
 										{formData.consultant || '-'}
@@ -731,12 +884,25 @@ export default function CounselingRecord() {
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">상담방법</label>
 								{isEditMode ? (
-									<input
-										type="text"
-										value={formData.consultationMethod}
-										onChange={(e) => handleFormChange('consultationMethod', e.target.value)}
+									<select
+										value={formData.consultationMethodCode}
+										onChange={(e) => {
+											const code = e.target.value;
+											const methodMap: { [key: string]: string } = {
+												'1': '센타방문',
+												'2': '전화',
+												'9': '기타'
+											};
+											handleFormChange('consultationMethodCode', code);
+											handleFormChange('consultationMethod', methodMap[code] || '');
+										}}
 										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
-									/>
+									>
+										<option value="">선택하세요</option>
+										<option value="1">1.센타방문</option>
+										<option value="2">2.전화</option>
+										<option value="9">9.기타</option>
+									</select>
 								) : (
 									<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
 										{formData.consultationMethod || '-'}
