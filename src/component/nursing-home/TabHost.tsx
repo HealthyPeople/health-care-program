@@ -27,6 +27,13 @@ import IntensiveExcretionObservation from '@/component/nursing-home/pages/intens
 import ExcretionObservation from '@/component/nursing-home/pages/excretion-observation/ExcretionObservation';
 import BathService from '@/component/nursing-home/pages/bath-service/BathService';
 import PositionChangeRecord from '@/component/nursing-home/pages/position-change-record/PositionChangeRecord';
+import HealthExamination from '@/component/nursing-home/pages/health-examination/HealthExamination';
+import MedicationRegistration from '@/component/nursing-home/pages/medication-registration/MedicationRegistration';
+import MedicationPerformance from '@/component/nursing-home/pages/medication-performance/MedicationPerformance';
+import EntrustedMedical from '@/component/nursing-home/pages/entrusted-medical/EntrustedMedical';
+import NursingService from '@/component/nursing-home/pages/nursing-service/NursingService';
+import BedsoreManagement from '@/component/nursing-home/pages/bedsore-management/BedsoreManagement';
+import IndwellingCatheter from '@/component/nursing-home/pages/indwelling-catheter/IndwellingCatheter';
 import OutingProcessing from '@/component/nursing-home/pages/outing-processing/OutingProcessing';
 import EmployeeBasicInfo from '@/component/nursing-home/pages/employee-basic-info/EmployeeBasicInfo';
 import ProgramPlanRegistration from '@/component/nursing-home/pages/program-plan-registration/ProgramPlanRegistration';
@@ -124,6 +131,20 @@ function renderInternal(href: string) {
       return <BathService />;
     case '/nursingHome/position-change-record':
       return <PositionChangeRecord />;
+    case '/nursingHome/health-examination':
+      return <HealthExamination />;
+    case '/nursingHome/medication-registration':
+      return <MedicationRegistration />;
+    case '/nursingHome/medication-performance':
+      return <MedicationPerformance />;
+    case '/nursingHome/entrusted-medical':
+      return <EntrustedMedical />;
+    case '/nursingHome/nursing-service':
+      return <NursingService />;
+    case '/nursingHome/bedsore-management':
+      return <BedsoreManagement />;
+    case '/nursingHome/indwelling-catheter':
+      return <IndwellingCatheter />;
     default:
       return null;
   }
