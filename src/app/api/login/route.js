@@ -4,6 +4,75 @@ import crypto from 'crypto';
 
 export async function POST(req) {
   try {
+    // 도메인 확인 (vercel 포함 여부 체크)
+    const host = req.headers.get('host') || '';
+    const url = req.url || '';
+    const isVercelDomain = host.toLowerCase().includes('vercel') || url.toLowerCase().includes('vercel');
+    
+    console.log(`[LOGIN API] Host: ${host}, URL: ${url}, Is Vercel: ${isVercelDomain}`);
+    
+    // vercel 도메인인 경우 IP 접근 제한 처리
+    if (isVercelDomain) {
+      const body = await req.json();
+      const { ancd, uid } = body;
+      
+      // 입력값 검증
+      if (!ancd || !uid) {
+        return NextResponse.json(
+          { success: false, message: 'ANCD, 아이디를 모두 입력해주세요.' },
+          { status: 400 }
+        );
+      }
+      
+      // 임의의 토큰 생성
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresIn = 24 * 60 * 60 * 1000; // 24시간
+      const expiresAt = new Date(Date.now() + expiresIn);
+      
+      // 사용자 정보 객체 생성
+      const userInfo = {
+        ancd: ancd,
+        uid: uid,
+        token: token,
+        expiresAt: expiresAt.toISOString(),
+      };
+      
+      // 응답 생성 (IP 제한 알림과 함께)
+      const response = NextResponse.json(
+        {
+          success: true,
+          message: 'IP접근제한으로 데이터 확인불가',
+          ipRestricted: true,
+          allowMockLogin: true,
+          user: {
+            ancd: userInfo.ancd,
+            uid: userInfo.uid,
+          },
+        },
+        { status: 200 }
+      );
+      
+      // 쿠키에 토큰 저장
+      response.cookies.set('auth_token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: expiresIn / 1000, // 초 단위
+        path: '/',
+      });
+      
+      // 사용자 정보도 쿠키에 저장
+      response.cookies.set('user_info', JSON.stringify(userInfo), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: expiresIn / 1000,
+        path: '/',
+      });
+      
+      return response;
+    }
+    
     // TESTMODE 환경변수 확인 (대소문자 무시, 공백 및 따옴표 제거)
     const testModeEnv = process.env.TESTMODE 
       ? String(process.env.TESTMODE).toLowerCase().trim().replace(/['"]/g, '')
