@@ -28,6 +28,17 @@ export default function DailyBeneficiaryPerformance() {
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
 	const printWindowRef = useRef<Window | null>(null);
+	
+	// 수급자별 출력 모달 상태
+	const [showMemberPrintModal, setShowMemberPrintModal] = useState(false);
+	const [selectedMemberForPrint, setSelectedMemberForPrint] = useState<any>(null);
+	const [memberSearchTerm, setMemberSearchTerm] = useState('');
+	const [memberSearchResults, setMemberSearchResults] = useState<any[]>([]);
+	const [showMemberSearchResults, setShowMemberSearchResults] = useState(false);
+	const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+	const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+	const [memberPrintData, setMemberPrintData] = useState<PerformanceData[]>([]);
+	const [loadingMemberData, setLoadingMemberData] = useState(false);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -246,6 +257,12 @@ export default function DailyBeneficiaryPerformance() {
 
 	// 일자별 출력 함수
 	const handlePrintDaily = () => {
+		// 데이터가 없는 경우 알림 표시
+		if (!combinedData || combinedData.length === 0) {
+			alert('출력할 데이터가 없습니다.');
+			return;
+		}
+
 		// 날짜 포맷팅 (요일 포함)
 		const date = new Date(selectedDate);
 		const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
@@ -411,6 +428,295 @@ export default function DailyBeneficiaryPerformance() {
 		}
 	};
 
+	// 수급자별 출력 모달 열기
+	const handleOpenMemberPrintModal = () => {
+		setShowMemberPrintModal(true);
+		setSelectedMemberForPrint(null);
+		setMemberSearchTerm('');
+		setMemberSearchResults([]);
+		setStartDate(new Date().toISOString().split('T')[0]);
+		setEndDate(new Date().toISOString().split('T')[0]);
+	};
+
+	// 수급자별 출력 모달 닫기
+	const handleCloseMemberPrintModal = () => {
+		setShowMemberPrintModal(false);
+		setSelectedMemberForPrint(null);
+		setMemberSearchTerm('');
+		setMemberSearchResults([]);
+		setMemberPrintData([]);
+	};
+
+	// 수급자 검색 (모달용)
+	const handleSearchMemberForPrint = async (searchValue: string) => {
+		if (!searchValue || searchValue.trim().length < 1) {
+			setMemberSearchResults([]);
+			setShowMemberSearchResults(false);
+			return;
+		}
+
+		try {
+			const response = await fetch(`/api/f10010/search?q=${encodeURIComponent(searchValue.trim())}`);
+			if (!response.ok) {
+				throw new Error('검색 요청 실패');
+			}
+			const data = await response.json();
+			
+			if (data.success && data.data) {
+				setMemberSearchResults(data.data);
+				setShowMemberSearchResults(data.data.length > 0);
+			} else {
+				setMemberSearchResults([]);
+				setShowMemberSearchResults(false);
+			}
+		} catch (error) {
+			console.error('수급자 검색 오류:', error);
+			setMemberSearchResults([]);
+			setShowMemberSearchResults(false);
+		}
+	};
+
+	// 수급자 선택 (모달용)
+	const handleSelectMemberForPrint = (member: any) => {
+		setSelectedMemberForPrint(member);
+		setMemberSearchTerm(member.P_NM || '');
+		setShowMemberSearchResults(false);
+		setMemberSearchResults([]);
+	};
+
+	// 수급자별 데이터 조회
+	const handleLoadMemberData = async () => {
+		if (!selectedMemberForPrint || !startDate || !endDate) {
+			alert('수급자와 기간을 선택해주세요.');
+			return;
+		}
+
+		if (startDate > endDate) {
+			alert('시작일이 종료일보다 늦을 수 없습니다.');
+			return;
+		}
+
+		setLoadingMemberData(true);
+		try {
+			// 한 번의 API 호출로 기간 내 모든 데이터 조회 (ANCD와 PNUM 모두 전달)
+			const url = `/api/f14020?pnum=${encodeURIComponent(selectedMemberForPrint.PNUM)}&ancd=${encodeURIComponent(selectedMemberForPrint.ANCD || '')}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			
+			if (result.success && Array.isArray(result.data)) {
+				// 데이터 변환
+				const transformedData: PerformanceData[] = result.data.map((item: any, index: number) => ({
+					id: index + 1,
+					serialNo: index + 1,
+					name: item.P_NM || '',
+					birthDate: formatDate(item.P_BRDT),
+					ancd: item.ANCD || '',
+					pnum: item.PNUM || '',
+					mealLocation: item.ST_PLAC || '',
+					mealType: item.ST_KIND || '1',
+					gyn: item.GYN || '0',
+					mealStatus: {
+						breakfast: item.MOST || '1',
+						lunch: item.LCST || '1',
+						dinner: item.DNST || '1'
+					},
+					specialNotes: item.ST_ETC || '',
+					snackStatus: {
+						morning: item.MGST || '1',
+						afternoon: item.AGST || '1'
+					}
+				}));
+				
+				setMemberPrintData(transformedData);
+			} else {
+				setMemberPrintData([]);
+				alert('데이터를 조회할 수 없습니다.');
+			}
+		} catch (err) {
+			console.error('수급자별 데이터 조회 오류:', err);
+			alert('데이터 조회 중 오류가 발생했습니다.');
+			setMemberPrintData([]);
+		} finally {
+			setLoadingMemberData(false);
+		}
+	};
+
+	// 수급자별 출력
+	const handlePrintMember = () => {
+		if (memberPrintData.length === 0) {
+			alert('출력할 데이터가 없습니다. 먼저 데이터를 조회해주세요.');
+			return;
+		}
+
+		// 기간 정보
+		const start = new Date(startDate);
+		const end = new Date(endDate);
+		const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+		const startDayName = days[start.getDay()];
+		const endDayName = days[end.getDay()];
+		const periodText = startDate === endDate 
+			? `${startDate} ${startDayName}`
+			: `${startDate} ${startDayName} ~ ${endDate} ${endDayName}`;
+
+		// 출력용 HTML 생성
+		const printContent = `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>서비스 실적표</title>
+				<style>
+					@page {
+						size: A4;
+						margin: 10mm;
+					}
+					body {
+						font-family: 'Malgun Gothic', sans-serif;
+						font-size: 11pt;
+						margin: 0;
+						padding: 0;
+					}
+					.header {
+						display: flex;
+						justify-content: space-between;
+						align-items: flex-start;
+						margin-bottom: 15px;
+					}
+					.title {
+						font-size: 18pt;
+						font-weight: bold;
+						text-align: center;
+						flex: 1;
+					}
+					.date-info {
+						font-size: 11pt;
+					}
+					.signature-table {
+						border: 1px solid #000;
+						border-collapse: collapse;
+						width: 150px;
+						font-size: 10pt;
+					}
+					.signature-table th,
+					.signature-table td {
+						border: 1px solid #000;
+						padding: 5px;
+						text-align: center;
+						height: 30px;
+					}
+					.main-table {
+						width: 100%;
+						border-collapse: collapse;
+						border: 1px solid #000;
+						font-size: 10pt;
+						margin-top: 10px;
+					}
+					.main-table th,
+					.main-table td {
+						border: 1px solid #000;
+						padding: 4px;
+						text-align: center;
+					}
+					.main-table th {
+						background-color: #f0f0f0;
+						font-weight: bold;
+					}
+					.check-mark {
+						text-align: center;
+						font-size: 14pt;
+					}
+					.footer {
+						display: flex;
+						justify-content: space-between;
+						margin-top: 20px;
+						font-size: 10pt;
+					}
+					@media print {
+						body {
+							margin: 0;
+							padding: 0;
+						}
+					}
+				</style>
+			</head>
+			<body>
+				<div class="header">
+					<div class="date-info">일자: ${periodText}</div>
+					<div class="title">서비스 실적표</div>
+					<table class="signature-table">
+						<tr>
+							<th>담당</th>
+							<th>검토</th>
+							<th>결재</th>
+						</tr>
+						<tr>
+							<td></td>
+							<td></td>
+							<td></td>
+						</tr>
+					</table>
+				</div>
+				<table class="main-table">
+					<thead>
+						<tr>
+							<th>수급자명</th>
+							<th>생일</th>
+							<th>외박여</th>
+							<th>아</th>
+							<th>정</th>
+							<th>저</th>
+							<th>오전간</th>
+							<th>오후간</th>
+							<th>식이</th>
+						</tr>
+					</thead>
+					<tbody>
+						${memberPrintData.map(row => {
+							const gynText = row.gyn === '1' ? '입원' : row.gyn === '0' ? '외출' : '';
+							const breakfast = row.mealStatus.breakfast === '1' ? '○' : '';
+							const lunch = row.mealStatus.lunch === '1' ? '○' : '';
+							const dinner = row.mealStatus.dinner === '1' ? '○' : '';
+							const morningSnack = row.snackStatus.morning === '1' ? '○' : '';
+							const afternoonSnack = row.snackStatus.afternoon === '1' ? '○' : '';
+							const mealTypeText = row.mealType === '1' ? '일반식' : row.mealType === '2' ? '죽' : row.mealType === '3' ? '유동식(미음)' : '';
+							
+							return `
+								<tr>
+									<td>${row.name || ''}</td>
+									<td>${row.birthDate || ''}</td>
+									<td>${gynText}</td>
+									<td class="check-mark">${breakfast}</td>
+									<td class="check-mark">${lunch}</td>
+									<td class="check-mark">${dinner}</td>
+									<td class="check-mark">${morningSnack}</td>
+									<td class="check-mark">${afternoonSnack}</td>
+									<td>${mealTypeText}</td>
+								</tr>
+							`;
+						}).join('')}
+					</tbody>
+				</table>
+				<div class="footer">
+					<div>R14020</div>
+					<div>페이지: 1</div>
+				</div>
+			</body>
+			</html>
+		`;
+
+		// 새 창 열기
+		const printWindow = window.open('', '_blank');
+		if (printWindow) {
+			printWindow.document.write(printContent);
+			printWindow.document.close();
+			
+			// 출력 대화상자 열기
+			setTimeout(() => {
+				printWindow.print();
+			}, 250);
+		}
+	};
+
 	// 수급자 선택 함수
 	const handleSelectMember = (rowId: number, member: any) => {
 		setCombinedData(prev => prev.map(row => {
@@ -465,13 +771,16 @@ export default function DailyBeneficiaryPerformance() {
 							onClick={handlePrintDaily}
 							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 						>
-							일자별
+							일자별 출력
+						</button>
+						<button 
+							onClick={handleOpenMemberPrintModal}
+							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+						>
+							수급자별 출력
 						</button>
 						<button className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium">
-							수급자별
-						</button>
-						<button className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium">
-							월식사상태
+							월식사상태 출력
 						</button>
 					</div>
 				</div>
@@ -874,6 +1183,133 @@ export default function DailyBeneficiaryPerformance() {
 					</button>
 				</div>
 			</div>
+
+			{/* 수급자별 출력 모달 */}
+			{showMemberPrintModal && (
+				<div 
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+					onClick={handleCloseMemberPrintModal}
+				>
+					<div 
+						className="bg-white rounded-lg border border-blue-400 w-[600px] max-w-[90vw] max-h-[90vh] overflow-y-auto shadow-xl"
+						onClick={(e) => e.stopPropagation()}
+					>
+						{/* 모달 헤더 */}
+						<div className="bg-blue-200 border-b border-blue-400 px-4 py-3 flex items-center justify-between">
+							<h3 className="text-lg font-semibold text-blue-900">수급자별 출력</h3>
+							<button
+								onClick={handleCloseMemberPrintModal}
+								className="text-blue-900 hover:text-blue-700 text-xl font-bold"
+							>
+								×
+							</button>
+						</div>
+
+						{/* 모달 내용 */}
+						<div className="p-4 space-y-4">
+							{/* 수급자 검색 */}
+							<div className="space-y-2">
+								<label className="block text-sm font-medium text-blue-900">수급자 검색</label>
+								<div className="relative">
+									<input
+										type="text"
+										value={memberSearchTerm}
+										onChange={(e) => {
+											setMemberSearchTerm(e.target.value);
+											handleSearchMemberForPrint(e.target.value);
+										}}
+										onFocus={() => {
+											if (memberSearchTerm && memberSearchTerm.trim().length > 0) {
+												handleSearchMemberForPrint(memberSearchTerm);
+											}
+										}}
+										onBlur={() => {
+											setTimeout(() => {
+												setShowMemberSearchResults(false);
+											}, 200);
+										}}
+										placeholder="수급자명 검색"
+										className="w-full px-3 py-2 border border-blue-300 rounded text-blue-900"
+									/>
+									{/* 검색 결과 드롭다운 */}
+									{showMemberSearchResults && memberSearchResults.length > 0 && (
+										<div className="absolute z-10 w-full mt-1 bg-white border border-blue-300 rounded shadow-lg max-h-60 overflow-y-auto">
+											{memberSearchResults.map((member: any, idx: number) => (
+												<div
+													key={idx}
+													onMouseDown={(e) => {
+														e.preventDefault();
+														handleSelectMemberForPrint(member);
+													}}
+													className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-blue-100 last:border-b-0"
+												>
+													<div className="font-medium">{member.P_NM}</div>
+													<div className="text-xs text-gray-500">
+														{member.P_BRDT && `(${formatDate(member.P_BRDT)})`}
+													</div>
+												</div>
+											))}
+										</div>
+									)}
+								</div>
+								{selectedMemberForPrint && (
+									<div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
+										<span className="font-medium">선택된 수급자: </span>
+										{selectedMemberForPrint.P_NM} ({formatDate(selectedMemberForPrint.P_BRDT)})
+									</div>
+								)}
+							</div>
+
+							{/* 기간 설정 */}
+							<div className="grid grid-cols-2 gap-4">
+								<div className="space-y-2">
+									<label className="block text-sm font-medium text-blue-900">시작일</label>
+									<input
+										type="date"
+										value={startDate}
+										onChange={(e) => setStartDate(e.target.value)}
+										className="w-full px-3 py-2 border border-blue-300 rounded text-blue-900"
+									/>
+								</div>
+								<div className="space-y-2">
+									<label className="block text-sm font-medium text-blue-900">종료일</label>
+									<input
+										type="date"
+										value={endDate}
+										onChange={(e) => setEndDate(e.target.value)}
+										className="w-full px-3 py-2 border border-blue-300 rounded text-blue-900"
+									/>
+								</div>
+							</div>
+
+							{/* 데이터 조회 및 출력 버튼 */}
+							<div className="flex gap-2 pt-2">
+								<button
+									onClick={handleLoadMemberData}
+									disabled={!selectedMemberForPrint || loadingMemberData}
+									className="flex-1 px-4 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{loadingMemberData ? '조회 중...' : '데이터 조회'}
+								</button>
+								<button
+									onClick={handlePrintMember}
+									disabled={memberPrintData.length === 0}
+									className="flex-1 px-4 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									출력
+								</button>
+							</div>
+
+							{/* 조회된 데이터 개수 표시 */}
+							{memberPrintData.length > 0 && (
+								<div className="px-3 py-2 bg-green-50 border border-green-200 rounded text-sm text-green-900">
+									조회된 데이터: {memberPrintData.length}건
+								</div>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

@@ -16,43 +16,30 @@ export async function GET(req) {
 
     const searchParams = req.nextUrl.searchParams;
     const svdt = searchParams.get('svdt'); // 서비스 날짜 (yyyy-mm-dd 형식)
+    const pnum = searchParams.get('pnum'); // 수급자번호 (선택)
+    const ancd = searchParams.get('ancd'); // 시설코드 (선택, PNUM과 함께 사용)
+    const startDate = searchParams.get('startDate'); // 시작일 (yyyy-mm-dd 형식, 선택)
+    const endDate = searchParams.get('endDate'); // 종료일 (yyyy-mm-dd 형식, 선택)
 
-    if (!svdt) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'SVDT 파라미터가 필요합니다' 
-      }), { 
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    // 날짜 형식 변환 함수
+    const formatDateForDB = (dateStr) => {
+      if (!dateStr) return null;
+      if (dateStr.includes('-')) {
+        return dateStr.replace(/-/g, '');
+      }
+      return dateStr;
+    };
 
-    // 날짜 형식 변환 (yyyy-mm-dd -> YYYYMMDD)
-    // 입력 형식: 2025-11-23
-    // DB 저장 형식: 20251123
-    let svdtFormatted = svdt;
-    if (svdt.includes('-')) {
-      // yyyy-mm-dd 형식인 경우 하이픈 제거
-      svdtFormatted = svdt.replace(/-/g, '');
-    } else if (svdt.length === 8 && !svdt.includes('-')) {
-      // 이미 YYYYMMDD 형식인 경우 그대로 사용
-      svdtFormatted = svdt;
-    } else {
-      // 다른 형식인 경우 오류 반환
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: '날짜 형식이 올바르지 않습니다. yyyy-mm-dd 형식으로 입력해주세요.' 
-      }), { 
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    // 날짜 형식 검증 함수
+    const validateDate = (dateStr) => {
+      if (!dateStr) return false;
+      if (dateStr.includes('-')) {
+        return /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+      }
+      return dateStr.length === 8 && !isNaN(dateStr);
+    };
 
-    console.log('[F14020 API] 날짜 조회 요청:', {
-      원본: svdt,
-      변환: svdtFormatted
-    });
-
+    // 기본 쿼리 구조
     let query = `
       SELECT 
         f14020.[ANCD],
@@ -73,17 +60,78 @@ export async function GET(req) {
         f14020.[INEMPNM],
         f10010.[P_NM],
         f10010.[P_BRDT],
-        ROW_NUMBER() OVER (ORDER BY f14020.[INDT] DESC) as MENUM
+        ROW_NUMBER() OVER (ORDER BY f14020.[SVDT] ASC, f14020.[INDT] DESC) as MENUM
       FROM [돌봄시설DB].[dbo].[F14020] f14020
       LEFT JOIN [돌봄시설DB].[dbo].[F10010] f10010 
         ON f14020.[ANCD] = f10010.[ANCD] 
         AND f14020.[PNUM] = f10010.[PNUM]
-      WHERE f14020.[SVDT] = @svdt
-      ORDER BY f14020.[INDT] DESC
+      WHERE 1=1
     `;
 
     const request = pool.request();
-    request.input('svdt', svdtFormatted);
+
+    // 날짜 범위 조회 (startDate, endDate가 있는 경우)
+    if (startDate && endDate) {
+      if (!validateDate(startDate) || !validateDate(endDate)) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: '날짜 형식이 올바르지 않습니다. yyyy-mm-dd 형식으로 입력해주세요.' 
+        }), { 
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      const startFormatted = formatDateForDB(startDate);
+      const endFormatted = formatDateForDB(endDate);
+      query += ` AND f14020.[SVDT] >= @startDate AND f14020.[SVDT] <= @endDate`;
+      request.input('startDate', startFormatted);
+      request.input('endDate', endFormatted);
+    }
+    // 단일 날짜 조회 (svdt만 있는 경우)
+    else if (svdt) {
+      if (!validateDate(svdt)) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: '날짜 형식이 올바르지 않습니다. yyyy-mm-dd 형식으로 입력해주세요.' 
+        }), { 
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      const svdtFormatted = formatDateForDB(svdt);
+      query += ` AND f14020.[SVDT] = @svdt`;
+      request.input('svdt', svdtFormatted);
+    } else {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'SVDT 또는 startDate/endDate 파라미터가 필요합니다' 
+      }), { 
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // PNUM 필터 (수급자별 조회)
+    if (pnum) {
+      query += ` AND CAST(f14020.[PNUM] AS VARCHAR) = CAST(@pnum AS VARCHAR)`;
+      request.input('pnum', String(pnum));
+      
+      // ANCD도 함께 필터링 (정확한 수급자 식별)
+      if (ancd) {
+        query += ` AND f14020.[ANCD] = @ancd`;
+        request.input('ancd', ancd);
+      }
+    }
+
+    query += ` ORDER BY f14020.[SVDT] ASC, f14020.[INDT] DESC`;
+
+    console.log('[F14020 API] 조회 요청:', {
+      svdt,
+      pnum,
+      ancd,
+      startDate,
+      endDate
+    });
 
     const result = await request.query(query);
     
