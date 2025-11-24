@@ -66,14 +66,20 @@ export default function CounselingRecord() {
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
 	const [loading, setLoading] = useState(false);
+	const [searchTerm, setSearchTerm] = useState('');
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
 
 	// 수급자 목록 조회
-	const fetchMembers = async () => {
+	const fetchMembers = async (nameSearch?: string) => {
 		setLoading(true);
 		try {
-			const response = await fetch('/api/f10010');
+			// 이름 검색 파라미터 추가
+			const url = nameSearch && nameSearch.trim() !== '' 
+				? `/api/f10010?name=${encodeURIComponent(nameSearch.trim())}`
+				: '/api/f10010';
+			
+			const response = await fetch(url);
 			const result = await response.json();
 			
 			if (result.success) {
@@ -119,6 +125,16 @@ export default function CounselingRecord() {
 	useEffect(() => {
 		fetchMembers();
 	}, []);
+
+	// 검색어 변경 시 실시간 검색 (디바운싱)
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setCurrentPage(1);
+			fetchMembers(searchTerm);
+		}, 300); // 300ms 후 검색 실행
+
+		return () => clearTimeout(timer);
+	}, [searchTerm]);
 
 	// 상담사 검색어 변경 시 검색 (디바운싱)
 	useEffect(() => {
@@ -497,8 +513,8 @@ export default function CounselingRecord() {
 				{/* 좌측 패널 (약 25%) */}
 				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
 					{/* 현황선택 헤더 */}
-					<div className="">
-						<div className="flex gap-2">
+					<div className="mb-3">
+						<div className="flex gap-2 mb-2">
 							<div className="mb-3">
 								<h3 className="text-sm font-semibold text-blue-900">수급자 목록</h3>
 							</div>
@@ -513,6 +529,16 @@ export default function CounselingRecord() {
 									<option value="퇴소">퇴소</option>
 								</select>
 							</div>
+						</div>
+						{/* 검색 영역 */}
+						<div className="space-y-2">
+							<div className="text-xs text-blue-900/80">이름 검색</div>
+							<input 
+								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded" 
+								placeholder="예) 홍길동"
+								value={searchTerm}
+								onChange={(e) => setSearchTerm(e.target.value)}
+							/>
 						</div>
 					</div>
 
