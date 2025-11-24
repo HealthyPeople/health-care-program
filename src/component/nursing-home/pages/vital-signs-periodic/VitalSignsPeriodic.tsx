@@ -1,70 +1,109 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+interface VitalSignsPeriodicData {
+	id: number;
+	checked: boolean;
+	number: number;
+	status: string;
+	beneficiaryName: string;
+	weight: string;
+	livingRoom: string;
+	edema: boolean;
+	edemaArea: string;
+	edemaDegree: string;
+	bedsore: boolean;
+	bedsoreArea: string;
+	medication: boolean;
+	incontinence: boolean;
+	dressing: boolean;
+	painVAS: string;
+	nursingHistory: string;
+	author: string;
+	fall: boolean;
+	dehydration: boolean;
+	delirium: boolean;
+	problemBehavior: boolean;
+	ancd?: string;
+	pnum?: string;
+}
 
 export default function VitalSignsPeriodic() {
 	const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 	const [selectedStatus, setSelectedStatus] = useState<string>('');
 	const [selectedLivingRoom, setSelectedLivingRoom] = useState<string>('');
 	const [editingRowId, setEditingRowId] = useState<number | null>(null);
-	const [employeeList, setEmployeeList] = useState<string[]>([
-		'김간호사',
-		'이간호사',
-		'박간호사',
-		'최간호사'
-	]);
-	const [vitalSignsData, setVitalSignsData] = useState([
-		{
-			id: 1,
-			checked: true,
-			number: 1,
-			status: '입소중',
-			beneficiaryName: '권현철',
-			weight: '',
-			livingRoom: '1층',
-			edema: false,
-			edemaArea: '',
-			edemaDegree: '',
-			bedsore: false,
-			bedsoreArea: '',
-			medication: false,
-			incontinence: false,
-			dressing: false,
-			painVAS: '',
-			nursingDetails: '',
-			author: '',
-			fall: false,
-			dehydration: false,
-			delirium: false,
-			problemBehavior: false,
-			nursingHistory: ''
-		},
-		{
-			id: 2,
-			checked: false,
-			number: 2,
-			status: '',
-			beneficiaryName: '',
-			weight: '',
-			livingRoom: '',
-			edema: false,
-			edemaArea: '',
-			edemaDegree: '',
-			bedsore: false,
-			bedsoreArea: '',
-			medication: false,
-			incontinence: false,
-			dressing: false,
-			painVAS: '',
-			nursingDetails: '',
-			author: '',
-			fall: false,
-			dehydration: false,
-			delirium: false,
-			problemBehavior: false,
-			nursingHistory: ''
+	const [loading, setLoading] = useState(false);
+	const [vitalSignsData, setVitalSignsData] = useState<VitalSignsPeriodicData[]>([]);
+	const [nextId, setNextId] = useState(1);
+	const [currentPage, setCurrentPage] = useState(1);
+	const itemsPerPage = 10;
+
+	// F30120 데이터 조회 함수
+	const fetchVitalSignsData = async (rsdt: string) => {
+		setLoading(true);
+		try {
+			const url = `/api/f30120?rsdt=${encodeURIComponent(rsdt)}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			
+			if (result.success && Array.isArray(result.data)) {
+				// F30120 데이터를 vitalSignsData 형식으로 변환
+				const transformedData: VitalSignsPeriodicData[] = result.data.map((item: any, index: number) => {
+					// 현황 (P_ST: '1'=입소, '9'=퇴소)
+					const status = item.P_ST === '1' ? '입소' : item.P_ST === '9' ? '퇴소' : '';
+					
+					// 부종유무 (BJYN: '1' 또는 'Y' = true, 그 외 = false)
+					const edema = item.BJYN === '1' || item.BJYN === 'Y' || item.BJYN === 'y';
+					
+					return {
+						id: index + 1,
+						checked: false,
+						number: index + 1,
+						status: status,
+						beneficiaryName: item.P_NM || '',
+						weight: item.WEIGHT || '',
+						livingRoom: '', // F30120에 생활실 정보가 없음
+						edema: edema,
+						edemaArea: item.BJPA || '',
+						edemaDegree: item.BJDG || '',
+						bedsore: false, // F30120에 욕창 정보가 없음
+						bedsoreArea: '',
+						medication: false, // F30120에 약물투여 정보가 없음
+						incontinence: false, // F30120에 실금 정보가 없음
+						dressing: false, // F30120에 드레싱 정보가 없음
+						painVAS: '', // F30120에 통증 VAS 정보가 없음
+						nursingHistory: item.NUDES || '',
+						author: item.INEMPNM || '',
+						fall: false, // F30120에 낙상 정보가 없음
+						dehydration: false, // F30120에 탈수 정보가 없음
+						delirium: false, // F30120에 섬망 정보가 없음
+						problemBehavior: false, // F30120에 문제행동 정보가 없음
+						ancd: item.ANCD || '',
+						pnum: item.PNUM || ''
+					};
+				});
+				
+				setVitalSignsData(transformedData);
+				setNextId(transformedData.length > 0 ? Math.max(...transformedData.map(d => d.id)) + 1 : 1);
+			} else {
+				setVitalSignsData([]);
+				setNextId(1);
+			}
+		} catch (err) {
+			console.error('활력증상 데이터 조회 오류:', err);
+			setVitalSignsData([]);
+			setNextId(1);
+		} finally {
+			setLoading(false);
 		}
-	]);
-	const [nextId, setNextId] = useState(3);
+	};
+
+	// 초기 로드 및 날짜 변경 시 데이터 조회
+	useEffect(() => {
+		setCurrentPage(1); // 날짜 변경 시 페이지를 1로 초기화
+		fetchVitalSignsData(selectedDate);
+	}, [selectedDate]);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -108,13 +147,44 @@ export default function VitalSignsPeriodic() {
 		}
 	};
 
+	// 필터링된 데이터
+	const filteredData = vitalSignsData.filter(row => {
+		// 현황 필터링
+		if (selectedStatus && row.status !== selectedStatus) {
+			return false;
+		}
+		
+		// 생활실 필터링
+		if (selectedLivingRoom && row.livingRoom !== selectedLivingRoom) {
+			return false;
+		}
+		
+		return true;
+	});
+
+	// 페이지네이션 계산
+	const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const paginatedData = filteredData.slice(startIndex, endIndex);
+
+	// 페이지 변경 함수
+	const handlePageChange = (page: number) => {
+		setCurrentPage(page);
+	};
+
+	// 필터 변경 시 첫 페이지로 이동
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [selectedStatus, selectedLivingRoom]);
+
 	// 행 추가 함수
 	const handleAddRow = () => {
 		const newNumber = vitalSignsData.length > 0 
 			? Math.max(...vitalSignsData.map(row => row.number)) + 1 
 			: 1;
 		
-		const newRow = {
+		const newRow: VitalSignsPeriodicData = {
 			id: nextId,
 			checked: false,
 			number: newNumber,
@@ -131,13 +201,12 @@ export default function VitalSignsPeriodic() {
 			incontinence: false,
 			dressing: false,
 			painVAS: '',
-			nursingDetails: '',
+			nursingHistory: '',
 			author: '',
 			fall: false,
 			dehydration: false,
 			delirium: false,
-			problemBehavior: false,
-			nursingHistory: ''
+			problemBehavior: false
 		};
 		
 		setVitalSignsData(prev => [...prev, newRow]);
@@ -169,7 +238,6 @@ export default function VitalSignsPeriodic() {
 							<span>이전일</span>
 						</button>
 						<div className="flex items-center gap-2">
-							<span className="text-sm text-blue-900">{formatDate(selectedDate)}</span>
 							<input
 								type="date"
 								value={selectedDate}
@@ -183,9 +251,6 @@ export default function VitalSignsPeriodic() {
 						>
 							<span>다음일</span>
 							<span>▶</span>
-						</button>
-						<button className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-blue-100 hover:bg-blue-200 text-blue-900">
-							📅 달력선택
 						</button>
 					</div>
 					{/* 오른쪽: 출력 버튼 */}
@@ -208,7 +273,6 @@ export default function VitalSignsPeriodic() {
 								className="w-full px-2 py-1.5 text-sm border border-blue-300 rounded bg-white min-w-[120px]"
 							>
 								<option value="">전체</option>
-								<option value="입소주">입소주</option>
 								<option value="입소">입소</option>
 								<option value="퇴소">퇴소</option>
 							</select>
@@ -261,7 +325,20 @@ export default function VitalSignsPeriodic() {
 									</tr>
 								</thead>
 								<tbody>
-									{vitalSignsData.map((row) => (
+									{loading ? (
+										<tr>
+											<td colSpan={19} className="text-center px-3 py-4 text-blue-900/60">
+												로딩 중...
+											</td>
+										</tr>
+									) : vitalSignsData.length === 0 ? (
+										<tr>
+											<td colSpan={19} className="text-center px-3 py-4 text-blue-900/60">
+												데이터가 없습니다
+											</td>
+										</tr>
+									) : (
+										paginatedData.map((row) => (
 										<React.Fragment key={row.id}>
 											<tr className="border-b border-blue-50 hover:bg-blue-50">
 												<td className="text-center px-3 py-3 border-r border-blue-100">
@@ -456,24 +533,19 @@ export default function VitalSignsPeriodic() {
 												<td colSpan={2} className="px-3 py-2 border-r border-blue-100"></td>
 												<td colSpan={17} className="px-3 py-2">
 													<div className="flex items-center gap-4 w-full">
-														<div className="flex items-center gap-2 flex-shrink-0">
-															<label className="text-xs text-blue-900 font-medium whitespace-nowrap">작성자</label>
-															<select
-																value={row.author}
-																onChange={(e) => handleDataChange(row.id, 'author', e.target.value)}
-																disabled={editingRowId !== row.id}
-																className={`px-2 py-1 text-xs border border-blue-300 rounded ${
-																	editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-																}`}
-															>
-																<option value="">선택</option>
-																{employeeList.map((employee) => (
-																	<option key={employee} value={employee}>
-																		{employee}
-																	</option>
-																))}
-															</select>
-														</div>
+													<div className="flex items-center gap-2 flex-shrink-0">
+														<label className="text-xs text-blue-900 font-medium whitespace-nowrap">작성자</label>
+														<input
+															type="text"
+															value={row.author}
+															onChange={(e) => handleDataChange(row.id, 'author', e.target.value)}
+															disabled={editingRowId !== row.id}
+															className={`px-2 py-1 text-xs border border-blue-300 rounded ${
+																editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
+															}`}
+															placeholder="작성자 입력"
+														/>
+													</div>
 														<div className="flex items-center gap-2 flex-1">
 															<label className="text-xs text-blue-900 font-medium whitespace-nowrap flex-shrink-0">간호내역</label>
 															<textarea
@@ -510,11 +582,68 @@ export default function VitalSignsPeriodic() {
 												</td>
 											</tr>
 										</React.Fragment>
-									))}
+									)))}
 								</tbody>
 							</table>
 						</div>
 					</div>
+
+					{/* 페이지네이션 */}
+					{totalPages > 1 && (
+						<div className="p-3 border-t border-blue-200 bg-white">
+							<div className="flex items-center justify-center gap-1">
+								<button
+									onClick={() => handlePageChange(1)}
+									disabled={currentPage === 1}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&lt;&lt;
+								</button>
+								<button
+									onClick={() => handlePageChange(currentPage - 1)}
+									disabled={currentPage === 1}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&lt;
+								</button>
+								
+								{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+									const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+									return (
+										<button
+											key={pageNum}
+											onClick={() => handlePageChange(pageNum)}
+											className={`px-2 py-1 text-xs border rounded ${
+												currentPage === pageNum
+													? 'bg-blue-500 text-white border-blue-500'
+													: 'border-blue-300 hover:bg-blue-50'
+											}`}
+										>
+											{pageNum}
+										</button>
+									);
+								})}
+								
+								<button
+									onClick={() => handlePageChange(currentPage + 1)}
+									disabled={currentPage === totalPages}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&gt;
+								</button>
+								<button
+									onClick={() => handlePageChange(totalPages)}
+									disabled={currentPage === totalPages}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&gt;&gt;
+								</button>
+								<span className="ml-4 text-xs text-blue-900">
+									{filteredData.length > 0 ? `${startIndex + 1}-${Math.min(endIndex, filteredData.length)} / ${filteredData.length}` : '0 / 0'}
+								</span>
+							</div>
+						</div>
+					)}
 
 					{/* 하단 추가 버튼 */}
 					<div className="flex justify-center mt-4">
