@@ -1,14 +1,33 @@
 "use client";
 import React, { useState, useRef, useEffect } from 'react';
 
+interface PerformanceData {
+	id: number;
+	serialNo: number;
+	name: string;
+	birthDate: string;
+	ancd?: string;
+	pnum?: string;
+	mealLocation: string; // ST_PLAC
+	mealType: string; // ST_KIND
+	gyn: string; // GYN: '0'=외출, '1'=입원(외박)
+	mealStatus: { breakfast: string; lunch: string; dinner: string }; // MOST, LCST, DNST: '1'=양호, '2'=이상
+	specialNotes: string; // ST_ETC
+	snackStatus: { morning: string; afternoon: string }; // MGST, AGST: '1'=양호, '2'=이상
+}
+
 export default function DailyBeneficiaryPerformance() {
 	const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 	const [selectedMember, setSelectedMember] = useState<number | null>(null);
-	const [nextId, setNextId] = useState(3);
+	const [nextId, setNextId] = useState(1);
 	const [editingRowId, setEditingRowId] = useState<number | null>(null);
 	const [searchResults, setSearchResults] = useState<{ [key: number | string]: any[] }>({});
 	const [showSearchResults, setShowSearchResults] = useState<{ [key: number | string]: boolean }>({});
 	const searchInputRefs = useRef<{ [key: number | string]: HTMLInputElement | null }>({});
+	const [loading, setLoading] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
+	const itemsPerPage = 10;
+	const printWindowRef = useRef<Window | null>(null);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -18,45 +37,106 @@ export default function DailyBeneficiaryPerformance() {
 	};
 
 	// 통합 데이터: 수급자 정보 + 실적 정보
-	const [combinedData, setCombinedData] = useState([
-		{ 
-			id: 1,
-			serialNo: 1, 
-			name: '홍길동', 
-			birthDate: '1950-01-15',
-			mealLocation: '',
-			mealType: '1', // 1.일반식, 2.가정식, 3.죽, 4.미음, 5.연하식, 6.갈음식, 7.유동식
-			outgoing: false,
-			overnight: false,
-			startDateTime: '',
-			endDateTime: '',
-			mealStatus: { breakfast: true, lunch: true, dinner: false }, 
-			specialNotes: '', 
-			snackStatus: { morning: false, afternoon: false } 
-		},
-		{ 
-			id: 2,
-			serialNo: 2, 
-			name: '김영희', 
-			birthDate: '1955-03-20',
-			mealLocation: '',
-			mealType: '2',
-			outgoing: false,
-			overnight: false,
-			startDateTime: '',
-			endDateTime: '',
-			mealStatus: { breakfast: false, lunch: false, dinner: false }, 
-			specialNotes: '', 
-			snackStatus: { morning: false, afternoon: false } 
-		},
-	]);
+	const [combinedData, setCombinedData] = useState<PerformanceData[]>([]);
+
+	// F14020 데이터 조회 함수
+	const fetchPerformanceData = async (svdt: string) => {
+		setLoading(true);
+		try {
+			// 날짜 형식 확인 및 정규화 (yyyy-mm-dd 형식 보장)
+			let normalizedDate = svdt;
+			if (svdt && !svdt.includes('-') && svdt.length === 8) {
+				// YYYYMMDD 형식인 경우 yyyy-mm-dd로 변환
+				normalizedDate = `${svdt.substring(0, 4)}-${svdt.substring(4, 6)}-${svdt.substring(6, 8)}`;
+			}
+			
+			// yyyy-mm-dd 형식 검증
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+				console.error('날짜 형식 오류:', normalizedDate);
+				setLoading(false);
+				return;
+			}
+			
+			const url = `/api/f14020?svdt=${encodeURIComponent(normalizedDate)}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			
+			if (result.success && Array.isArray(result.data)) {
+				// F14020 데이터를 combinedData 형식으로 변환
+				const transformedData: PerformanceData[] = result.data.map((item: any, index: number) => {
+					return {
+						id: index + 1,
+						serialNo: item.MENUM || index + 1,
+						name: item.P_NM || '',
+						birthDate: formatDate(item.P_BRDT),
+						ancd: item.ANCD || '',
+						pnum: item.PNUM || '',
+						mealLocation: item.ST_PLAC || '',
+						mealType: item.ST_KIND || '1',
+						gyn: item.GYN || '0', // '0'=외출, '1'=입원(외박)
+						mealStatus: {
+							breakfast: item.MOST || '1', // '1'=양호, '2'=이상
+							lunch: item.LCST || '1',
+							dinner: item.DNST || '1'
+						},
+						specialNotes: item.ST_ETC || '',
+						snackStatus: {
+							morning: item.MGST || '1', // '1'=양호, '2'=이상
+							afternoon: item.AGST || '1'
+						}
+					};
+				});
+				
+				setCombinedData(transformedData);
+				setNextId(transformedData.length > 0 ? Math.max(...transformedData.map(d => d.id)) + 1 : 1);
+			} else {
+				setCombinedData([]);
+				setNextId(1);
+			}
+		} catch (err) {
+			console.error('실적 데이터 조회 오류:', err);
+			setCombinedData([]);
+			setNextId(1);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	// 초기 로드 및 날짜 변경 시 데이터 조회
+	useEffect(() => {
+		setCurrentPage(1); // 날짜 변경 시 페이지를 1로 초기화
+		fetchPerformanceData(selectedDate);
+	}, [selectedDate]);
+
+	// 새로고침 시 경고 얼럿
+	useEffect(() => {
+		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+			// 수정 중인 행이 있는 경우 경고
+			if (editingRowId !== null) {
+				e.preventDefault();
+				e.returnValue = '작성한 내용은 저장되지 않습니다.';
+				return '작성한 내용은 저장되지 않습니다.';
+			}
+		};
+
+		window.addEventListener('beforeunload', handleBeforeUnload);
+
+		return () => {
+			window.removeEventListener('beforeunload', handleBeforeUnload);
+		};
+	}, [editingRowId]);
 
 	// 행 삭제 함수
 	const handleDeleteRow = (id: number) => {
-		if (confirm('정말 삭제하시겠습니까?')) {
-			setCombinedData(combinedData.filter(row => row.id !== id));
-			if (editingRowId === id) {
+		// 수정 중인 행이 있고 저장하지 않은 경우 경고
+		if (editingRowId === id) {
+			if (confirm('작성한 내용은 저장되지 않습니다. 정말 삭제하시겠습니까?')) {
+				setCombinedData(combinedData.filter(row => row.id !== id));
 				setEditingRowId(null);
+			}
+		} else {
+			if (confirm('정말 삭제하시겠습니까?')) {
+				setCombinedData(combinedData.filter(row => row.id !== id));
 			}
 		}
 	};
@@ -72,31 +152,41 @@ export default function DailyBeneficiaryPerformance() {
 		}
 	};
 
+	// 페이지네이션 계산
+	const totalPages = Math.ceil(combinedData.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const currentData = combinedData.slice(startIndex, endIndex);
+
+	const handlePageChange = (page: number) => {
+		setCurrentPage(page);
+	};
+
 	// 행 추가 함수
 	const handleAddRow = () => {
-		const newSerialNo = combinedData.length > 0 
-			? Math.max(...combinedData.map(row => row.serialNo)) + 1 
-			: 1;
-		
-		const newRow = {
+		const newRow: PerformanceData = {
 			id: nextId,
-			serialNo: newSerialNo,
+			serialNo: 1, // 새 행은 항상 1번
 			name: '',
 			birthDate: '',
 			mealLocation: '',
 			mealType: '1',
-			outgoing: false,
-			overnight: false,
-			startDateTime: '',
-			endDateTime: '',
-			mealStatus: { breakfast: false, lunch: false, dinner: false },
+			gyn: '0', // 기본값: 외출
+			mealStatus: { breakfast: '1', lunch: '1', dinner: '1' }, // 기본값: 양호
 			specialNotes: '',
-			snackStatus: { morning: false, afternoon: false }
+			snackStatus: { morning: '1', afternoon: '1' } // 기본값: 양호
 		};
 		
-		setCombinedData(prev => [...prev, newRow]);
+		// 기존 데이터들의 연번을 하나씩 증가
+		const updatedData = combinedData.map(row => ({
+			...row,
+			serialNo: row.serialNo + 1
+		}));
+		
+		setCombinedData([newRow, ...updatedData]); // 맨 위에 추가
 		setNextId(prev => prev + 1);
 		setEditingRowId(newRow.id); // 새로 추가된 행을 수정 모드로 설정
+		setCurrentPage(1); // 첫 페이지로 이동
 	};
 
 	// 수급자 검색 함수
@@ -154,6 +244,173 @@ export default function DailyBeneficiaryPerformance() {
 		return dateStr;
 	};
 
+	// 일자별 출력 함수
+	const handlePrintDaily = () => {
+		// 날짜 포맷팅 (요일 포함)
+		const date = new Date(selectedDate);
+		const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+		const dayName = days[date.getDay()];
+		const formattedDate = `${selectedDate} ${dayName}`;
+
+		// 출력용 HTML 생성
+		const printContent = `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>서비스 실적표</title>
+				<style>
+					@page {
+						size: A4;
+						margin: 10mm;
+					}
+					body {
+						font-family: 'Malgun Gothic', sans-serif;
+						font-size: 11pt;
+						margin: 0;
+						padding: 0;
+					}
+					.header {
+						display: flex;
+						justify-content: space-between;
+						align-items: flex-start;
+						margin-bottom: 15px;
+					}
+					.title {
+						font-size: 18pt;
+						font-weight: bold;
+						text-align: center;
+						flex: 1;
+					}
+					.date-info {
+						font-size: 11pt;
+					}
+					.signature-table {
+						border: 1px solid #000;
+						border-collapse: collapse;
+						width: 150px;
+						font-size: 10pt;
+					}
+					.signature-table th,
+					.signature-table td {
+						border: 1px solid #000;
+						padding: 5px;
+						text-align: center;
+						height: 30px;
+					}
+					.main-table {
+						width: 100%;
+						border-collapse: collapse;
+						border: 1px solid #000;
+						font-size: 10pt;
+						margin-top: 10px;
+					}
+					.main-table th,
+					.main-table td {
+						border: 1px solid #000;
+						padding: 4px;
+						text-align: center;
+					}
+					.main-table th {
+						background-color: #f0f0f0;
+						font-weight: bold;
+					}
+					.check-mark {
+						text-align: center;
+						font-size: 14pt;
+					}
+					.footer {
+						display: flex;
+						justify-content: space-between;
+						margin-top: 20px;
+						font-size: 10pt;
+					}
+					@media print {
+						body {
+							margin: 0;
+							padding: 0;
+						}
+					}
+				</style>
+			</head>
+			<body>
+				<div class="header">
+					<div class="date-info">일자: ${formattedDate}</div>
+					<div class="title">서비스 실적표</div>
+					<table class="signature-table">
+						<tr>
+							<th>담당</th>
+							<th>검토</th>
+							<th>결재</th>
+						</tr>
+						<tr>
+							<td></td>
+							<td></td>
+							<td></td>
+						</tr>
+					</table>
+				</div>
+				<table class="main-table">
+					<thead>
+						<tr>
+							<th>수급자명</th>
+							<th>생일</th>
+							<th>외박여</th>
+							<th>아</th>
+							<th>정</th>
+							<th>저</th>
+							<th>오전간</th>
+							<th>오후간</th>
+							<th>식이</th>
+						</tr>
+					</thead>
+					<tbody>
+						${combinedData.map(row => {
+							const gynText = row.gyn === '1' ? '입원' : row.gyn === '0' ? '외출' : '';
+							const breakfast = row.mealStatus.breakfast === '1' ? '○' : '';
+							const lunch = row.mealStatus.lunch === '1' ? '○' : '';
+							const dinner = row.mealStatus.dinner === '1' ? '○' : '';
+							const morningSnack = row.snackStatus.morning === '1' ? '○' : '';
+							const afternoonSnack = row.snackStatus.afternoon === '1' ? '○' : '';
+							const mealTypeText = row.mealType === '1' ? '일반식' : row.mealType === '2' ? '죽' : row.mealType === '3' ? '유동식(미음)' : '';
+							
+							return `
+								<tr>
+									<td>${row.name || ''}</td>
+									<td>${row.birthDate || ''}</td>
+									<td>${gynText}</td>
+									<td class="check-mark">${breakfast}</td>
+									<td class="check-mark">${lunch}</td>
+									<td class="check-mark">${dinner}</td>
+									<td class="check-mark">${morningSnack}</td>
+									<td class="check-mark">${afternoonSnack}</td>
+									<td>${mealTypeText}</td>
+								</tr>
+							`;
+						}).join('')}
+					</tbody>
+				</table>
+				<div class="footer">
+					<div>R14020</div>
+					<div>페이지: 1</div>
+				</div>
+			</body>
+			</html>
+		`;
+
+		// 새 창 열기
+		const printWindow = window.open('', '_blank');
+		if (printWindow) {
+			printWindow.document.write(printContent);
+			printWindow.document.close();
+			
+			// 출력 대화상자 열기
+			setTimeout(() => {
+				printWindow.print();
+			}, 250);
+		}
+	};
+
 	// 수급자 선택 함수
 	const handleSelectMember = (rowId: number, member: any) => {
 		setCombinedData(prev => prev.map(row => {
@@ -204,7 +461,10 @@ export default function DailyBeneficiaryPerformance() {
 					</div>
 					{/* 오른쪽 상단 버튼 */}
 					<div className="ml-auto flex items-center gap-2">
-						<button className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium">
+						<button 
+							onClick={handlePrintDaily}
+							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+						>
 							일자별
 						</button>
 						<button className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium">
@@ -226,21 +486,31 @@ export default function DailyBeneficiaryPerformance() {
 							<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
 								<tr>
 									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">연번</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">수급자명(생년월일)</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">식사장소</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">식사종류</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">외출</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">외박</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">시작일시</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">종료일시</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">식사여부</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">간식여부</th>
-									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">특이사항</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-32">수급자명(생년월일)</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-32">식사장소</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-28">식사종류</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">입원/외출</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">식사상태</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200">간식상태</th>
+									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 w-80">특이사항</th>
 									<th className="text-center px-3 py-2 text-blue-900 font-semibold">작업</th>
 								</tr>
 							</thead>
 							<tbody>
-								{combinedData.map((row, idx) => (
+								{loading ? (
+									<tr>
+										<td colSpan={9} className="text-center px-3 py-4 text-blue-900/60">
+											로딩 중...
+										</td>
+									</tr>
+								) : currentData.length === 0 ? (
+									<tr>
+										<td colSpan={9} className="text-center px-3 py-4 text-blue-900/60">
+											데이터가 없습니다
+										</td>
+									</tr>
+								) : (
+									currentData.map((row, idx) => (
 									<tr 
 										key={row.id} 
 										className={`border-b border-blue-50 hover:bg-blue-50 ${
@@ -251,7 +521,7 @@ export default function DailyBeneficiaryPerformance() {
 										{/* 연번 */}
 										<td className="text-center px-3 py-3 border-r border-blue-100">{row.serialNo}</td>
 										{/* 수급자명(생년월일) */}
-										<td className="text-center px-3 py-3 border-r border-blue-100 relative">
+										<td className="text-center px-3 py-3 border-r border-blue-100 relative w-32">
 											<div className="flex flex-col">
 												<input
 													ref={(el) => {
@@ -336,7 +606,7 @@ export default function DailyBeneficiaryPerformance() {
 											})()}
 										</td>
 										{/* 식사장소 */}
-										<td className="text-center px-3 py-3 border-r border-blue-100">
+										<td className="text-center px-3 py-3 border-r border-blue-100 w-32">
 											<input 
 												type="text" 
 												value={row.mealLocation}
@@ -355,7 +625,7 @@ export default function DailyBeneficiaryPerformance() {
 											/>
 										</td>
 										{/* 식사종류 */}
-										<td className="text-center px-3 py-3 border-r border-blue-100">
+										<td className="text-center px-3 py-3 border-r border-blue-100 w-28">
 											<select 
 												value={row.mealType}
 												onChange={(e) => {
@@ -370,167 +640,132 @@ export default function DailyBeneficiaryPerformance() {
 													editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
 												}`}
 											>
-												<option value="1">1.일반식</option>
-												<option value="2">2.가정식</option>
-												<option value="3">3.죽</option>
-												<option value="4">4.미음</option>
-												<option value="5">5.연하식</option>
-												<option value="6">6.갈음식</option>
-												<option value="7">7.유동식</option>
+												<option value="1">일반식</option>
+												<option value="2">죽</option>
+												<option value="3">유동식(미음)</option>
 											</select>
 										</td>
-										{/* 외출 */}
+										{/* 입원/외출 (GYN) */}
 										<td className="text-center px-3 py-3 border-r border-blue-100">
-											<input 
-												type="checkbox" 
-												checked={row.outgoing}
-												onChange={(e) => {
-													const newData = combinedData.map(r => 
-														r.id === row.id ? { ...r, outgoing: e.target.checked } : r
-													);
-													setCombinedData(newData);
-												}}
-												disabled={editingRowId !== row.id}
-												onClick={(e) => e.stopPropagation()}
-												className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
-											/>
-										</td>
-										{/* 외박 */}
-										<td className="text-center px-3 py-3 border-r border-blue-100">
-											<input 
-												type="checkbox" 
-												checked={row.overnight}
-												onChange={(e) => {
-													const newData = combinedData.map(r => 
-														r.id === row.id ? { ...r, overnight: e.target.checked } : r
-													);
-													setCombinedData(newData);
-												}}
-												disabled={editingRowId !== row.id}
-												onClick={(e) => e.stopPropagation()}
-												className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
-											/>
-										</td>
-										{/* 시작일시 */}
-										<td className="text-center px-3 py-3 border-r border-blue-100">
-											<input 
-												type="datetime-local" 
-												value={row.startDateTime}
-												onChange={(e) => {
-													const newData = combinedData.map(r => 
-														r.id === row.id ? { ...r, startDateTime: e.target.value } : r
-													);
-													setCombinedData(newData);
-												}}
-												disabled={editingRowId !== row.id}
-												onClick={(e) => e.stopPropagation()}
-												className={`w-full px-2 py-1 border border-blue-300 rounded ${
-													editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-												}`}
-											/>
-										</td>
-										{/* 종료일시 */}
-										<td className="text-center px-3 py-3 border-r border-blue-100">
-											<input 
-												type="datetime-local" 
-												value={row.endDateTime}
-												onChange={(e) => {
-													const newData = combinedData.map(r => 
-														r.id === row.id ? { ...r, endDateTime: e.target.value } : r
-													);
-													setCombinedData(newData);
-												}}
-												disabled={editingRowId !== row.id}
-												onClick={(e) => e.stopPropagation()}
-												className={`w-full px-2 py-1 border border-blue-300 rounded ${
-													editingRowId === row.id ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'
-												}`}
-											/>
-										</td>
-										<td className="text-center px-3 py-3 border-r border-blue-100">
-											<div className="flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
-												<label className={`flex items-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+											<div className="flex justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+												<label className={`flex items-center justify-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
 													<input 
 														type="checkbox" 
-														checked={row.mealStatus.breakfast}
+														checked={row.gyn === '0'}
 														onChange={(e) => {
 															const newData = combinedData.map(r => 
-																r.id === row.id ? { ...r, mealStatus: { ...r.mealStatus, breakfast: e.target.checked } } : r
+																r.id === row.id ? { ...r, gyn: e.target.checked ? '0' : '' } : r
 															);
 															setCombinedData(newData);
 														}}
 														disabled={editingRowId !== row.id}
-														className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.gyn === '0' ? "disabled-checked-blue" : ""}`}
+													/>
+													<span className="text-xs">외출</span>
+												</label>
+												<label className={`flex items-center justify-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+													<input 
+														type="checkbox" 
+														checked={row.gyn === '1'}
+														onChange={(e) => {
+															const newData = combinedData.map(r => 
+																r.id === row.id ? { ...r, gyn: e.target.checked ? '1' : '' } : r
+															);
+															setCombinedData(newData);
+														}}
+														disabled={editingRowId !== row.id}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.gyn === '1' ? "disabled-checked-blue" : ""}`}
+													/>
+													<span className="text-xs">입원</span>
+												</label>
+											</div>
+										</td>
+										{/* 식사상태 */}
+										<td className="text-center px-3 py-3 border-r border-blue-100">
+											<div className="flex justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+												<label className={`flex items-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+													<input 
+														type="checkbox" 
+														checked={row.mealStatus.breakfast === '1'}
+														onChange={(e) => {
+															const newData = combinedData.map(r => 
+																r.id === row.id ? { ...r, mealStatus: { ...r.mealStatus, breakfast: e.target.checked ? '1' : '2' } } : r
+															);
+															setCombinedData(newData);
+														}}
+														disabled={editingRowId !== row.id}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.mealStatus.breakfast === '1' ? "disabled-checked-blue" : ""}`}
 													/>
 													<span className="text-xs">조</span>
 												</label>
 												<label className={`flex items-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
 													<input 
 														type="checkbox" 
-														checked={row.mealStatus.lunch}
+														checked={row.mealStatus.lunch === '1'}
 														onChange={(e) => {
 															const newData = combinedData.map(r => 
-																r.id === row.id ? { ...r, mealStatus: { ...r.mealStatus, lunch: e.target.checked } } : r
+																r.id === row.id ? { ...r, mealStatus: { ...r.mealStatus, lunch: e.target.checked ? '1' : '2' } } : r
 															);
 															setCombinedData(newData);
 														}}
 														disabled={editingRowId !== row.id}
-														className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.mealStatus.lunch === '1' ? "disabled-checked-blue" : ""}`}
 													/>
 													<span className="text-xs">중</span>
 												</label>
 												<label className={`flex items-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
 													<input 
 														type="checkbox" 
-														checked={row.mealStatus.dinner}
+														checked={row.mealStatus.dinner === '1'}
 														onChange={(e) => {
 															const newData = combinedData.map(r => 
-																r.id === row.id ? { ...r, mealStatus: { ...r.mealStatus, dinner: e.target.checked } } : r
+																r.id === row.id ? { ...r, mealStatus: { ...r.mealStatus, dinner: e.target.checked ? '1' : '2' } } : r
 															);
 															setCombinedData(newData);
 														}}
 														disabled={editingRowId !== row.id}
-														className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.mealStatus.dinner === '1' ? "disabled-checked-blue" : ""}`}
 													/>
 													<span className="text-xs">석</span>
 												</label>
 											</div>
 										</td>
+										{/* 간식상태 */}
 										<td className="text-center px-3 py-3 border-r border-blue-100">
 											<div className="flex justify-center gap-3" onClick={(e) => e.stopPropagation()}>
 												<label className={`flex items-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
 													<input 
 														type="checkbox" 
-														checked={row.snackStatus.morning}
+														checked={row.snackStatus.morning === '1'}
 														onChange={(e) => {
 															const newData = combinedData.map(r => 
-																r.id === row.id ? { ...r, snackStatus: { ...r.snackStatus, morning: e.target.checked } } : r
+																r.id === row.id ? { ...r, snackStatus: { ...r.snackStatus, morning: e.target.checked ? '1' : '2' } } : r
 															);
 															setCombinedData(newData);
 														}}
 														disabled={editingRowId !== row.id}
-														className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.snackStatus.morning === '1' ? "disabled-checked-blue" : ""}`}
 													/>
 													<span className="text-xs">오전</span>
 												</label>
 												<label className={`flex items-center gap-1 ${editingRowId === row.id ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
 													<input 
 														type="checkbox" 
-														checked={row.snackStatus.afternoon}
+														checked={row.snackStatus.afternoon === '1'}
 														onChange={(e) => {
 															const newData = combinedData.map(r => 
-																r.id === row.id ? { ...r, snackStatus: { ...r.snackStatus, afternoon: e.target.checked } } : r
+																r.id === row.id ? { ...r, snackStatus: { ...r.snackStatus, afternoon: e.target.checked ? '1' : '2' } } : r
 															);
 															setCombinedData(newData);
 														}}
 														disabled={editingRowId !== row.id}
-														className={editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"}
+														className={`${editingRowId === row.id ? "cursor-pointer" : "cursor-not-allowed"} ${editingRowId !== row.id && row.snackStatus.afternoon === '1' ? "disabled-checked-blue" : ""}`}
 													/>
 													<span className="text-xs">오후</span>
 												</label>
 											</div>
 										</td>
-										<td className="text-center px-3 py-3 border-r border-blue-100">
+										<td className="text-center px-3 py-3 border-r border-blue-100 w-80">
 											<input 
 												type="text" 
 												value={row.specialNotes}
@@ -569,10 +804,64 @@ export default function DailyBeneficiaryPerformance() {
 											</div>
 										</td>
 									</tr>
-								))}
+									))
+								)}
 							</tbody>
 						</table>
 					</div>
+					{/* 페이지네이션 */}
+					{totalPages > 1 && (
+						<div className="p-3 border-t border-blue-200 bg-white">
+							<div className="flex items-center justify-center gap-1">
+								<button
+									onClick={() => handlePageChange(1)}
+									disabled={currentPage === 1}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&lt;&lt;
+								</button>
+								<button
+									onClick={() => handlePageChange(currentPage - 1)}
+									disabled={currentPage === 1}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&lt;
+								</button>
+								
+								{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+									const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+									return (
+										<button
+											key={pageNum}
+											onClick={() => handlePageChange(pageNum)}
+											className={`px-2 py-1 text-xs border rounded ${
+												currentPage === pageNum
+													? 'bg-blue-500 text-white border-blue-500'
+													: 'border-blue-300 hover:bg-blue-50'
+											}`}
+										>
+											{pageNum}
+										</button>
+									);
+								})}
+								
+								<button
+									onClick={() => handlePageChange(currentPage + 1)}
+									disabled={currentPage === totalPages}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&gt;
+								</button>
+								<button
+									onClick={() => handlePageChange(totalPages)}
+									disabled={currentPage === totalPages}
+									className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+								>
+									&gt;&gt;
+								</button>
+							</div>
+						</div>
+					)}
 				</div>
 
 				{/* 하단 추가 버튼 */}

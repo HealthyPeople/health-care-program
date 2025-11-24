@@ -24,3 +24,32 @@ body {
 .min-h-screen {
   min-height: 80vh;
 }
+
+/* Disabled 체크박스 스타일 - 체크된 경우 어두운 파란색 */
+input[type="checkbox"].disabled-checked-blue:disabled:checked {
+  accent-color: #2563eb !important;
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid #2563eb !important;
+  background-color: #2563eb !important;
+  position: relative !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+input[type="checkbox"].disabled-checked-blue:disabled:checked::after {
+  content: '' !important;
+  position: absolute !important;
+  left: 4px !important;
+  top: 1px !important;
+  width: 4px !important;
+  height: 8px !important;
+  border: solid white !important;
+  border-width: 0 2px 2px 0 !important;
+  transform: rotate(45deg) !important;
+  display: block !important;
+}

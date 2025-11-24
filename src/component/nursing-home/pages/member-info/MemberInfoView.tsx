@@ -11,6 +11,7 @@ export default function MemberInfoView() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
+	const [selectedStatus, setSelectedStatus] = useState<string>('');
 
 	const fetchMembers = async (nameSearch?: string) => {
 		setLoading(true);
@@ -50,14 +51,23 @@ export default function MemberInfoView() {
 	const itemsPerPage = 10;
 
 	// 클라이언트 측 추가 필터링 (서버에서 이미 이름으로 필터링됨)
-	const filteredMembers = members.filter(member => 
-		(searchTerm === '' || 
-		 member.P_NM?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-		 member.P_TEL?.includes(searchTerm) ||
-		 member.P_HP?.includes(searchTerm) ||
-		 String(member.ANCD || '').includes(searchTerm) ||
-		 String(member.PNUM || '').includes(searchTerm))
-	);
+	const filteredMembers = members.filter(member => {
+		// 상태 필터링
+		if (selectedStatus) {
+			if (selectedStatus === '입소' && member.P_ST !== '1') return false;
+			if (selectedStatus === '퇴소' && member.P_ST !== '9') return false;
+		}
+		
+		// 검색어 필터링
+		if (searchTerm === '') return true;
+		return (
+			member.P_NM?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+			member.P_TEL?.includes(searchTerm) ||
+			member.P_HP?.includes(searchTerm) ||
+			String(member.ANCD || '').includes(searchTerm) ||
+			String(member.PNUM || '').includes(searchTerm)
+		);
+	});
 
 	// 페이지네이션 계산
 	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
@@ -78,6 +88,11 @@ export default function MemberInfoView() {
 		setCurrentPage(1);
 	}, [searchTerm]);
 
+	// 상태 필터 변경 시 페이지 초기화
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [selectedStatus]);
+
 	return (
 		<div className="min-h-screen text-black bg-white">
 			<div className="mx-auto max-w-[1200px] p-4">
@@ -86,21 +101,37 @@ export default function MemberInfoView() {
 					<aside className="w-1/3 shrink-0">
 						<div className="overflow-hidden bg-white border border-blue-300 rounded-lg shadow-sm">
 							<div className="px-3 py-2 font-semibold text-blue-900 bg-blue-100 border-b border-blue-300">수급자 목록</div>
-							{/* 상단 상태/검색 영역 (간단히 구성) */}
+							{/* 상단 상태/검색 영역 */}
 							<div className="px-3 py-2 space-y-2 border-b border-blue-100">
-								<div className="text-xs text-blue-900/80">이름 검색</div>
-								<input 
-									className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded" 
-									placeholder="예) 홍길동"
-									value={searchTerm}
-									onChange={(e) => setSearchTerm(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === 'Enter') {
-											setCurrentPage(1);
-											fetchMembers(searchTerm);
-										}
-									}}
-								/>
+								{/* 현황 필터 */}
+								<div className="space-y-1">
+									<div className="text-xs text-blue-900/80">현황</div>
+									<select
+										value={selectedStatus}
+										onChange={(e) => setSelectedStatus(e.target.value)}
+										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
+									>
+										<option value="">현황 전체</option>
+										<option value="입소">입소</option>
+										<option value="퇴소">퇴소</option>
+									</select>
+								</div>
+								{/* 이름 검색 */}
+								<div className="space-y-1">
+									<div className="text-xs text-blue-900/80">이름 검색</div>
+									<input 
+										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded" 
+										placeholder="예) 홍길동"
+										value={searchTerm}
+										onChange={(e) => setSearchTerm(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === 'Enter') {
+												setCurrentPage(1);
+												fetchMembers(searchTerm);
+											}
+										}}
+									/>
+								</div>
 								<button 
 									className="w-full py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
 									onClick={() => {
