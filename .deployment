@@ -1,3 +1,4 @@
 [config]
-command = deploy.sh
+SCM_DO_BUILD_DURING_DEPLOYMENT=true
+command = bash ./deploy.sh
 

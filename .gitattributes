@@ -1,0 +1,4 @@
+# Ensure deploy.sh has execute permissions
+deploy.sh text eol=lf
+*.sh text eol=lf
+

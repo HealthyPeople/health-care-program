@@ -5,6 +5,14 @@ set -e
 
 echo "Handling Node.js deployment..."
 
+# Set deployment target if not set
+if [ -z "$DEPLOYMENT_TARGET" ]; then
+  DEPLOYMENT_TARGET="/home/site/wwwroot"
+fi
+
+echo "Deployment target: $DEPLOYMENT_TARGET"
+echo "Current directory: $(pwd)"
+
 # Navigate to deployment target
 cd "$DEPLOYMENT_TARGET"
 
