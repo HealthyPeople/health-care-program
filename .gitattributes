@@ -1,4 +1,6 @@
-# Ensure deploy.sh has execute permissions
+# Ensure shell scripts have execute permissions and LF line endings
 deploy.sh text eol=lf
+.postbuild.sh text eol=lf
+startup.sh text eol=lf
 *.sh text eol=lf
 
