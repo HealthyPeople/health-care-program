@@ -473,12 +473,201 @@ export default function CounselingRecord() {
 		setIsEditMode(true);
 	};
 
+	// 다음 CSNUM 조회
+	const getNextCSNUM = async (ancd: string, pnum: string): Promise<string> => {
+		try {
+			const response = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					query: `SELECT ISNULL(MAX(CAST(CSNUM AS INT)), 0) + 1 AS NEXT_CSNUM 
+							FROM [돌봄시설DB].[dbo].[F11020] 
+							WHERE ANCD = @ancd AND PNUM = @pnum`,
+					params: { ancd, pnum }
+				})
+			});
+			const result = await response.json();
+			if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
+				return String(result.data[0].NEXT_CSNUM);
+			}
+			return '1';
+		} catch (err) {
+			console.error('CSNUM 생성 오류:', err);
+			return '1';
+		}
+	};
+
 	// 저장 함수
-	const handleSave = () => {
-		// 저장 로직
-		console.log('저장:', formData);
-		setIsEditMode(false);
-		// TODO: API 호출하여 데이터 저장
+	const handleSave = async () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+
+		if (!formData.consultationDate) {
+			alert('상담일자를 입력해주세요.');
+			return;
+		}
+
+		setLoadingConsultations(true);
+		try {
+			// 현재 날짜/시간
+			const now = new Date();
+			const nowStr = now.toISOString().slice(0, 19).replace('T', ' ');
+
+			// 날짜 형식 변환 (YYYY-MM-DD -> YYYYMMDD)
+			const formatDateForDB = (dateStr: string): string | null => {
+				if (!dateStr || dateStr.trim() === '') return null;
+				try {
+					// yyyy-mm-dd 형식을 YYYYMMDD로 변환
+					if (dateStr.includes('-')) {
+						return dateStr.replace(/-/g, '');
+					}
+					return dateStr;
+				} catch (err) {
+					return null;
+				}
+			};
+
+			// 시간 형식 변환 (HHMM -> HH:MM 또는 HH:MM 유지)
+			const formatTimeForDB = (timeStr: string): string | null => {
+				if (!timeStr || timeStr.trim() === '') return null;
+				try {
+					const trimmed = String(timeStr).trim();
+					// 이미 HH:MM 형식이면 그대로 반환
+					if (trimmed.includes(':')) {
+						return trimmed;
+					}
+					// HHMM 형식이면 HH:MM으로 변환
+					if (trimmed.length === 4 && !isNaN(Number(trimmed))) {
+						return `${trimmed.substring(0, 2)}:${trimmed.substring(2, 4)}`;
+					}
+					return trimmed;
+				} catch (err) {
+					return null;
+				}
+			};
+
+			// 안전한 문자열 trim 함수
+			const safeTrim = (value: any): string | null => {
+				if (value === null || value === undefined) return null;
+				if (typeof value !== 'string') {
+					// 문자열이 아니면 문자열로 변환 시도
+					try {
+						const strValue = String(value);
+						return strValue.trim() || null;
+					} catch {
+						return null;
+					}
+				}
+				return value.trim() || null;
+			};
+
+			// 기존 상담 기록이 있는지 확인 (수정 모드인지 확인)
+			const existingConsultation = selectedDateIndex !== null && consultationList[selectedDateIndex] 
+				? consultationList[selectedDateIndex] 
+				: null;
+
+			let query: string;
+			let params: any;
+
+			if (existingConsultation && existingConsultation.CSNUM) {
+				// 수정 모드: UPDATE 쿼리
+				query = `
+					UPDATE [돌봄시설DB].[dbo].[F11020]
+					SET 
+						[CSDT] = @CSDT,
+						[EMPNO] = @EMPNO,
+						[EMPNM] = @EMPNM,
+						[BHREL] = @BHREL,
+						[BHRELNM] = @BHRELNM,
+						[STM] = @STM,
+						[ETM] = @ETM,
+						[CSGU] = @CSGU,
+						[CSINFO] = @CSINFO,
+						[CSM] = @CSM
+					WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [CSNUM] = @CSNUM
+				`;
+
+				params = {
+					ANCD: selectedMember.ANCD,
+					PNUM: selectedMember.PNUM,
+					CSNUM: existingConsultation.CSNUM,
+					CSDT: formatDateForDB(formData.consultationDate),
+					EMPNO: safeTrim(formData.consultantCode),
+					EMPNM: safeTrim(formData.consultant),
+					BHREL: safeTrim(formData.consultationSubstituteCode),
+					BHRELNM: safeTrim(formData.consultationSubstitute),
+					STM: formatTimeForDB(formData.startTime),
+					ETM: formatTimeForDB(formData.endTime),
+					CSGU: safeTrim(formData.consultationMethodCode),
+					CSINFO: safeTrim(formData.consultationContent),
+					CSM: safeTrim(formData.actionTaken)
+				};
+			} else {
+				// 생성 모드: INSERT 쿼리
+				// CSNUM 자동 생성
+				const nextCSNUM = await getNextCSNUM(selectedMember.ANCD, selectedMember.PNUM);
+
+				query = `
+					INSERT INTO [돌봄시설DB].[dbo].[F11020] (
+						[ANCD], [PNUM], [CSDT], [EMPNO], [EMPNM], [BHREL], [BHRELNM],
+						[STM], [ETM], [CSGU], [CSINFO], [CSM], [CSNUM],
+						[INDT], [ETC], [INEMPNO], [INEMPNM]
+					) VALUES (
+						@ANCD, @PNUM, @CSDT, @EMPNO, @EMPNM, @BHREL, @BHRELNM,
+						@STM, @ETM, @CSGU, @CSINFO, @CSM, @CSNUM,
+						@INDT, @ETC, @INEMPNO, @INEMPNM
+					)
+				`;
+
+				params = {
+					ANCD: selectedMember.ANCD,
+					PNUM: selectedMember.PNUM,
+					CSDT: formatDateForDB(formData.consultationDate),
+					EMPNO: safeTrim(formData.consultantCode),
+					EMPNM: safeTrim(formData.consultant),
+					BHREL: safeTrim(formData.consultationSubstituteCode),
+					BHRELNM: safeTrim(formData.consultationSubstitute),
+					STM: formatTimeForDB(formData.startTime),
+					ETM: formatTimeForDB(formData.endTime),
+					CSGU: safeTrim(formData.consultationMethodCode),
+					CSINFO: safeTrim(formData.consultationContent),
+					CSM: safeTrim(formData.actionTaken),
+					CSNUM: nextCSNUM,
+					INDT: nowStr,
+					ETC: null,
+					INEMPNO: null,
+					INEMPNM: null
+				};
+			}
+
+			const response = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query, params })
+			});
+
+			const result = await response.json();
+
+			if (result && result.success) {
+				alert(existingConsultation ? '상담일지가 수정되었습니다.' : '상담일지가 생성되었습니다.');
+				setIsEditMode(false);
+				// 상담 기록 다시 조회
+				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
+					await fetchConsultations(selectedMember.ANCD, selectedMember.PNUM, selectedMember);
+				}
+			} else {
+				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
+				console.error('상담일지 저장 실패:', result);
+				alert(`상담일지 저장 실패: ${errorMessage}`);
+			}
+		} catch (err) {
+			console.error('상담일지 저장 오류:', err);
+			alert('상담일지 저장 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingConsultations(false);
+		}
 	};
 
 	// 취소 함수
@@ -522,15 +711,332 @@ export default function CounselingRecord() {
 	};
 
 	// 출력 함수
-	const handlePrint = () => {
-		// 출력 로직
-		console.log('출력:', formData);
+	const handlePrint = async () => {
+		if (!selectedMember || !formData.consultationDate) {
+			alert('출력할 상담일지를 선택해주세요.');
+			return;
+		}
+
+		// F00110 테이블에서 장기요양기관명 조회
+		let institutionName = '-';
+		try {
+			const response = await fetch('/api/f00110');
+			const result = await response.json();
+			if (result.success && result.data && Array.isArray(result.data)) {
+				const institution = result.data.find((item: any) => item.ANCD === selectedMember.ANCD);
+				if (institution && institution.ANNM) {
+					institutionName = institution.ANNM;
+				}
+			}
+		} catch (err) {
+			console.error('장기요양기관명 조회 오류:', err);
+		}
+
+		// 출력용 창 열기
+		const printWindow = window.open('', '_blank');
+		if (!printWindow) {
+			alert('팝업이 차단되었습니다. 팝업 차단을 해제해주세요.');
+			return;
+		}
+
+		// 관계 코드를 한글로 변환
+		const relationshipMap: { [key: string]: string } = {
+			'10': '남편',
+			'11': '부인',
+			'20': '아들',
+			'21': '딸',
+			'22': '며느리',
+			'23': '사위',
+			'31': '손주'
+		};
+
+		// 상담방법 코드를 한글로 변환
+		const methodMap: { [key: string]: string } = {
+			'1': '센타방문',
+			'2': '전화',
+			'9': '기타'
+		};
+
+		// 주민등록번호 마스킹 (뒤 6자리)
+		const maskResidentNumber = (residentNumber: string) => {
+			if (!residentNumber || residentNumber.length < 7) return residentNumber;
+			return residentNumber.substring(0, 7) + '******';
+		};
+
+		// 상담시간 포맷
+		const consultationTime = formData.startTime && formData.endTime
+			? `${formData.startTime} ~ ${formData.endTime}`
+			: formData.startTime || formData.endTime || '-';
+
+		// 출력용 HTML 생성
+		const printHTML = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>상담일지</title>
+	<style>
+		@page {
+			size: A4;
+			margin: 20mm;
+		}
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		body {
+			font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+			font-size: 11pt;
+			line-height: 1.5;
+			color: #000;
+			background: #fff;
+		}
+		.print-container {
+			width: 100%;
+			max-width: 210mm;
+			margin: 0 auto;
+			padding: 0;
+		}
+		.header {
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			margin-bottom: 20px;
+		}
+		.title {
+			font-size: 24pt;
+			font-weight: bold;
+			text-align: center;
+			flex: 1;
+		}
+		.signature-table {
+			border-collapse: collapse;
+			border: 1px solid #000;
+			display: table !important;
+			width: auto;
+			table-layout: auto;
+		}
+		.signature-table tbody {
+			display: table-row-group !important;
+		}
+		.signature-table tr {
+			display: table-row !important;
+		}
+		.signature-table td {
+			border: 1px solid #000;
+			text-align: center;
+			vertical-align: middle;
+			display: table-cell !important;
+		}
+		.signature-table td.header {
+			background-color: transparent;
+			font-weight: normal;
+			color: #8B4513;
+			padding: 5px 20px;
+			font-size: 10pt;
+			white-space: nowrap;
+		}
+		.signature-table td.empty {
+			width: 80px;
+			height: 50px;
+			padding: 0;
+			background-color: #fff;
+		}
+		.info-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-bottom: 20px;
+			border: 1px solid #000;
+		}
+		.info-table td {
+			border: 1px solid #000;
+			padding: 8px 10px;
+			font-size: 10pt;
+		}
+		.info-table td.label {
+			background-color: #f0f0f0;
+			font-weight: bold;
+			width: 120px;
+			text-align: center;
+		}
+		.info-table td.value {
+			width: auto;
+		}
+		.content-section {
+			margin-top: 20px;
+			margin-bottom: 20px;
+		}
+		.section-title {
+			font-size: 12pt;
+			font-weight: bold;
+			margin-bottom: 10px;
+			padding: 5px;
+			background-color: #f0f0f0;
+			border: 1px solid #000;
+		}
+		.section-content {
+			border: 1px solid #000;
+			padding: 15px;
+			min-height: 150px;
+			font-size: 10pt;
+			line-height: 1.8;
+			white-space: pre-wrap;
+		}
+		@media print {
+			body {
+				-webkit-print-color-adjust: exact;
+				print-color-adjust: exact;
+			}
+			.print-container {
+				max-width: 100%;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="print-container">
+		<div class="header">
+			<div class="title">상담일지</div>
+			<table class="signature-table" style="border-collapse: collapse; border: 1px solid #000;">
+				<tbody>
+					<tr>
+						<td class="header">담당</td>
+						<td class="header">검토</td>
+						<td class="header">결재</td>
+					</tr>
+					<tr>
+						<td class="empty"></td>
+						<td class="empty"></td>
+						<td class="empty"></td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<table class="info-table">
+			<tr>
+				<td class="label">장기요양기관코드</td>
+				<td class="value">${selectedMember.ANCD || '-'}</td>
+				<td class="label">장기요양기관명</td>
+				<td class="value">${institutionName}</td>
+			</tr>
+			<tr>
+				<td class="label">장기요양등급</td>
+				<td class="value">${selectedMember.P_GRD === '0' ? '등급외' : selectedMember.P_GRD ? `${selectedMember.P_GRD}등급` : '-'}</td>
+				<td class="label">수급자성명</td>
+				<td class="value">${formData.beneficiary || '-'}</td>
+			</tr>
+			<tr>
+				<td class="label">주민등록번호</td>
+				<td class="value">${selectedMember.P_NO ? maskResidentNumber(selectedMember.P_NO) : '-'}</td>
+				<td class="label">장기요양인정번호</td>
+				<td class="value">${selectedMember.P_YYNO || '-'}</td>
+			</tr>
+			<tr>
+				<td class="label">상담자</td>
+				<td class="value">${formData.consultant || '-'}</td>
+				<td class="label">상담방법</td>
+				<td class="value">${formData.consultationMethod || '-'}</td>
+			</tr>
+			<tr>
+				<td class="label">상담대상자</td>
+				<td class="value">${formData.consultationSubstitute || '-'}</td>
+				<td class="label">상담일자</td>
+				<td class="value">${formData.consultationDate || '-'}</td>
+			</tr>
+			<tr>
+				<td class="label">상담시간</td>
+				<td class="value">${consultationTime}</td>
+				<td class="label">수급자와관계</td>
+				<td class="value">${formData.consultationSubstituteCode ? relationshipMap[formData.consultationSubstituteCode] || formData.consultationSubstitute : '-'}</td>
+			</tr>
+		</table>
+
+		<div class="content-section">
+			<div class="section-title">상담내용</div>
+			<div class="section-content">${formData.consultationContent || ''}</div>
+		</div>
+
+		<div class="content-section">
+			<div class="section-title">조치사항</div>
+			<div class="section-content">${formData.actionTaken || ''}</div>
+		</div>
+	</div>
+	<script>
+		window.onload = function() {
+			window.print();
+		};
+	</script>
+</body>
+</html>
+		`;
+
+		printWindow.document.write(printHTML);
+		printWindow.document.close();
 	};
 
 	// 삭제 함수
-	const handleDelete = () => {
-		// 삭제 로직
-		console.log('삭제');
+	const handleDelete = async () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+
+		// 현재 선택된 상담 기록 확인
+		const currentConsultation = selectedDateIndex !== null && consultationList[selectedDateIndex] 
+			? consultationList[selectedDateIndex] 
+			: null;
+
+		if (!currentConsultation || !currentConsultation.CSNUM) {
+			alert('삭제할 상담일지를 선택해주세요.');
+			return;
+		}
+
+		if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+			return;
+		}
+
+		setLoadingConsultations(true);
+		try {
+			const deleteQuery = `
+				DELETE FROM [돌봄시설DB].[dbo].[F11020]
+				WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [CSNUM] = @CSNUM
+			`;
+
+			const params = {
+				ANCD: selectedMember.ANCD,
+				PNUM: selectedMember.PNUM,
+				CSNUM: currentConsultation.CSNUM
+			};
+
+			const response = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: deleteQuery, params })
+			});
+
+			const result = await response.json();
+
+			if (result && result.success) {
+				alert('상담일지가 삭제되었습니다.');
+				setIsEditMode(false);
+				// 상담 기록 다시 조회
+				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
+					await fetchConsultations(selectedMember.ANCD, selectedMember.PNUM, selectedMember);
+				}
+			} else {
+				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
+				console.error('상담일지 삭제 실패:', result);
+				alert(`상담일지 삭제 실패: ${errorMessage}`);
+			}
+		} catch (err) {
+			console.error('상담일지 삭제 오류:', err);
+			alert('상담일지 삭제 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingConsultations(false);
+		}
 	};
 
 	return (
@@ -867,14 +1373,16 @@ export default function CounselingRecord() {
 									</span>
 								)}
 							</div>
-							<div className="ml-auto flex items-center gap-2">
-								<button
-									onClick={handlePrint}
-									className="px-4 py-1.5 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-								>
-									출력
-								</button>
-							</div>
+							{!isEditMode && (
+								<div className="ml-auto flex items-center gap-2">
+									<button
+										onClick={handlePrint}
+										className="px-4 py-1.5 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+									>
+										출력
+									</button>
+								</div>
+							)}
 						</div>
 
 						{/* 두 번째 행 */}
