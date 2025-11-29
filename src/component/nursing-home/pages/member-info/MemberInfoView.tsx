@@ -12,6 +12,8 @@ export default function MemberInfoView() {
 	const [error, setError] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedGrade, setSelectedGrade] = useState<string>('');
+	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [isEditing, setIsEditing] = useState(false);
 	const [editedMember, setEditedMember] = useState<MemberData | null>(null);
 	const [isCreating, setIsCreating] = useState(false);
@@ -484,6 +486,16 @@ export default function MemberInfoView() {
 			if (selectedStatus === '퇴소' && member.P_ST !== '9') return false;
 		}
 		
+		// 등급 필터링
+		if (selectedGrade) {
+			if (member.P_GRD !== selectedGrade) return false;
+		}
+		
+		// 층수 필터링
+		if (selectedFloor) {
+			if (String(member.P_FLOOR || '') !== selectedFloor) return false;
+		}
+		
 		// 검색어 필터링
 		if (searchTerm === '') return true;
 		return (
@@ -493,6 +505,11 @@ export default function MemberInfoView() {
 			String(member.ANCD || '').includes(searchTerm) ||
 			String(member.PNUM || '').includes(searchTerm)
 		);
+	}).sort((a, b) => {
+		// 이름 가나다순 정렬
+		const nameA = (a.P_NM || '').trim();
+		const nameB = (b.P_NM || '').trim();
+		return nameA.localeCompare(nameB, 'ko');
 	});
 
 	// 페이지네이션 계산
@@ -594,10 +611,10 @@ export default function MemberInfoView() {
 		setCurrentPage(1);
 	}, [searchTerm]);
 
-	// 상태 필터 변경 시 페이지 초기화
+	// 필터 변경 시 페이지 초기화
 	useEffect(() => {
 		setCurrentPage(1);
-	}, [selectedStatus]);
+	}, [selectedStatus, selectedGrade, selectedFloor]);
 
 	return (
 		<div className="min-h-screen text-black bg-white">
@@ -614,12 +631,53 @@ export default function MemberInfoView() {
 									<div className="text-xs text-blue-900/80">현황</div>
 									<select
 										value={selectedStatus}
-										onChange={(e) => setSelectedStatus(e.target.value)}
+										onChange={(e) => {
+											setSelectedStatus(e.target.value);
+											setCurrentPage(1);
+										}}
 										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
 									>
 										<option value="">현황 전체</option>
 										<option value="입소">입소</option>
 										<option value="퇴소">퇴소</option>
+									</select>
+								</div>
+								{/* 등급 필터 */}
+								<div className="space-y-1">
+									<div className="text-xs text-blue-900/80">등급</div>
+									<select
+										value={selectedGrade}
+										onChange={(e) => {
+											setSelectedGrade(e.target.value);
+											setCurrentPage(1);
+										}}
+										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
+									>
+										<option value="">등급 전체</option>
+										<option value="1">1등급</option>
+										<option value="2">2등급</option>
+										<option value="3">3등급</option>
+										<option value="4">4등급</option>
+										<option value="5">5등급</option>
+										<option value="6">6등급</option>
+									</select>
+								</div>
+								{/* 층수 필터 */}
+								<div className="space-y-1">
+									<div className="text-xs text-blue-900/80">층수</div>
+									<select
+										value={selectedFloor}
+										onChange={(e) => {
+											setSelectedFloor(e.target.value);
+											setCurrentPage(1);
+										}}
+										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
+									>
+										<option value="">층수 전체</option>
+										{/* 동적으로 층수 목록 생성 */}
+										{Array.from(new Set(members.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
+											<option key={floor} value={String(floor)}>{floor}층</option>
+										))}
 									</select>
 								</div>
 								{/* 이름 검색 */}
