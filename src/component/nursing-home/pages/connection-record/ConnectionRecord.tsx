@@ -37,13 +37,10 @@ export default function ConnectionRecord() {
 	const consultationDateItemsPerPage = 10;
 	const [formData, setFormData] = useState({
 		beneficiary: '',
-		consultationSubstitute: '',
-		consultationDateTime: '',
-		consultant: '',
-		consultationMethod: '',
-		consultationContent: '',
-		actionTaken: '',
-		servicePlan: ''
+		connectionDate: '', // MEDT (의뢰일자)
+		connectionTitle: '', // MDIC (연계제목)
+		connectionDetails: '', // MINFO (연계내역)
+		remarks: '' // ETC (비고)
 	});
 
 	// 수급자 목록 데이터
@@ -168,13 +165,10 @@ export default function ConnectionRecord() {
 		// 새 연계 기록을 위한 폼 초기화 (수급자명은 유지)
 		setFormData({
 			beneficiary: selectedMember?.P_NM || '',
-			consultationSubstitute: '',
-			consultationDateTime: formattedDate,
-			consultant: '',
-			consultationMethod: '',
-			consultationContent: '',
-			actionTaken: '',
-			servicePlan: ''
+			connectionDate: formattedDate,
+			connectionTitle: '',
+			connectionDetails: '',
+			remarks: ''
 		});
 		
 		// 편집 모드로 전환
@@ -376,13 +370,10 @@ export default function ConnectionRecord() {
 
 			setFormData({
 				beneficiary: currentMember?.P_NM || '',
-				consultationSubstitute: '',
-				consultationDateTime: connectionDate,
-				consultant: '',
-				consultationMethod: '',
-				consultationContent: selectedConnection.MINFO || '',
-				actionTaken: '',
-				servicePlan: ''
+				connectionDate: connectionDate,
+				connectionTitle: selectedConnection.MDIC || '',
+				connectionDetails: selectedConnection.MINFO || '',
+				remarks: selectedConnection.ETC || ''
 			});
 		}
 	};
@@ -400,13 +391,10 @@ export default function ConnectionRecord() {
 		const currentMember = member || selectedMember;
 		setFormData({
 			beneficiary: currentMember?.P_NM || '',
-			consultationSubstitute: '',
-			consultationDateTime: '',
-			consultant: '',
-			consultationMethod: '',
-			consultationContent: '',
-			actionTaken: '',
-			servicePlan: ''
+			connectionDate: '',
+			connectionTitle: '',
+			connectionDetails: '',
+			remarks: ''
 		});
 	};
 
@@ -418,23 +406,171 @@ export default function ConnectionRecord() {
 	// 수정 함수
 	const handleModify = () => {
 		// 수정 모드 진입 시 연계일자가 없으면 오늘 날짜로 설정
-		if (!formData.consultationDateTime) {
+		if (!formData.connectionDate) {
 			const today = new Date();
 			const year = today.getFullYear();
 			const month = String(today.getMonth() + 1).padStart(2, '0');
 			const day = String(today.getDate()).padStart(2, '0');
 			const formattedDate = `${year}-${month}-${day}`;
-			setFormData(prev => ({ ...prev, consultationDateTime: formattedDate }));
+			setFormData(prev => ({ ...prev, connectionDate: formattedDate }));
 		}
 		setIsEditMode(true);
 	};
 
+	// 다음 MENUM 조회
+	const getNextMENUM = async (ancd: string, pnum: string): Promise<string> => {
+		try {
+			const response = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					query: `SELECT ISNULL(MAX(CAST(MENUM AS INT)), 0) + 1 AS NEXT_MENUM 
+							FROM [돌봄시설DB].[dbo].[F11040] 
+							WHERE ANCD = @ancd AND PNUM = @pnum`,
+					params: { ancd, pnum }
+				})
+			});
+			const result = await response.json();
+			if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
+				return String(result.data[0].NEXT_MENUM);
+			}
+			return '1';
+		} catch (err) {
+			console.error('MENUM 생성 오류:', err);
+			return '1';
+		}
+	};
+
+	// 안전한 문자열 trim 함수
+	const safeTrim = (value: any): string | null => {
+		if (value === null || value === undefined) return null;
+		if (typeof value !== 'string') {
+			try {
+				const strValue = String(value);
+				return strValue.trim() || null;
+			} catch {
+				return null;
+			}
+		}
+		return value.trim() || null;
+	};
+
 	// 저장 함수
-	const handleSave = () => {
-		// 저장 로직
-		console.log('저장:', formData);
-		setIsEditMode(false);
-		// TODO: API 호출하여 데이터 저장
+	const handleSave = async () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+
+		if (!formData.connectionDate) {
+			alert('연계일자를 입력해주세요.');
+			return;
+		}
+
+		setLoadingConnections(true);
+		try {
+			// 현재 날짜/시간
+			const now = new Date();
+			const nowStr = now.toISOString().slice(0, 19).replace('T', ' ');
+
+			// 날짜 형식 변환 (YYYY-MM-DD -> YYYYMMDD)
+			const formatDateForDB = (dateStr: string): string | null => {
+				if (!dateStr || dateStr.trim() === '') return null;
+				try {
+					// yyyy-mm-dd 형식을 YYYYMMDD로 변환
+					if (dateStr.includes('-')) {
+						return dateStr.replace(/-/g, '');
+					}
+					return dateStr;
+				} catch (err) {
+					return null;
+				}
+			};
+
+			// 기존 연계 기록이 있는지 확인 (수정 모드인지 확인)
+			const existingConnection = selectedDateIndex !== null && connectionList[selectedDateIndex] 
+				? connectionList[selectedDateIndex] 
+				: null;
+
+			let query: string;
+			let params: any;
+
+			if (existingConnection && existingConnection.MENUM) {
+				// 수정 모드: UPDATE 쿼리
+				query = `
+					UPDATE [돌봄시설DB].[dbo].[F11040]
+					SET 
+						[MEDT] = @MEDT,
+						[MDIC] = @MDIC,
+						[MINFO] = @MINFO,
+						[ETC] = @ETC
+					WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [MENUM] = @MENUM
+				`;
+
+				params = {
+					ANCD: selectedMember.ANCD,
+					PNUM: selectedMember.PNUM,
+					MENUM: existingConnection.MENUM,
+					MEDT: formatDateForDB(formData.connectionDate),
+					MDIC: safeTrim(formData.connectionTitle),
+					MINFO: safeTrim(formData.connectionDetails),
+					ETC: safeTrim(formData.remarks)
+				};
+			} else {
+				// 생성 모드: INSERT 쿼리
+				// MENUM 자동 생성
+				const nextMENUM = await getNextMENUM(selectedMember.ANCD, selectedMember.PNUM);
+
+				query = `
+					INSERT INTO [돌봄시설DB].[dbo].[F11040] (
+						[ANCD], [PNUM], [MEDT], [MDIC], [MINFO], [MENUM],
+						[INDT], [ETC], [INEMPNO], [INEMPNM]
+					) VALUES (
+						@ANCD, @PNUM, @MEDT, @MDIC, @MINFO, @MENUM,
+						@INDT, @ETC, @INEMPNO, @INEMPNM
+					)
+				`;
+
+				params = {
+					ANCD: selectedMember.ANCD,
+					PNUM: selectedMember.PNUM,
+					MEDT: formatDateForDB(formData.connectionDate),
+					MDIC: safeTrim(formData.connectionTitle),
+					MINFO: safeTrim(formData.connectionDetails),
+					MENUM: nextMENUM,
+					INDT: nowStr,
+					ETC: safeTrim(formData.remarks),
+					INEMPNO: null,
+					INEMPNM: null
+				};
+			}
+
+			const response = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query, params })
+			});
+
+			const result = await response.json();
+
+			if (result && result.success) {
+				alert(existingConnection ? '연계기록이 수정되었습니다.' : '연계기록이 생성되었습니다.');
+				setIsEditMode(false);
+				// 연계 기록 다시 조회
+				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
+					await fetchConnections(selectedMember.ANCD, selectedMember.PNUM, selectedMember);
+				}
+			} else {
+				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
+				console.error('연계기록 저장 실패:', result);
+				alert(`연계기록 저장 실패: ${errorMessage}`);
+			}
+		} catch (err) {
+			console.error('연계기록 저장 오류:', err);
+			alert('연계기록 저장 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingConnections(false);
+		}
 	};
 
 	// 취소 함수
@@ -457,7 +593,7 @@ export default function ConnectionRecord() {
 			setConsultationDates(prev => prev.filter((_, index) => index !== selectedDateIndex));
 			setSelectedDateIndex(null);
 			// 폼 초기화
-			resetForm();
+			resetForm(selectedMember);
 			return;
 		}
 		
@@ -471,15 +607,379 @@ export default function ConnectionRecord() {
 	};
 
 	// 출력 함수
-	const handlePrint = () => {
-		// 출력 로직
-		console.log('출력:', formData);
+	const handlePrint = async () => {
+		if (!selectedMember || !formData.connectionDate) {
+			alert('출력할 연계기록을 선택해주세요.');
+			return;
+		}
+
+		// F00110 테이블에서 장기요양기관 정보 조회
+		let institutionName = '-';
+		let facilityManager = '-';
+		let facilityAddress = '-';
+		let facilityPhone = '-';
+		let facilityFax = '-';
+		try {
+			const response = await fetch('/api/f00110');
+			const result = await response.json();
+			if (result.success && result.data && Array.isArray(result.data)) {
+				const institution = result.data.find((item: any) => item.ANCD === selectedMember.ANCD);
+				if (institution) {
+					institutionName = institution.ANNM || '-';
+					facilityManager = institution.MNM || '-';
+					facilityAddress = institution.ANADD || '-';
+					facilityPhone = institution.ANTEL || '-';
+					facilityFax = institution.ANFAX || '-';
+				}
+			}
+		} catch (err) {
+			console.error('장기요양기관 정보 조회 오류:', err);
+		}
+
+		// 출력용 창 열기
+		const printWindow = window.open('', '_blank');
+		if (!printWindow) {
+			alert('팝업이 차단되었습니다. 팝업 차단을 해제해주세요.');
+			return;
+		}
+
+		// 주민등록번호 마스킹 (뒤 6자리)
+		const maskResidentNumber = (residentNumber: string) => {
+			if (!residentNumber || residentNumber.length < 7) return residentNumber || '-';
+			return residentNumber.substring(0, 7) + '******';
+		};
+
+		// 오늘 날짜 포맷
+		const today = new Date();
+		const year = today.getFullYear();
+		const month = String(today.getMonth() + 1).padStart(2, '0');
+		const day = String(today.getDate()).padStart(2, '0');
+		const issueDate = `${year}-${month}-${day}`;
+		const printDate = `${year}-${month}-${day}`;
+
+		// 출력용 HTML 생성
+		const printHTML = `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>연계기록지</title>
+	<style>
+		@page {
+			size: A4;
+			margin: 20mm;
+		}
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		body {
+			font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+			font-size: 11pt;
+			line-height: 1.5;
+			color: #000;
+			background: #fff;
+		}
+		.print-container {
+			width: 100%;
+			max-width: 210mm;
+			margin: 0 auto;
+			padding: 0;
+		}
+		.header {
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			margin-bottom: 20px;
+		}
+		.title {
+			font-size: 24pt;
+			font-weight: bold;
+			text-align: center;
+			flex: 1;
+		}
+		.signature-table {
+			border-collapse: collapse;
+			border: 1px solid #000;
+			display: table !important;
+			width: auto;
+			table-layout: auto;
+		}
+		.signature-table tbody {
+			display: table-row-group !important;
+		}
+		.signature-table tr {
+			display: table-row !important;
+		}
+		.signature-table td {
+			border: 1px solid #000;
+			text-align: center;
+			vertical-align: middle;
+			display: table-cell !important;
+		}
+		.signature-table td.header {
+			background-color: transparent;
+			font-weight: normal;
+			color: #8B4513;
+			padding: 5px 20px;
+			font-size: 10pt;
+			white-space: nowrap;
+		}
+		.signature-table td.empty {
+			width: 80px;
+			height: 50px;
+			padding: 0;
+			background-color: #fff;
+		}
+		.info-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-bottom: 20px;
+			border: 1px solid #000;
+		}
+		.info-table td {
+			border: 1px solid #000;
+			padding: 8px 10px;
+			font-size: 10pt;
+		}
+		.info-table td.label {
+			background-color: #f0f0f0;
+			font-weight: bold;
+			width: 120px;
+			text-align: center;
+		}
+		.info-table td.value {
+			width: auto;
+		}
+		.connection-details-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-bottom: 20px;
+			border: 1px solid #000;
+		}
+		.connection-details-table td {
+			border: 1px solid #000;
+			padding: 8px 10px;
+			font-size: 10pt;
+		}
+		.connection-details-table td.label {
+			background-color: #f0f0f0;
+			font-weight: bold;
+			width: 120px;
+			text-align: center;
+		}
+		.connection-details-table td.value {
+			width: auto;
+		}
+		.content-section {
+			margin-top: 20px;
+			margin-bottom: 20px;
+		}
+		.section-title {
+			font-size: 12pt;
+			font-weight: bold;
+			margin-bottom: 10px;
+			padding: 5px;
+			background-color: #f0f0f0;
+			border: 1px solid #000;
+		}
+		.section-content {
+			border: 1px solid #000;
+			padding: 15px;
+			min-height: 200px;
+			font-size: 10pt;
+			line-height: 1.8;
+			white-space: pre-wrap;
+		}
+		.footer {
+			margin-top: 30px;
+			text-align: center;
+		}
+		.footer-text {
+			font-size: 11pt;
+			margin-bottom: 15px;
+		}
+		.footer-info {
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			margin-top: 20px;
+			font-size: 10pt;
+		}
+		.footer-left {
+			text-align: left;
+		}
+		.footer-right {
+			text-align: right;
+		}
+		.footer-bottom {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-top: 20px;
+			font-size: 9pt;
+			color: #666;
+		}
+		@media print {
+			body {
+				-webkit-print-color-adjust: exact;
+				print-color-adjust: exact;
+			}
+			.print-container {
+				max-width: 100%;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="print-container">
+		<div class="header">
+			<div class="title">연계기록지</div>
+			<table class="signature-table" style="border-collapse: collapse; border: 1px solid #000;">
+				<tbody>
+					<tr>
+						<td class="header">담당</td>
+						<td class="header">검토</td>
+						<td class="header">결재</td>
+					</tr>
+					<tr>
+						<td class="empty"></td>
+						<td class="empty"></td>
+						<td class="empty"></td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<table class="info-table">
+			<tr>
+				<td class="label">장기요양기관기호</td>
+				<td class="value">${selectedMember.ANCD || '-'}</td>
+				<td class="label">장기요양기관명</td>
+				<td class="value">${institutionName}</td>
+			</tr>
+			<tr>
+				<td class="label">장기요양등급</td>
+				<td class="value">${selectedMember.P_GRD === '0' ? '등급외' : selectedMember.P_GRD ? `${selectedMember.P_GRD}등급` : '-'}</td>
+				<td class="label">수급자성명</td>
+				<td class="value">${formData.beneficiary || '-'}</td>
+			</tr>
+			<tr>
+				<td class="label">주민등록번호</td>
+				<td class="value">${selectedMember.P_NO ? maskResidentNumber(selectedMember.P_NO) : '-'}</td>
+				<td class="label">장기요양인정번호</td>
+				<td class="value">${selectedMember.P_YYNO || '-'}</td>
+			</tr>
+		</table>
+
+		<table class="connection-details-table">
+			<tr>
+				<td class="label">연계일자</td>
+				<td class="value">${formData.connectionDate || '-'}</td>
+			</tr>
+			<tr>
+				<td class="label">연계제목</td>
+				<td class="value">${formData.connectionTitle || '-'}</td>
+			</tr>
+		</table>
+
+		<div class="content-section">
+			<div class="section-title">연계내용</div>
+			<div class="section-content">${formData.connectionDetails || ''}</div>
+		</div>
+
+		<div class="footer">
+			<div class="footer-text">위와 같은 상란으로 연계함</div>
+			<div class="footer-info">
+				<div class="footer-left">
+					<div>발행일자: ${issueDate}</div>
+					<div>시설장: ${facilityManager}</div>
+					<div>주소: ${facilityAddress}</div>
+					<div>전화: ${facilityPhone}</div>
+					<div>Fax: ${facilityFax}</div>
+				</div>
+			</div>
+			<div class="footer-bottom">
+				<div>R11020B</div>
+				<div>출력일자: ${printDate} 페이지: 1</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		window.onload = function() {
+			window.print();
+		};
+	</script>
+</body>
+</html>
+		`;
+
+		printWindow.document.write(printHTML);
+		printWindow.document.close();
 	};
 
 	// 삭제 함수
-	const handleDelete = () => {
-		// 삭제 로직
-		console.log('삭제');
+	const handleDelete = async () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+
+		// 현재 선택된 연계 기록 확인
+		const currentConnection = selectedDateIndex !== null && connectionList[selectedDateIndex] 
+			? connectionList[selectedDateIndex] 
+			: null;
+
+		if (!currentConnection || !currentConnection.MENUM) {
+			alert('삭제할 연계기록을 선택해주세요.');
+			return;
+		}
+
+		if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+			return;
+		}
+
+		setLoadingConnections(true);
+		try {
+			const deleteQuery = `
+				DELETE FROM [돌봄시설DB].[dbo].[F11040]
+				WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [MENUM] = @MENUM
+			`;
+
+			const params = {
+				ANCD: selectedMember.ANCD,
+				PNUM: selectedMember.PNUM,
+				MENUM: currentConnection.MENUM
+			};
+
+			const response = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: deleteQuery, params })
+			});
+
+			const result = await response.json();
+
+			if (result && result.success) {
+				alert('연계기록이 삭제되었습니다.');
+				setIsEditMode(false);
+				// 연계 기록 다시 조회
+				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
+					await fetchConnections(selectedMember.ANCD, selectedMember.PNUM, selectedMember);
+				}
+			} else {
+				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
+				console.error('연계기록 삭제 실패:', result);
+				alert(`연계기록 삭제 실패: ${errorMessage}`);
+			}
+		} catch (err) {
+			console.error('연계기록 삭제 오류:', err);
+			alert('연계기록 삭제 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingConnections(false);
+		}
 	};
 
 	return (
@@ -785,77 +1285,79 @@ export default function ConnectionRecord() {
 								{isEditMode ? (
 									<input
 										type="date"
-										value={formData.consultationDateTime}
-										onChange={(e) => handleFormChange('consultationDateTime', e.target.value)}
+										value={formData.connectionDate}
+										onChange={(e) => handleFormChange('connectionDate', e.target.value)}
 										className="px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500 min-w-[150px]"
 									/>
 								) : (
 									<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
-										{formData.consultationDateTime || '-'}
+										{formData.connectionDate || '-'}
 									</span>
 								)}
 							</div>
-							<div className="ml-auto flex items-center gap-2">
-								<button
-									onClick={handlePrint}
-									className="px-4 py-1.5 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-								>
-									출력
-								</button>
-							</div>
+							{!isEditMode && (
+								<div className="ml-auto flex items-center gap-2">
+									<button
+										onClick={handlePrint}
+										className="px-4 py-1.5 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+									>
+										출력
+									</button>
+								</div>
+							)}
 						</div>
 						
 
-						{/* 심신 기능 상태 */}
+						{/* 연계제목 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">심신 기능 상태</label>
+							<label className="block text-sm text-blue-900 font-medium mb-2">연계제목</label>
 							{isEditMode ? (
-								<textarea
-									value={formData.consultationContent}
-									onChange={(e) => handleFormChange('consultationContent', e.target.value)}
+								<input
+									type="text"
+									value={formData.connectionTitle}
+									onChange={(e) => handleFormChange('connectionTitle', e.target.value)}
 									className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-									rows={8}
-									placeholder="심신 기능 상태를 입력하세요"
+									placeholder="연계제목을 입력하세요"
 								/>
 							) : (
-								<div className="w-full px-3 py-2 text-sm border border-blue-200 rounded bg-gray-50 min-h-[200px] whitespace-pre-wrap">
-									{formData.consultationContent || '-'}
+								<div className="w-full px-3 py-2 text-sm border border-blue-200 rounded bg-gray-50 min-h-[40px]">
+									{formData.connectionTitle || '-'}
 								</div>
 							)}
 						</div>
 
-						{/* 제공한 급여 */}
+						{/* 연계내역 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">제공한 급여</label>
+							<label className="block text-sm text-blue-900 font-medium mb-2">연계내역</label>
 							{isEditMode ? (
 								<textarea
-									value={formData.actionTaken}
-									onChange={(e) => handleFormChange('actionTaken', e.target.value)}
+									value={formData.connectionDetails}
+									onChange={(e) => handleFormChange('connectionDetails', e.target.value)}
 									className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 									rows={8}
-									placeholder="제공한 급여를 입력하세요"
+									placeholder="연계내역을 입력하세요"
 								/>
 							) : (
 								<div className="w-full px-3 py-2 text-sm border border-blue-200 rounded bg-gray-50 min-h-[200px] whitespace-pre-wrap">
-									{formData.actionTaken || '-'}
+									{formData.connectionDetails || '-'}
 								</div>
 							)}
 						</div>
 
-						{/* 서비스 이용계획 */}
+						{/* 비고 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">서비스 이용계획</label>
+							<label className="block text-sm text-blue-900 font-medium mb-2">비고</label>
 							{isEditMode ? (
 								<textarea
-									value={formData.servicePlan}
-									onChange={(e) => handleFormChange('servicePlan', e.target.value)}
+									value={formData.remarks}
+									onChange={(e) => handleFormChange('remarks', e.target.value)}
 									className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-									rows={8}
-									placeholder="서비스 이용계획을 입력하세요"
+									rows={4}
+									placeholder="비고를 입력하세요"
 								/>
 							) : (
-								<div className="w-full px-3 py-2 text-sm border border-blue-200 rounded bg-gray-50 min-h-[200px] whitespace-pre-wrap">
-									{formData.servicePlan || '-'}
+								<div className="w-full px-3 py-2 text-sm border border-blue-200 rounded bg-gray-50 min-h-[100px] whitespace-pre-wrap">
+									{formData.remarks || '-'}
 								</div>
 							)}
 						</div>
