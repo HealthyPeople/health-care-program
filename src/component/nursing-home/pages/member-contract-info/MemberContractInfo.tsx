@@ -118,32 +118,54 @@ export default function MemberContractInfo() {
 	};
 
 	// 클라이언트 측 추가 필터링 (서버에서 이미 이름으로 필터링됨)
+	// 모든 필터 조건을 AND로 결합하여 적용
 	const filteredMembers = members.filter(member => {
 		// 상태 필터링
 		if (selectedStatus) {
-			if (selectedStatus === '입소' && member.P_ST !== '1') return false;
-			if (selectedStatus === '퇴소' && member.P_ST !== '9') return false;
+			const memberStatus = String(member.P_ST || '').trim();
+			if (selectedStatus === '입소' && memberStatus !== '1') {
+				return false;
+			}
+			if (selectedStatus === '퇴소' && memberStatus !== '9') {
+				return false;
+			}
 		}
 		
 		// 등급 필터링
 		if (selectedGrade) {
-			if (member.P_GRD !== selectedGrade) return false;
+			const memberGrade = String(member.P_GRD || '').trim();
+			const selectedGradeTrimmed = String(selectedGrade).trim();
+			if (memberGrade !== selectedGradeTrimmed) {
+				return false;
+			}
 		}
 		
 		// 층수 필터링
 		if (selectedFloor) {
-			if (String(member.P_FLOOR || '') !== selectedFloor) return false;
+			const memberFloor = String(member.P_FLOOR || '').trim();
+			const selectedFloorTrimmed = String(selectedFloor).trim();
+			if (memberFloor !== selectedFloorTrimmed) {
+				return false;
+			}
 		}
 		
-		// 검색어 필터링
-		if (searchTerm === '') return true;
-		return (
-			member.P_NM?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-			member.P_TEL?.includes(searchTerm) ||
-			member.P_HP?.includes(searchTerm) ||
-			String(member.ANCD || '').includes(searchTerm) ||
-			String(member.PNUM || '').includes(searchTerm)
-		);
+		// 검색어 필터링 (검색어가 있을 때만 적용)
+		if (searchTerm && searchTerm.trim() !== '') {
+			const searchLower = searchTerm.toLowerCase().trim();
+			const matchesSearch = (
+				member.P_NM?.toLowerCase().includes(searchLower) ||
+				member.P_TEL?.includes(searchTerm) ||
+				member.P_HP?.includes(searchTerm) ||
+				String(member.ANCD || '').includes(searchTerm) ||
+				String(member.PNUM || '').includes(searchTerm)
+			);
+			if (!matchesSearch) {
+				return false;
+			}
+		}
+		
+		// 모든 필터 조건을 통과한 경우만 true 반환
+		return true;
 	}).sort((a, b) => {
 		// 이름 가나다순 정렬
 		const nameA = (a.P_NM || '').trim();
