@@ -52,6 +52,7 @@ export async function GET(req) {
         f10010.[P_HP],
         f10010.[P_YYSDT],
         f10010.[P_YYEDT],
+        f10010.[P_FLOOR],
         f10110.[SVSDT],
         f10110.[SVEDT],
         f10110.[INSPER],
@@ -195,10 +196,13 @@ export async function POST(req) {
 
     const result = await request.query(query);
     
+    // recordset이 undefined일 수 있으므로 안전하게 처리
+    const recordset = result.recordset || [];
+    
     return new Response(JSON.stringify({ 
       success: true, 
-      data: result.recordset,
-      count: result.recordset.length
+      data: recordset,
+      count: recordset.length
     }), { 
       status: 200,
       headers: { 'Content-Type': 'application/json' }
