@@ -50,6 +50,8 @@ export default function ConnectionRecord() {
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedGrade, setSelectedGrade] = useState<string>('');
+	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [searchTerm, setSearchTerm] = useState('');
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
@@ -90,10 +92,34 @@ export default function ConnectionRecord() {
 
 	// 필터링된 수급자 목록
 	const filteredMembers = memberList.filter((member) => {
-		if (!selectedStatus) return true;
-		if (selectedStatus === '입소') return member.P_ST === '1';
-		if (selectedStatus === '퇴소') return member.P_ST === '9';
+		// 상태 필터링
+		if (selectedStatus) {
+			if (selectedStatus === '입소' && member.P_ST !== '1') return false;
+			if (selectedStatus === '퇴소' && member.P_ST !== '9') return false;
+		}
+		
+		// 등급 필터링
+		if (selectedGrade) {
+			if (member.P_GRD !== selectedGrade) return false;
+		}
+		
+		// 층수 필터링
+		if (selectedFloor) {
+			if (String(member.P_FLOOR || '') !== selectedFloor) return false;
+		}
+		
+		// 이름 검색 필터링
+		if (searchTerm && searchTerm.trim() !== '') {
+			const searchLower = searchTerm.toLowerCase();
+			if (!member.P_NM?.toLowerCase().includes(searchLower)) return false;
+		}
+		
 		return true;
+	}).sort((a, b) => {
+		// 이름 가나다순 정렬
+		const nameA = (a.P_NM || '').trim();
+		const nameB = (b.P_NM || '').trim();
+		return nameA.localeCompare(nameB, 'ko');
 	});
 
 	// 페이지네이션 계산
@@ -120,10 +146,10 @@ export default function ConnectionRecord() {
 		return () => clearTimeout(timer);
 	}, [searchTerm]);
 
-	// 상태 필터 변경 시 페이지 초기화
+	// 필터 변경 시 페이지 초기화
 	useEffect(() => {
 		setCurrentPage(1);
-	}, [selectedStatus]);
+	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
 
 	// 날짜 생성 함수
 	const handleCreateDate = () => {
@@ -461,33 +487,65 @@ export default function ConnectionRecord() {
 			<div className="flex h-[calc(100vh-56px)]">
 				{/* 좌측 패널 (약 25%) */}
 				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
-					{/* 현황선택 헤더 */}
+					{/* 필터 헤더 */}
 					<div className="mb-3">
-						<div className="flex gap-2 mb-2">
-							<div className="mb-3">
-								<h3 className="text-sm font-semibold text-blue-900">수급자 목록</h3>
+						<h3 className="text-sm font-semibold text-blue-900 mb-2">수급자 목록</h3>
+						<div className="space-y-2">
+							{/* 이름 검색 */}
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">이름 검색</div>
+								<input 
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded" 
+									placeholder="예) 홍길동"
+									value={searchTerm}
+									onChange={(e) => setSearchTerm(e.target.value)}
+								/>
 							</div>
-							<div className="h-6 flex-1 bg-white border border-blue-300 rounded flex items-center justify-center">
+							{/* 현황 필터 */}
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">현황</div>
 								<select
 									value={selectedStatus}
 									onChange={(e) => setSelectedStatus(e.target.value)}
-									className="w-full h-full text-xs text-blue-900 bg-transparent border-none outline-none px-2 cursor-pointer"
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
 								>
 									<option value="">현황 전체</option>
 									<option value="입소">입소</option>
 									<option value="퇴소">퇴소</option>
 								</select>
 							</div>
-						</div>
-						{/* 검색 영역 */}
-						<div className="space-y-2">
-							<div className="text-xs text-blue-900/80">이름 검색</div>
-							<input 
-								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded" 
-								placeholder="예) 홍길동"
-								value={searchTerm}
-								onChange={(e) => setSearchTerm(e.target.value)}
-							/>
+							{/* 등급 필터 */}
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">등급</div>
+								<select
+									value={selectedGrade}
+									onChange={(e) => setSelectedGrade(e.target.value)}
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+								>
+									<option value="">등급 전체</option>
+									<option value="1">1등급</option>
+									<option value="2">2등급</option>
+									<option value="3">3등급</option>
+									<option value="4">4등급</option>
+									<option value="5">5등급</option>
+									<option value="6">6등급</option>
+								</select>
+							</div>
+							{/* 층수 필터 */}
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">층수</div>
+								<select
+									value={selectedFloor}
+									onChange={(e) => setSelectedFloor(e.target.value)}
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+								>
+									<option value="">층수 전체</option>
+									{/* 동적으로 층수 목록 생성 */}
+									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
+										<option key={floor} value={String(floor)}>{floor}층</option>
+									))}
+								</select>
+							</div>
 						</div>
 					</div>
 
