@@ -1000,13 +1000,13 @@ export default function ConnectionRecord() {
 	};
 
 	return (
-		<div className="min-h-screen bg-white text-black">
+		<div className="min-h-screen text-black bg-white">
 			<div className="flex h-[calc(100vh-56px)]">
 				{/* 좌측 패널 (약 25%) */}
-				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
+				<div className="flex flex-col w-1/4 p-4 bg-white border-r border-blue-200">
 					{/* 필터 헤더 */}
 					<div className="mb-3">
-						<h3 className="text-sm font-semibold text-blue-900 mb-2">수급자 목록</h3>
+						<h3 className="mb-2 text-sm font-semibold text-blue-900">수급자 목록</h3>
 						<div className="space-y-2">
 							{/* 이름 검색 */}
 							<div className="space-y-1">
@@ -1024,7 +1024,7 @@ export default function ConnectionRecord() {
 								<select
 									value={selectedStatus}
 									onChange={(e) => setSelectedStatus(e.target.value)}
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
 								>
 									<option value="">현황 전체</option>
 									<option value="입소">입소</option>
@@ -1037,7 +1037,7 @@ export default function ConnectionRecord() {
 								<select
 									value={selectedGrade}
 									onChange={(e) => setSelectedGrade(e.target.value)}
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
 								>
 									<option value="">등급 전체</option>
 									<option value="1">1등급</option>
@@ -1054,7 +1054,7 @@ export default function ConnectionRecord() {
 								<select
 									value={selectedFloor}
 									onChange={(e) => setSelectedFloor(e.target.value)}
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
 								>
 									<option value="">층수 전체</option>
 									{/* 동적으로 층수 목록 생성 */}
@@ -1067,10 +1067,10 @@ export default function ConnectionRecord() {
 					</div>
 
 					{/* 수급자 목록 테이블 - 라운드 박스 */}
-					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white flex flex-col">
+					<div className="flex flex-col overflow-hidden bg-white border border-blue-300 rounded-lg">
 						<div className="overflow-y-auto">
 							<table className="w-full text-xs">
-								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
+								<thead className="sticky top-0 border-b border-blue-200 bg-blue-50">
 									<tr>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
 										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">현황</th>
@@ -1083,11 +1083,11 @@ export default function ConnectionRecord() {
 								<tbody>
 									{loading ? (
 										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">로딩 중...</td>
+											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
 										</tr>
 									) : filteredMembers.length === 0 ? (
 										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">수급자 데이터가 없습니다</td>
+											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">수급자 데이터가 없습니다</td>
 										</tr>
 									) : (
 										currentMembers.map((member, index) => (
@@ -1118,7 +1118,7 @@ export default function ConnectionRecord() {
 						</div>
 						{/* 페이지네이션 */}
 						{totalPages > 1 && (
-							<div className="p-2 border-t border-blue-200 bg-white">
+							<div className="p-2 bg-white border-t border-blue-200">
 								<div className="flex items-center justify-center gap-1">
 									<button
 										onClick={() => handlePageChange(1)}
@@ -1173,9 +1173,9 @@ export default function ConnectionRecord() {
 				</div>
 
 				{/* 우측 패널 (약 75%) */}
-				<div className="flex-1 flex bg-white">
+				<div className="flex flex-1 bg-white">
 					{/* 좌측: 상담 일자 (세로 박스) */}
-					<div className="w-1/4 border-r border-blue-200 px-4 py-3 bg-blue-50 flex flex-col">
+					<div className="flex flex-col w-1/4 px-4 py-3 border-r border-blue-200 bg-blue-50">
 						<div className="flex items-center justify-between mb-2">
 							<label className="text-sm font-medium text-blue-900">상담 일자</label>
 							<button
@@ -1288,17 +1288,17 @@ export default function ConnectionRecord() {
 					</div>
 
 					{/* 우측: 상담 상세 폼 */}
-					<div className="flex-1 overflow-y-auto p-4">
+					<div className="flex-1 p-4 overflow-y-auto">
 						{/* 첫 번째 행 */}
-						<div className="mb-4 flex items-center gap-4 flex-wrap">
+						<div className="flex flex-wrap items-center gap-4 mb-4">
 							<div className="flex items-center gap-2">
-								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">수급자</label>
+								<label className="text-sm font-medium text-blue-900 whitespace-nowrap">수급자</label>
 								<span className="px-3 py-1.5 text-sm border-b-2 border-blue-200 min-w-[150px]">
 									{formData.beneficiary || '-'}
 								</span>
 							</div>
 							<div className="flex items-center gap-2">
-								<label className="text-sm text-blue-900 font-medium whitespace-nowrap">연계일자</label>
+								<label className="text-sm font-medium text-blue-900 whitespace-nowrap">연계일자</label>
 								{isEditMode ? (
 									<input
 										type="date"
@@ -1313,7 +1313,7 @@ export default function ConnectionRecord() {
 								)}
 							</div>
 							{!isEditMode && (
-								<div className="ml-auto flex items-center gap-2">
+								<div className="flex items-center gap-2 ml-auto">
 									<button
 										onClick={handlePrint}
 										className="px-4 py-1.5 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
@@ -1327,13 +1327,13 @@ export default function ConnectionRecord() {
 
 						{/* 연계제목 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">연계제목</label>
+							<label className="block mb-2 text-sm font-medium text-blue-900">연계제목</label>
 							{isEditMode ? (
 								<input
 									type="text"
 									value={formData.connectionTitle}
 									onChange={(e) => handleFormChange('connectionTitle', e.target.value)}
-									className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									className="w-full px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
 									placeholder="연계제목을 입력하세요"
 								/>
 							) : (
@@ -1345,12 +1345,12 @@ export default function ConnectionRecord() {
 
 						{/* 연계내역 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">연계내역</label>
+							<label className="block mb-2 text-sm font-medium text-blue-900">연계내역</label>
 							{isEditMode ? (
 								<textarea
 									value={formData.connectionDetails}
 									onChange={(e) => handleFormChange('connectionDetails', e.target.value)}
-									className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									className="w-full px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
 									rows={8}
 									placeholder="연계내역을 입력하세요"
 								/>
@@ -1363,12 +1363,12 @@ export default function ConnectionRecord() {
 
 						{/* 비고 */}
 						<div className="mb-4">
-							<label className="block text-sm text-blue-900 font-medium mb-2">비고</label>
+							<label className="block mb-2 text-sm font-medium text-blue-900">비고</label>
 							{isEditMode ? (
 								<textarea
 									value={formData.remarks}
 									onChange={(e) => handleFormChange('remarks', e.target.value)}
-									className="w-full px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									className="w-full px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
 									rows={4}
 									placeholder="비고를 입력하세요"
 								/>
