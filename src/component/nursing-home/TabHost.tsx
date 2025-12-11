@@ -35,6 +35,7 @@ import NursingService from '@/component/nursing-home/pages/nursing-service/Nursi
 import BedsoreManagement from '@/component/nursing-home/pages/bedsore-management/BedsoreManagement';
 import IndwellingCatheter from '@/component/nursing-home/pages/indwelling-catheter/IndwellingCatheter';
 import PhysicalTherapyStandardTime from '@/component/nursing-home/pages/physical-therapy-standard-time/PhysicalTherapyStandardTime';
+import PhysicalTherapyPerformance from '@/component/nursing-home/pages/physical-therapy-performance/PhysicalTherapyPerformance';
 import PhysicalTherapyPlanEvaluation from '@/component/nursing-home/pages/physical-therapy-plan-evaluation/PhysicalTherapyPlanEvaluation';
 import PhysicalTherapyPerformanceEvaluation from '@/component/nursing-home/pages/physical-therapy-performance-evaluation/PhysicalTherapyPerformanceEvaluation';
 import ProgramEvaluation from '@/component/nursing-home/pages/program-evaluation/ProgramEvaluation';
@@ -184,6 +185,8 @@ function renderInternal(href: string) {
       return <IndwellingCatheter />;
     case '/nursingHome/physical-therapy-standard-time':
       return <PhysicalTherapyStandardTime />;
+    case '/nursingHome/physical-therapy-performance':
+      return <PhysicalTherapyPerformance />;
     case '/nursingHome/physical-therapy-plan-evaluation':
       return <PhysicalTherapyPlanEvaluation />;
     case '/nursingHome/physical-therapy-performance-evaluation':
@@ -381,13 +384,13 @@ export default function TabHost() {
   };
 
   if (tabs.length === 0) {
-    return <div className="text-gray-400 text-center mt-20">좌측 메뉴를 클릭해 탭을 여세요</div>;
+    return <div className="mt-20 text-center text-gray-400">좌측 메뉴를 클릭해 탭을 여세요</div>;
   }
 
   return (
     <div className="flex flex-col h-full min-h-[600px]">
       {/* 탭 바 */}
-      <div className="flex items-center gap-1 border-b border-gray-200 bg-white">
+      <div className="flex items-center gap-1 bg-white border-b border-gray-200">
         {tabs.map((tab) => (
           <button
             key={tab.id}
