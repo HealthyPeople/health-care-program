@@ -173,12 +173,13 @@ export default function DiseaseHistoryView() {
 	};
 
 	return (
-		<div className="min-h-screen bg-white text-black">
+		<div className="min-h-screen text-black bg-white">
 			<div className="mx-auto max-w-[1600px] p-4">
+			<span>기존 메뉴명 찾을 수 없음</span>
 				{/* 상단: 날짜 네비게이션 및 액션 버튼 */}
-				<div className="mb-4 flex items-center border-b border-blue-200 pb-3 relative">
+				<div className="relative flex items-center pb-3 mb-4 border-b border-blue-200">
 					{/* 가운데: 날짜 네비게이션 */}
-					<div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
+					<div className="absolute flex items-center gap-4 transform -translate-x-1/2 left-1/2">
 						<button 
 							onClick={() => handleDateChange(-1)}
 							className="flex items-center gap-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-blue-100 hover:bg-blue-200 text-blue-900"
@@ -204,7 +205,7 @@ export default function DiseaseHistoryView() {
 						</button>
 					</div>
 					{/* 오른쪽: 저장, 출력 버튼 */}
-					<div className="ml-auto flex items-center gap-2">
+					<div className="flex items-center gap-2 ml-auto">
 						<button className="px-4 py-1.5 text-sm border border-orange-400 rounded bg-orange-200 hover:bg-orange-300 text-orange-900 font-medium">
 							저장
 						</button>
@@ -215,30 +216,30 @@ export default function DiseaseHistoryView() {
 				</div>
 
 				{/* 메인 컨텐츠 영역 - 통합 테이블 */}
-				<div className="border border-blue-300 rounded-lg overflow-hidden bg-white shadow-sm">
+				<div className="overflow-hidden bg-white border border-blue-300 rounded-lg shadow-sm">
 					<div className="overflow-x-auto">
 						<table className="w-full text-sm">
-							<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
+							<thead className="sticky top-0 border-b border-blue-200 bg-blue-50">
 								<tr>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-16">연번</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-32">수급자명</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-16">성별</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-20">혈압</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-20">맥박</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-20">체온</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-20">혈당</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold border-r border-blue-200 w-20">체중</th>
+									<th className="w-16 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">연번</th>
+									<th className="w-32 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">수급자명</th>
+									<th className="w-16 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">성별</th>
+									<th className="w-20 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">혈압</th>
+									<th className="w-20 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">맥박</th>
+									<th className="w-20 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">체온</th>
+									<th className="w-20 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">혈당</th>
+									<th className="w-20 px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">체중</th>
 									<th className="text-center px-3 py-2 text-blue-900 font-semibold border-r border-blue-200 min-w-[200px]">간호내용</th>
-									<th className="text-center px-2 py-2 text-blue-900 font-semibold w-24">작업</th>
+									<th className="w-24 px-2 py-2 font-semibold text-center text-blue-900">작업</th>
 								</tr>
 							</thead>
 							<tbody>
 								{combinedData.map((row) => (
 									<tr key={row.id} className="border-b border-blue-50 hover:bg-blue-50">
-										<td className="text-center px-3 py-3 border-r border-blue-100">
+										<td className="px-3 py-3 text-center border-r border-blue-100">
 											{row.serialNo}
 										</td>
-										<td className="text-center px-3 py-3 border-r border-blue-100 relative">
+										<td className="relative px-3 py-3 text-center border-r border-blue-100">
 											{row.editing ? (
 												<div className="flex flex-col">
 													<input 
@@ -269,10 +270,10 @@ export default function DiseaseHistoryView() {
 															}, 200);
 														}}
 														placeholder="수급자명 검색"
-														className="w-full px-2 py-1 border border-blue-300 rounded bg-white text-center" 
+														className="w-full px-2 py-1 text-center bg-white border border-blue-300 rounded" 
 													/>
 													{row.birthDate && (
-														<span className="text-xs text-gray-500 mt-1">({row.birthDate})</span>
+														<span className="mt-1 text-xs text-gray-500">({row.birthDate})</span>
 													)}
 													{showSearchResults[row.id] && searchResults[row.id] && searchResults[row.id].length > 0 && searchInputRefs.current[row.id] && (() => {
 														const input = searchInputRefs.current[row.id];
@@ -295,7 +296,7 @@ export default function DiseaseHistoryView() {
 																			e.stopPropagation();
 																			handleSelectMember(row.id, member);
 																		}}
-																		className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-blue-100 last:border-b-0"
+																		className="px-3 py-2 border-b border-blue-100 cursor-pointer hover:bg-blue-50 last:border-b-0"
 																	>
 																		<div className="font-medium">{member.P_NM}</div>
 																		<div className="text-xs text-gray-500">
@@ -316,10 +317,10 @@ export default function DiseaseHistoryView() {
 												</div>
 											)}
 										</td>
-										<td className="text-center px-3 py-3 border-r border-blue-100">
+										<td className="px-3 py-3 text-center border-r border-blue-100">
 										<span>{row.gender}</span>
 										</td>
-										<td className="text-center px-2 py-3 border-r border-blue-100">
+										<td className="px-2 py-3 text-center border-r border-blue-100">
 											<input 
 												type="text" 
 												value={row.bloodPressure} 
@@ -331,7 +332,7 @@ export default function DiseaseHistoryView() {
 												}`}
 											/>
 										</td>
-										<td className="text-center px-2 py-3 border-r border-blue-100">
+										<td className="px-2 py-3 text-center border-r border-blue-100">
 											<input 
 												type="text" 
 												value={row.pulse} 
@@ -343,7 +344,7 @@ export default function DiseaseHistoryView() {
 												}`}
 											/>
 										</td>
-										<td className="text-center px-2 py-3 border-r border-blue-100">
+										<td className="px-2 py-3 text-center border-r border-blue-100">
 											<input 
 												type="text" 
 												value={row.bodyTemperature} 
@@ -355,7 +356,7 @@ export default function DiseaseHistoryView() {
 												}`}
 											/>
 										</td>
-										<td className="text-center px-2 py-3 border-r border-blue-100">
+										<td className="px-2 py-3 text-center border-r border-blue-100">
 											<input 
 												type="text" 
 												value={row.bloodSugar} 
@@ -367,7 +368,7 @@ export default function DiseaseHistoryView() {
 												}`}
 											/>
 										</td>
-										<td className="text-center px-2 py-3 border-r border-blue-100">
+										<td className="px-2 py-3 text-center border-r border-blue-100">
 											<input 
 												type="text" 
 												value={row.weight} 
@@ -379,7 +380,7 @@ export default function DiseaseHistoryView() {
 												}`}
 											/>
 										</td>
-										<td className="text-center px-3 py-3 border-r border-blue-100">
+										<td className="px-3 py-3 text-center border-r border-blue-100">
 											<textarea
 												value={row.nursingHistory}
 												onChange={(e) => handleDataChange(row.id, 'nursingHistory', e.target.value)}
@@ -391,17 +392,17 @@ export default function DiseaseHistoryView() {
 												}`}
 											/>
 										</td>
-										<td className="text-center px-3 py-3">
+										<td className="px-3 py-3 text-center">
 											<div className="flex items-center justify-center gap-2">
 												<button
 													onClick={() => handleEditClick(row.id)}
-													className="px-2 py-1 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+													className="px-2 py-1 text-xs font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
 												>
 													{row.editing ? '저장' : '수정'}
 												</button>
 												<button
 													onClick={() => handleDeleteClick(row.id)}
-													className="px-2 py-1 text-xs border border-red-400 rounded bg-red-200 hover:bg-red-300 text-red-900 font-medium"
+													className="px-2 py-1 text-xs font-medium text-red-900 bg-red-200 border border-red-400 rounded hover:bg-red-300"
 												>
 													삭제
 												</button>
@@ -415,16 +416,16 @@ export default function DiseaseHistoryView() {
 				</div>
 
 				{/* 하단 액션 버튼 */}
-				<div className="flex justify-center mt-4 gap-4">
+				<div className="flex justify-center gap-4 mt-4">
 					<button
 						onClick={handleAddClick}
-						className="px-6 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+						className="px-6 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
 					>
 						추가
 					</button>
 					<button
 						onClick={handleDeleteAllClick}
-						className="px-6 py-2 text-sm border border-orange-400 rounded bg-orange-200 hover:bg-orange-300 text-orange-900 font-medium"
+						className="px-6 py-2 text-sm font-medium text-orange-900 bg-orange-200 border border-orange-400 rounded hover:bg-orange-300"
 					>
 						전체 삭제
 					</button>
