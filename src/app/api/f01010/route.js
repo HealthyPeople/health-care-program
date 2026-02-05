@@ -19,9 +19,33 @@ export async function GET(req) {
 
     // F01010 테이블에서 사원 정보 조회 (사원명으로 검색)
     let query = `
-      SELECT TOP 50
+      SELECT
+        [ANCD],
         [EMPNO],
-        [EMPNM]
+        [EMPNM],
+        [JMNO],
+        [YRNT],
+        [JOB],
+        [JOBST],
+        [JOBADD],
+        [JOBSH],
+        [BK],
+        [BKNO],
+        [SDT],
+        [EDT],
+        [HSDT],
+        [HEDT],
+        [EMPHP],
+        [EMPTEL],
+        [EMPZIP],
+        [EMPADD],
+        [INDT],
+        [ETC],
+        [INEMPNO],
+        [INEMPNM],
+        [SGN_IMG],
+        [MNG_GU],
+        [BASE_DT]
       FROM [돌봄시설DB].[dbo].[F01010]
       WHERE 1=1
     `;
