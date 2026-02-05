@@ -3,11 +3,32 @@
 // 클라이언트에서 쿠키 읽기
 export function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
-  const value = `; ${document.cookie}`;
+  
+  // document.cookie 전체 확인
+  const allCookies = document.cookie;
+  
+  // 방법 1: 세미콜론으로 분리
+  const value = `; ${allCookies}`;
   const parts = value.split(`; ${name}=`);
   if (parts.length === 2) {
-    return parts.pop()?.split(';').shift() || null;
+    const cookieValue = parts.pop()?.split(';').shift() || null;
+    return cookieValue;
   }
+  
+  // 방법 2: 직접 검색
+  const regex = new RegExp(`(^|; )${name}=([^;]*)`);
+  const match = allCookies.match(regex);
+  if (match && match[2]) {
+    return match[2];
+  }
+  
+  // 방법 3: 공백으로도 분리 시도
+  const parts2 = allCookies.split(`${name}=`);
+  if (parts2.length === 2) {
+    const cookieValue = parts2[1].split(';')[0].trim();
+    return cookieValue;
+  }
+  
   return null;
 }
 
@@ -35,7 +56,6 @@ export async function checkAuth(): Promise<boolean> {
     const data = await response.json();
     return data.authenticated === true;
   } catch (error) {
-    console.error('인증 확인 오류:', error);
     return false;
   }
 }
@@ -55,7 +75,6 @@ export async function logout(): Promise<void> {
       localStorage.removeItem('tabHost_state');
     }
   } catch (error) {
-    console.error('로그아웃 오류:', error);
     // 오류가 발생해도 클라이언트 쿠키는 삭제
     deleteCookie('auth_token');
     deleteCookie('user_info');

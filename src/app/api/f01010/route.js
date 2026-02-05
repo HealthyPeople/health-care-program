@@ -16,8 +16,11 @@ export async function GET(req) {
 
     const searchParams = req.nextUrl.searchParams;
     const searchName = searchParams.get('name') || '';
+    const uid = searchParams.get('uid') || '';
+    const empno = searchParams.get('empno') || '';
+    const ancd = searchParams.get('ancd') || '';
 
-    // F01010 테이블에서 사원 정보 조회 (사원명으로 검색)
+    // F01010 테이블에서 사원 정보 조회
     let query = `
       SELECT
         [ANCD],
@@ -52,7 +55,34 @@ export async function GET(req) {
 
     const request = pool.request();
 
-    if (searchName && searchName.trim() !== '') {
+    // ancd로 먼저 필터링
+    if (ancd && ancd.trim() !== '') {
+      query += ` AND [ANCD] = @ancd`;
+      request.input('ancd', parseInt(ancd));
+    }
+
+    // uid로 조회 (사원명 또는 사원번호로 매칭)
+    if (uid && uid.trim() !== '') {
+      const uidTrimmed = uid.trim();
+      const empnoFromUid = parseInt(uidTrimmed);
+      const isNumericUid = !isNaN(empnoFromUid);
+
+      request.input('uid', uidTrimmed);
+      
+      if (isNumericUid) {
+        // 숫자인 경우 사원명 또는 사원번호로 검색
+        query += ` AND ([EMPNM] = @uid OR [EMPNO] = @empnoFromUid)`;
+        request.input('empnoFromUid', empnoFromUid);
+      } else {
+        // 숫자가 아닌 경우 사원명으로만 검색
+        query += ` AND [EMPNM] = @uid`;
+      }
+    } else if (empno && empno.trim() !== '') {
+      // 사원번호로 직접 조회 (ancd는 이미 위에서 처리됨)
+      query += ` AND [EMPNO] = @empno`;
+      request.input('empno', parseInt(empno.trim()));
+    } else if (searchName && searchName.trim() !== '') {
+      // 사원명으로 검색
       query += ` AND [EMPNM] LIKE @searchName`;
       request.input('searchName', `%${searchName.trim()}%`);
     }
