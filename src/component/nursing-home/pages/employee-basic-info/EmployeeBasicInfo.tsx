@@ -1,7 +1,42 @@
 "use client";
-import React from 'react';
+import React, { useState } from 'react';
+
+interface EmployeeForm {
+	name: string;
+	yearsOfService: string;
+	workLocation: string;
+	workType: string;
+	hireDate: string;
+	retirementDate: string;
+	leaveStartDate: string;
+	leaveEndDate: string;
+	homePhone: string;
+	mobilePhone: string;
+	homeAddress: string;
+	attendanceManagement: boolean;
+	annualLeaveStandardDate: string;
+	notes: string;
+}
+
+const initialForm: EmployeeForm = {
+	name: "박여울",
+	yearsOfService: "",
+	workLocation: "",
+	workType: "",
+	hireDate: "2025-05-01",
+	retirementDate: "",
+	leaveStartDate: "",
+	leaveEndDate: "",
+	homePhone: "",
+	mobilePhone: "",
+	homeAddress: "",
+	attendanceManagement: true,
+	annualLeaveStandardDate: "2025-05-01",
+	notes: "",
+};
 
 export default function EmployeeBasicInfo() {
+	const [formData, setFormData] = useState<EmployeeForm>(initialForm);
 	return (
 		<div className="min-h-screen bg-white text-black">
 			<div className="mx-auto max-w-[1200px] p-4">
@@ -22,20 +57,24 @@ export default function EmployeeBasicInfo() {
 									<thead className="sticky top-0 bg-blue-50 border-b border-blue-200">
 										<tr>
 											<th className="text-left px-2 py-2 text-blue-900 font-semibold">이름</th>
-											<th className="text-left px-2 py-2 text-blue-900 font-semibold">부서</th>
+											<th className="text-left px-2 py-2 text-blue-900 font-semibold">핸드폰번호</th>
+											<th className="text-left px-2 py-2 text-blue-900 font-semibold">직책</th>
+											<th className="text-left px-2 py-2 text-blue-900 font-semibold">근무상태</th>
 										</tr>
 									</thead>
 									<tbody>
 										{[
-											{ name: '김간호', dept: '간호팀' },
-											{ name: '이요양', dept: '요양팀' },
-											{ name: '박치료', dept: '치료팀' },
-											{ name: '최행정', dept: '행정팀' },
-											{ name: '정프로그램', dept: '프로그램팀' },
+											{ name: '김간호', phone: '010-1234-5678', position: '간호사', workStatus: '근무' },
+											{ name: '이요양', phone: '010-2345-6789', position: '요양보호사', workStatus: '근무' },
+											{ name: '박치료', phone: '010-3456-7890', position: '물리치료사', workStatus: '근무' },
+											{ name: '최행정', phone: '010-4567-8901', position: '행정직', workStatus: '휴직' },
+											{ name: '정프로그램', phone: '010-5678-9012', position: '프로그램 담당', workStatus: '근무' },
 										].map((row, idx) => (
 										<tr key={idx} className="border-b border-blue-50 hover:bg-blue-50 cursor-pointer">
 											<td className="px-2 py-2">{row.name}</td>
-											<td className="px-2 py-2">{row.dept}</td>
+											<td className="px-2 py-2">{row.phone}</td>
+											<td className="px-2 py-2">{row.position}</td>
+											<td className="px-2 py-2">{row.workStatus}</td>
 										</tr>
 									))}
 									</tbody>
@@ -45,126 +84,243 @@ export default function EmployeeBasicInfo() {
 					</aside>
 
 					{/* 우측: 사원정보 상세 영역 */}
-					<section className="flex-1 space-y-4">
-						{/* 사원정보 카드 */}
+					<section className="flex-1">
 						<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
-							<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
-								<h2 className="text-xl font-semibold text-blue-900">사원 기본정보</h2>
+							{/* 상단 헤더: 사원정보 탭 + 근태관리구분/년차기준일 */}
+							<div className="flex items-center justify-between border-b border-blue-200 bg-blue-50/50 p-4">
 								<div className="flex items-center gap-2">
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">주소검색</button>
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">저장</button>
-								</div>
-							</div>
-
-							<div className="p-4">
-								<div className="grid grid-cols-12 gap-4">
-									{/* 사진 영역 */}
-									<div className="col-span-12 md:col-span-3">
-										<div className="border border-blue-300 rounded-lg h-36 bg-white flex items-center justify-center text-blue-900/70">사진</div>
-										<div className="flex gap-2 mt-2">
-											<button className="flex-1 px-2 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">촬영</button>
-											<button className="flex-1 px-2 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">첨부</button>
-										</div>
+									<div className="rounded-t border border-b-0 border-blue-300 bg-blue-100 px-3 py-1.5 text-sm font-semibold text-blue-900">
+										사원정보
 									</div>
-
-									{/* 입력 필드 영역 */}
-									<div className="col-span-12 md:col-span-9 grid grid-cols-12 gap-3">
-										{/* 1행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">사원명</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">사번</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" placeholder="ex) E001" />
-										</div>
-
-										{/* 2행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">주민번호</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" placeholder="ex) 900101-1******" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">연락처</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" placeholder="ex) 010-0000-0000" />
-										</div>
-
-										{/* 3행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">성별</label>
-											<select className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white">
-												<option>남</option>
-												<option>여</option>
-											</select>
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">부서</label>
-											<select className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white">
-												<option>간호팀</option>
-												<option>요양팀</option>
-												<option>치료팀</option>
-												<option>행정팀</option>
-												<option>프로그램팀</option>
-											</select>
-										</div>
-
-										{/* 4행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입사일</label>
-											<input type="date" className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">직급</label>
-											<select className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white">
-												<option>사원</option>
-												<option>주임</option>
-												<option>대리</option>
-												<option>과장</option>
-												<option>차장</option>
-											</select>
-										</div>
-
-										{/* 5행 */}
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">주소</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
-										<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-											<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">비고</label>
-											<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" />
-										</div>
+								</div>
+								<div className="flex items-center gap-4">
+									<div className="flex items-center gap-2">
+										<label className="text-sm font-medium text-blue-900">근태관리구분</label>
+										<input
+											type="checkbox"
+											checked={formData.attendanceManagement}
+											onChange={(e) =>
+												setFormData((prev) => ({
+													...prev,
+													attendanceManagement: e.target.checked,
+												}))
+											}
+											className="rounded border-blue-300 text-blue-600"
+										/>
+										<span className="text-sm text-blue-900">관리</span>
+									</div>
+									<div className="flex items-center gap-2">
+										<label className="text-sm font-medium text-blue-900">년차기준일</label>
+										<input
+											type="date"
+											value={formData.annualLeaveStandardDate}
+											onChange={(e) =>
+												setFormData((prev) => ({
+													...prev,
+													annualLeaveStandardDate: e.target.value,
+												}))
+											}
+											className="rounded border border-blue-300 bg-white px-2 py-1 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+										/>
 									</div>
 								</div>
 							</div>
-						</div>
 
-						{/* 하단 2컬럼 카드: 자격정보 / 근무정보 */}
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-							{/* 자격정보 */}
-							<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
-								<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
-									<h3 className="text-lg font-semibold text-blue-900">자격정보</h3>
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">자격 관리</button>
+							{/* 메인 폼 영역 */}
+							<div className="p-4 space-y-3">
+								{/* Row 1: 사원명/년차 + 근무위치 */}
+								<div className="flex items-center gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										사원명/년차
+									</label>
+									<input
+										type="text"
+										value={formData.name}
+										onChange={(e) =>
+											setFormData((prev) => ({ ...prev, name: e.target.value }))
+										}
+										className="w-32 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+									<label className="w-16 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										년차
+									</label>
+									<input
+										type="text"
+										value={formData.yearsOfService}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												yearsOfService: e.target.value,
+											}))
+										}
+										placeholder="년차"
+										className="w-20 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900 ml-4">
+										근무위치
+									</label>
+									<input
+										type="text"
+										value={formData.workLocation}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												workLocation: e.target.value,
+											}))
+										}
+										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
 								</div>
-								<div className="p-4 space-y-2 text-sm">
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">자격종류</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">취득일자</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">발급기관</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">만료일자</span><span className="flex-1 border-b border-blue-200" /></div>
-								</div>
-							</div>
 
-							{/* 근무정보 */}
-							<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
-								<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
-									<h3 className="text-lg font-semibold text-blue-900">근무정보</h3>
-									<button className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900">근무 관리</button>
+								{/* Row 2: 근무형태 + 취업일자 + 퇴직일자 */}
+								<div className="flex items-center gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										근무형태
+									</label>
+									<input
+										type="text"
+										value={formData.workType}
+										onChange={(e) =>
+											setFormData((prev) => ({ ...prev, workType: e.target.value }))
+										}
+										className="w-32 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900 ml-4">
+										취업일자
+									</label>
+									<input
+										type="date"
+										value={formData.hireDate}
+										onChange={(e) =>
+											setFormData((prev) => ({ ...prev, hireDate: e.target.value }))
+										}
+										className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+									<label className="w-20 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900 ml-4">
+										퇴직일자
+									</label>
+									<input
+										type="date"
+										value={formData.retirementDate}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												retirementDate: e.target.value,
+											}))
+										}
+										className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
 								</div>
-								<div className="p-4 space-y-2 text-sm">
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">근무형태</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">근무시간</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">담당업무</span><span className="flex-1 border-b border-blue-200" /></div>
-									<div className="flex items-center gap-2"><span className="w-24 text-blue-900/80">상태</span><span className="flex-1 border-b border-blue-200" /></div>
+
+								{/* Row 3: 휴직시작일 + 휴직종료일 */}
+								<div className="flex items-center gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										휴직시작일
+									</label>
+									<input
+										type="date"
+										value={formData.leaveStartDate}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												leaveStartDate: e.target.value,
+											}))
+										}
+										className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+									<label className="w-20 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900 ml-4">
+										휴직종료일
+									</label>
+									<input
+										type="date"
+										value={formData.leaveEndDate}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												leaveEndDate: e.target.value,
+											}))
+										}
+										className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+								</div>
+
+								{/* Row 4: 집전화 + 핸드폰 */}
+								<div className="flex items-center gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										집전화
+									</label>
+									<input
+										type="text"
+										value={formData.homePhone}
+										onChange={(e) =>
+											setFormData((prev) => ({ ...prev, homePhone: e.target.value }))
+										}
+										className="w-32 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+									<label className="w-20 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900 ml-4">
+										핸드폰
+									</label>
+									<input
+										type="text"
+										value={formData.mobilePhone}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												mobilePhone: e.target.value,
+											}))
+										}
+										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+								</div>
+
+								{/* Row 5: 집주소 (전체 너비) */}
+								<div className="flex items-center gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										집주소
+									</label>
+									<input
+										type="text"
+										value={formData.homeAddress}
+										onChange={(e) =>
+											setFormData((prev) => ({
+												...prev,
+												homeAddress: e.target.value,
+											}))
+										}
+										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+								</div>
+
+								{/* 하단: 비고 영역 + 추가/수정 버튼 */}
+								<div className="mt-4 flex items-start gap-4">
+									<div className="flex flex-col gap-2 flex-1">
+										<label className="w-24 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+											비고
+										</label>
+										<textarea
+											value={formData.notes}
+											onChange={(e) =>
+												setFormData((prev) => ({ ...prev, notes: e.target.value }))
+											}
+											rows={4}
+											className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none resize-y"
+											placeholder="비고를 입력하세요"
+										/>
+									</div>
+									<div className="flex flex-col gap-2 pt-7">
+										<button
+											type="button"
+											className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 whitespace-nowrap"
+										>
+											추가
+										</button>
+										<button
+											type="button"
+											className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 whitespace-nowrap"
+										>
+											수정
+										</button>
+									</div>
 								</div>
 							</div>
 						</div>
