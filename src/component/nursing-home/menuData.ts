@@ -175,10 +175,10 @@ export const sections3: Sections3 = {
     '사원년차관리': [
       { name: '년차 생성 및 조회', link: '/nursingHome/employee-annual-leave' },
     ],
-    '근무시간표': [
+    '근무시간표(신규)': [
       { name: '근무시간표', link: '/nursingHome/work-schedule' },
     ],
-    '연간일정표': [
+    '연간일정표(신규)': [
       { name: '연간 일정 등록 및 조회', link: '/nursingHome/annual-schedule' },
     ],
     '직원 회의록': [
