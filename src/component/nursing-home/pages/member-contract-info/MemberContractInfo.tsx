@@ -1,8 +1,124 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface MemberData {
   [key: string]: any;
+}
+
+type F00120EmpRow = { ANCD?: number; UID?: string; EMPNO?: number; EMPNM?: string };
+
+/** F00120 사원명 검색(전체 고객코드) — 타이핑 시 드롭다운, 선택 시 사원번호·이름 반영 */
+function EmployeeNameSearchField({
+	empName,
+	onPatch,
+	disabled,
+}: {
+	empName: string;
+	onPatch: (p: { INEMPNO?: string; INEMPNM?: string }) => void;
+	disabled?: boolean;
+}) {
+	const [open, setOpen] = useState(false);
+	const [hits, setHits] = useState<F00120EmpRow[]>([]);
+	const [loading, setLoading] = useState(false);
+	const wrapRef = useRef<HTMLDivElement>(null);
+	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	useEffect(() => {
+		const onDoc = (e: MouseEvent) => {
+			if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+		};
+		document.addEventListener('mousedown', onDoc);
+		return () => document.removeEventListener('mousedown', onDoc);
+	}, []);
+
+	const runSearch = useCallback(async (q: string) => {
+		if (!q.trim()) {
+			setHits([]);
+			return;
+		}
+		setLoading(true);
+		try {
+			const url = `/api/f00120/search?q=${encodeURIComponent(q.trim())}&activeOnly=0`;
+			const res = await fetch(url);
+			const json = await res.json();
+			if (json.success && Array.isArray(json.data)) setHits(json.data);
+			else setHits([]);
+		} catch {
+			setHits([]);
+		} finally {
+			setLoading(false);
+		}
+	}, []);
+
+	const onNameInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const v = e.target.value;
+		if (!v.trim()) {
+			onPatch({ INEMPNM: '', INEMPNO: '' });
+		} else {
+			onPatch({ INEMPNM: v });
+		}
+		if (debounceRef.current) clearTimeout(debounceRef.current);
+		debounceRef.current = setTimeout(() => {
+			if (v.trim().length >= 1) {
+				runSearch(v);
+				setOpen(true);
+			} else {
+				setHits([]);
+				setOpen(false);
+			}
+		}, 280);
+	};
+
+	const pick = (row: F00120EmpRow) => {
+		const no = row.EMPNO != null ? String(row.EMPNO) : '';
+		const nm = row.EMPNM != null ? String(row.EMPNM) : '';
+		onPatch({ INEMPNO: no, INEMPNM: nm });
+		setOpen(false);
+		setHits([]);
+	};
+
+	const canSearch = !disabled;
+	const showDropdown = open && canSearch && (loading || hits.length > 0);
+
+	return (
+		<div ref={wrapRef} className="relative w-full">
+			<input
+				type="text"
+				className="w-full border border-blue-300 rounded px-2 py-1 bg-white disabled:bg-slate-100"
+				value={empName}
+				onChange={onNameInput}
+				onFocus={() => {
+					if (!canSearch) return;
+					if (empName.trim().length >= 1) {
+						runSearch(empName);
+						setOpen(true);
+					}
+				}}
+				placeholder="이름 입력 시 전체 직원 검색 (F00120)"
+				disabled={disabled}
+				autoComplete="off"
+			/>
+			{showDropdown && (
+				<ul className="absolute z-[100] left-0 right-0 mt-1 max-h-48 overflow-auto rounded border border-blue-300 bg-white shadow-lg">
+					{loading && (
+						<li className="px-3 py-2 text-sm text-blue-900/60">검색 중...</li>
+					)}
+					{!loading &&
+						hits.map((row, i) => (
+							<li
+								key={`${row.EMPNO}-${row.UID ?? ''}-${i}`}
+								className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 border-b border-blue-50 last:border-0"
+								onMouseDown={(e) => e.preventDefault()}
+								onClick={() => pick(row)}
+							>
+								<span className="font-medium text-blue-900">{row.EMPNM}</span>
+								<span className="ml-2 text-blue-900/70">사원번호 {row.EMPNO ?? '-'}</span>
+							</li>
+						))}
+				</ul>
+			)}
+		</div>
+	);
 }
 
 export default function MemberContractInfo() {
@@ -23,7 +139,10 @@ export default function MemberContractInfo() {
 	const [newContractInfo, setNewContractInfo] = useState<MemberData>({});
 	const [editedContractInfo, setEditedContractInfo] = useState<MemberData | null>(null);
 
-	const fetchMembers = async (nameSearch?: string) => {
+	const fetchMembers = async (
+		nameSearch?: string,
+		resync?: { ancd: string | number; pnum: string | number } | null
+	): Promise<MemberData[] | null> => {
 		setLoading(true);
 		setError(null);
 		
@@ -38,16 +157,25 @@ export default function MemberContractInfo() {
 			
 			if (result.success) {
 				setMembers(result.data);
-				if (result.data.length > 0 && !selectedMember) {
+				if (resync) {
+					const updated = result.data.find(
+						(m: MemberData) =>
+							String(m.ANCD) === String(resync.ancd) && String(m.PNUM) === String(resync.pnum)
+					);
+					if (updated) setSelectedMember(updated);
+				} else if (result.data.length > 0 && !selectedMember) {
 					setSelectedMember(result.data[0]);
 				} else if (result.data.length === 0) {
 					setSelectedMember(null);
 				}
+				return result.data;
 			} else {
 				setError(result.error || '수급자 데이터 조회 실패');
+				return null;
 			}
 		} catch (err) {
 			setError(err instanceof Error ? err.message : '알 수 없는 오류');
+			return null;
 		} finally {
 			setLoading(false);
 		}
@@ -74,6 +202,20 @@ export default function MemberContractInfo() {
 		if (val === '1') return '카드';
 		if (val === '2') return '현금';
 		return val;
+	};
+
+	// P_ST: 1=입소, 9=퇴소 (F10010 수급자-상태)
+	const getPSTLabel = (value: string | number | null | undefined): string => {
+		const val = value != null && value !== '' ? String(value).trim() : '';
+		if (val === '1') return '입소';
+		if (val === '9') return '퇴소';
+		return val || '-';
+	};
+
+	const formatMemberDate = (d: string | null | undefined): string => {
+		if (!d) return '';
+		const s = String(d);
+		return s.length >= 10 ? s.substring(0, 10) : s;
 	};
 
 	// F10110 테이블에서 계약 정보 조회
@@ -336,7 +478,7 @@ export default function MemberContractInfo() {
 				setIsCreating(false);
 				setNewContractInfo({});
 				// 수급자 목록과 계약정보 다시 조회
-				await fetchMembers();
+				await fetchMembers(undefined, { ancd: selectedMember.ANCD, pnum: selectedMember.PNUM });
 				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
 					await fetchContractInfo(selectedMember.ANCD, selectedMember.PNUM);
 				}
@@ -355,7 +497,7 @@ export default function MemberContractInfo() {
 
 	// 계약정보 수정 버튼 클릭
 	const handleEditClick = () => {
-		if (!contractInfo) return;
+		if (!contractInfo || !selectedMember) return;
 		setIsEditing(true);
 		// F10010의 P_CTDT를 계약일자로 사용 (없으면 F10110의 CDT 사용)
 		const contractDate = selectedMember?.P_CTDT 
@@ -363,7 +505,14 @@ export default function MemberContractInfo() {
 			: (contractInfo.CDT ? contractInfo.CDT.substring(0, 10) : '');
 		setEditedContractInfo({ 
 			...contractInfo,
-			CDT: contractDate
+			CDT: contractDate,
+			P_NM: selectedMember.P_NM != null ? String(selectedMember.P_NM) : '',
+			P_ST: selectedMember.P_ST != null && String(selectedMember.P_ST).trim() !== ''
+				? String(selectedMember.P_ST).trim()
+				: '',
+			P_SDT: formatMemberDate(selectedMember.P_SDT) || '',
+			P_EDT: formatMemberDate(selectedMember.P_EDT) || '',
+			P_CINFO: selectedMember.P_CINFO != null ? String(selectedMember.P_CINFO) : ''
 		});
 		setIsCreating(false);
 		setNewContractInfo({});
@@ -445,18 +594,57 @@ export default function MemberContractInfo() {
 
 			const result = await response.json();
 
-			if (result && result.success) {
-				alert('계약정보가 수정되었습니다.');
-				setIsEditing(false);
-				setEditedContractInfo(null);
-				// 계약정보 다시 조회
-				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
-					await fetchContractInfo(selectedMember.ANCD, selectedMember.PNUM);
-				}
-			} else {
+			if (!result || !result.success) {
 				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
 				console.error('계약정보 수정 실패:', result);
-				alert(`계약정보 수정 실패: ${errorMessage}`);
+				alert(`계약정보(F10110) 수정 실패: ${errorMessage}`);
+				return;
+			}
+
+			const updateF10010Query = `
+				UPDATE [돌봄시설DB].[dbo].[F10010]
+				SET 
+					[P_NM] = @P_NM,
+					[P_ST] = @P_ST,
+					[P_CINFO] = @P_CINFO,
+					[P_CTDT] = @P_CTDT,
+					[P_SDT] = @P_SDT,
+					[P_EDT] = @P_EDT
+				WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
+			`;
+
+			const f10010Params = {
+				ANCD: selectedMember.ANCD,
+				PNUM: selectedMember.PNUM,
+				P_NM: editedContractInfo.P_NM?.trim() || null,
+				P_ST: editedContractInfo.P_ST ? String(editedContractInfo.P_ST).trim() : null,
+				P_CINFO: editedContractInfo.P_CINFO?.trim() || null,
+				P_CTDT: formatDate(editedContractInfo.CDT),
+				P_SDT: formatDate(editedContractInfo.P_SDT),
+				P_EDT: formatDate(editedContractInfo.P_EDT)
+			};
+
+			const f10010Res = await fetch('/api/f10010', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: updateF10010Query, params: f10010Params })
+			});
+
+			const f10010Result = await f10010Res.json();
+
+			if (!f10010Result || !f10010Result.success) {
+				const errorMessage = f10010Result?.error || f10010Result?.details || '알 수 없는 오류';
+				console.error('수급자 기본정보(F10010) 수정 실패:', f10010Result);
+				alert(`수급자 기본정보(F10010) 수정 실패: ${errorMessage}\n계약 상세(F10110)는 이미 저장되었습니다.`);
+				return;
+			}
+
+			alert('계약정보가 수정되었습니다.');
+			setIsEditing(false);
+			setEditedContractInfo(null);
+			await fetchMembers(undefined, { ancd: selectedMember.ANCD, pnum: selectedMember.PNUM });
+			if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
+				await fetchContractInfo(selectedMember.ANCD, selectedMember.PNUM);
 			}
 		} catch (err) {
 			console.error('계약정보 수정 오류:', err);
@@ -803,6 +991,30 @@ export default function MemberContractInfo() {
 													<input className="w-full border border-blue-300 rounded px-2 py-1 bg-white" value={selectedMember?.P_NM || ''} readOnly />
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입·퇴소 상태</label>
+													<div className="flex items-center min-h-[34px] px-2 border border-blue-300 rounded bg-slate-50">
+														<span
+															className={`inline-block px-2 py-0.5 rounded text-sm font-medium ${
+																selectedMember?.P_ST === '1'
+																	? 'bg-green-100 text-green-800'
+																	: selectedMember?.P_ST === '9'
+																		? 'bg-slate-200 text-slate-800'
+																		: 'bg-gray-100 text-gray-600'
+															}`}
+														>
+															{getPSTLabel(selectedMember?.P_ST)}
+														</span>
+													</div>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입소일자</label>
+													<input className="w-full border border-blue-300 rounded px-2 py-1 bg-slate-50" value={formatMemberDate(selectedMember?.P_SDT) || '-'} readOnly />
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">퇴소일자</label>
+													<input className="w-full border border-blue-300 rounded px-2 py-1 bg-slate-50" value={formatMemberDate(selectedMember?.P_EDT) || '-'} readOnly />
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">계약일자</label>
 													<input 
 														type="date" 
@@ -916,21 +1128,19 @@ export default function MemberContractInfo() {
 													</select>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원명</label>
+													<EmployeeNameSearchField
+														empName={newContractInfo.INEMPNM || ''}
+														onPatch={(p) => setNewContractInfo((prev) => ({ ...prev, ...p }))}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원번호</label>
 													<input 
 														type="text"
 														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
 														value={newContractInfo.INEMPNO || ''}
 														onChange={(e) => handleNewContractFieldChange('INEMPNO', e.target.value)}
-													/>
-												</div>
-												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원명</label>
-													<input 
-														type="text"
-														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={newContractInfo.INEMPNM || ''}
-														onChange={(e) => handleNewContractFieldChange('INEMPNM', e.target.value)}
 													/>
 												</div>
 												<div className="col-span-12 flex flex-col gap-1">
@@ -948,7 +1158,54 @@ export default function MemberContractInfo() {
 												{/* 계약정보 수정 폼 */}
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자명</label>
-													<input className="w-full border border-blue-300 rounded px-2 py-1 bg-white" value={selectedMember?.P_NM || ''} readOnly />
+													<input
+														type="text"
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-white"
+														value={editedContractInfo.P_NM ?? ''}
+														onChange={(e) => handleEditedContractFieldChange('P_NM', e.target.value)}
+														maxLength={100}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입·퇴소 상태</label>
+													<select
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-white"
+														value={editedContractInfo.P_ST || ''}
+														onChange={(e) => handleEditedContractFieldChange('P_ST', e.target.value)}
+													>
+														<option value="">선택</option>
+														<option value="1">입소</option>
+														<option value="9">퇴소</option>
+													</select>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입소일자</label>
+													<input 
+														type="date"
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
+														value={editedContractInfo.P_SDT ? editedContractInfo.P_SDT.substring(0, 10) : ''}
+														onChange={(e) => handleEditedContractFieldChange('P_SDT', e.target.value)}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">퇴소일자</label>
+													<input 
+														type="date"
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
+														value={editedContractInfo.P_EDT ? editedContractInfo.P_EDT.substring(0, 10) : ''}
+														onChange={(e) => handleEditedContractFieldChange('P_EDT', e.target.value)}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">퇴소 사유</label>
+													<input 
+														type="text"
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
+														value={editedContractInfo.P_CINFO || ''}
+														onChange={(e) => handleEditedContractFieldChange('P_CINFO', e.target.value)}
+														placeholder="퇴소 시 사유"
+														maxLength={100}
+													/>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">계약일자</label>
@@ -1059,21 +1316,21 @@ export default function MemberContractInfo() {
 													</select>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원명</label>
+													<EmployeeNameSearchField
+														empName={editedContractInfo.INEMPNM || ''}
+														onPatch={(p) =>
+															setEditedContractInfo((prev) => (prev ? { ...prev, ...p } : null))
+														}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원번호</label>
 													<input 
 														type="text"
 														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
 														value={editedContractInfo.INEMPNO || ''}
 														onChange={(e) => handleEditedContractFieldChange('INEMPNO', e.target.value)}
-													/>
-												</div>
-												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원명</label>
-													<input 
-														type="text"
-														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={editedContractInfo.INEMPNM || ''}
-														onChange={(e) => handleEditedContractFieldChange('INEMPNM', e.target.value)}
 													/>
 												</div>
 												<div className="col-span-12 flex flex-col gap-1">
@@ -1094,6 +1351,34 @@ export default function MemberContractInfo() {
 												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
 													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자명</label>
 													<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" value={selectedMember?.P_NM || ''} readOnly />
+												</div>
+												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
+													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입·퇴소 상태</label>
+													<div className="flex flex-1 items-center min-h-[34px] px-2 border border-blue-300 rounded bg-slate-50">
+														<span
+															className={`inline-block px-2 py-0.5 rounded text-sm font-medium ${
+																selectedMember?.P_ST === '1'
+																	? 'bg-green-100 text-green-800'
+																	: selectedMember?.P_ST === '9'
+																		? 'bg-slate-200 text-slate-800'
+																		: 'bg-gray-100 text-gray-600'
+															}`}
+														>
+															{getPSTLabel(selectedMember?.P_ST)}
+														</span>
+													</div>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
+													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">입소일자</label>
+													<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-slate-50" value={formatMemberDate(selectedMember?.P_SDT) || '-'} readOnly />
+												</div>
+												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
+													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">퇴소일자</label>
+													<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-slate-50" value={formatMemberDate(selectedMember?.P_EDT) || '-'} readOnly />
+												</div>
+												<div className="col-span-12 flex items-center gap-2">
+													<label className="w-24 shrink-0 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">퇴소 사유</label>
+													<input className="flex-1 border border-blue-300 rounded px-2 py-1 bg-slate-50" value={selectedMember?.P_CINFO?.trim() ? String(selectedMember.P_CINFO) : '-'} readOnly />
 												</div>
 												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
 													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">계약일자</label>
