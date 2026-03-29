@@ -122,6 +122,123 @@ function EmployeeNameSearchField({
 	);
 }
 
+function escapeHtml(s: unknown): string {
+	return String(s ?? '')
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
+function formatYmd(d: string | null | undefined): string {
+	if (!d) return '';
+	const s = String(d);
+	return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function usrguLabel(v: string | number | null | undefined): string {
+	if (v == null || v === '') return '-';
+	const x = String(v);
+	if (x === '1') return '일반';
+	if (x === '2') return '50%경감대상자';
+	if (x === '3') return '국민기초생활수급권자';
+	return x;
+}
+
+function buildContractPrintHtml(
+	basisDate: string,
+	printDate: string,
+	groups: Array<{ member: MemberData; contracts: MemberData[]; contractor: string; rel: string }>
+): string {
+	const title = '수급자 계약정보';
+	const rowsHtml = groups
+		.map((g) => {
+			const m = g.member;
+			const birth = formatYmd(m.P_BRDT);
+			const yyno = escapeHtml(m.P_YYNO || '');
+			const grade = escapeHtml(formatCareGradeLabel(m.P_GRD, '-'));
+			const vs = formatYmd(m.P_YYSDT);
+			const ve = formatYmd(m.P_YYEDT);
+			const valid = vs || ve ? `${vs || '-'}~${ve || '-'}` : '-';
+			const tel = escapeHtml(m.P_TEL || '');
+			const hp = escapeHtml(m.P_HP || '');
+			const list = g.contracts.length > 0 ? g.contracts : [null];
+			const n = list.length;
+			return list
+				.map((ct, i) => {
+					const period =
+						ct && (ct as MemberData).SVSDT
+							? `${formatYmd((ct as MemberData).SVSDT)}~${formatYmd((ct as MemberData).SVEDT)}`
+							: '-';
+					const benefit = ct ? usrguLabel((ct as MemberData).USRGU) : '-';
+					return `
+						<tr>
+							${i === 0 ? `<td rowspan="${n}" class="c">${escapeHtml(m.P_NM || '')}</td>` : ''}
+							${i === 0 ? `<td rowspan="${n}" class="c">${escapeHtml(birth)}</td>` : ''}
+							<td class="dual"><div>${yyno}</div><div>${escapeHtml(g.contractor)}</div></td>
+							<td class="dual"><div>${grade}</div><div>${escapeHtml(g.rel)}</div></td>
+							<td class="dual"><div>${escapeHtml(valid)}</div><div>${tel}</div></td>
+							<td class="dual"><div>${escapeHtml(benefit)}</div><div>${hp}</div></td>
+							<td class="c">${escapeHtml(period)}</td>
+						</tr>`;
+				})
+				.join('');
+		})
+		.join('');
+
+	return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>${title}</title>
+<style>
+	body { font-family: 'Malgun Gothic', sans-serif; font-size: 11px; color: #000; margin: 16px; }
+	h1 { text-align: center; font-size: 18px; text-decoration: underline; margin: 0 0 12px; }
+	.meta { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+	.sign { border-collapse: collapse; }
+	.sign th, .sign td { border: 1px solid #333; width: 72px; height: 28px; text-align: center; font-size: 10px; }
+	.basis { font-size: 11px; }
+	table.data { width: 100%; border-collapse: collapse; margin-top: 8px; }
+	table.data th, table.data td { border: 1px solid #333; padding: 4px 6px; vertical-align: middle; }
+	table.data th { background: #f0f0f0; font-weight: bold; text-align: center; font-size: 10px; }
+	td.dual div { line-height: 1.35; }
+	td.dual div:first-child { border-bottom: 1px dashed #ccc; padding-bottom: 2px; margin-bottom: 2px; }
+	td.c { text-align: center; }
+	.footer { margin-top: 12px; display: flex; justify-content: space-between; font-size: 10px; }
+	.hdr2 { line-height: 1.2; }
+</style>
+</head>
+<body>
+	<div class="meta">
+		<div class="basis">기준일자: ${escapeHtml(basisDate)}</div>
+		<table class="sign">
+			<tr><th>담당</th><th>검토</th><th>결재</th></tr>
+			<tr><td></td><td></td><td></td></tr>
+		</table>
+	</div>
+	<h1>${title}</h1>
+	<table class="data">
+		<thead>
+			<tr>
+				<th class="hdr2">수급자</th>
+				<th class="hdr2">생일</th>
+				<th class="hdr2">인정번호<br/>계약자성명</th>
+				<th class="hdr2">인정등급<br/>수급자와관계</th>
+				<th class="hdr2">인정유효기간<br/>자택전화번호</th>
+				<th class="hdr2">급여종류<br/>핸드폰번호</th>
+				<th class="hdr2">계약기간</th>
+			</tr>
+		</thead>
+		<tbody>${rowsHtml}</tbody>
+	</table>
+	<div class="footer">
+		<span>R10010B</span>
+		<span>출력일자: ${escapeHtml(printDate)} &nbsp; 페이지: 1</span>
+	</div>
+</body>
+</html>`;
+}
+
 export default function MemberContractInfo() {
 	const [members, setMembers] = useState<MemberData[]>([]);
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
@@ -133,12 +250,14 @@ export default function MemberContractInfo() {
 	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
-	const [contractInfo, setContractInfo] = useState<MemberData | null>(null);
+	const [contractList, setContractList] = useState<MemberData[]>([]);
+	const [selectedContract, setSelectedContract] = useState<MemberData | null>(null);
 	const [contractLoading, setContractLoading] = useState(false);
 	const [isCreating, setIsCreating] = useState(false);
 	const [isEditing, setIsEditing] = useState(false);
 	const [newContractInfo, setNewContractInfo] = useState<MemberData>({});
 	const [editedContractInfo, setEditedContractInfo] = useState<MemberData | null>(null);
+	const [printLoading, setPrintLoading] = useState(false);
 
 	const fetchMembers = async (
 		nameSearch?: string,
@@ -182,8 +301,47 @@ export default function MemberContractInfo() {
 		}
 	};
 
+	const contractInfo = selectedContract;
+
+	const formatDateSql = (dateStr: string | undefined): string | null => {
+		if (!dateStr || dateStr.trim() === '') return null;
+		try {
+			const date = new Date(dateStr);
+			if (isNaN(date.getTime())) return null;
+			const year = date.getFullYear();
+			const month = String(date.getMonth() + 1).padStart(2, '0');
+			const day = String(date.getDate()).padStart(2, '0');
+			return `${year}-${month}-${day} 00:00:00`;
+		} catch {
+			return null;
+		}
+	};
+
+	const calculateAge = (birthDate: string | null | undefined): string => {
+		if (!birthDate) return '-';
+		try {
+			const y = parseInt(String(birthDate).substring(0, 4), 10);
+			if (isNaN(y)) return '-';
+			return String(new Date().getFullYear() - y);
+		} catch {
+			return '-';
+		}
+	};
+
 	const handleMemberSelect = (member: MemberData) => {
 		setSelectedMember(member);
+		setSelectedContract(null);
+		setIsCreating(false);
+		setIsEditing(false);
+		setEditedContractInfo(null);
+		setNewContractInfo({});
+	};
+
+	const handleSelectContract = (row: MemberData) => {
+		setSelectedContract(row);
+		setIsCreating(false);
+		setIsEditing(false);
+		setEditedContractInfo(null);
 	};
 
 	// USRGU 값 변환 함수
@@ -219,10 +377,15 @@ export default function MemberContractInfo() {
 		return s.length >= 10 ? s.substring(0, 10) : s;
 	};
 
-	// F10110 테이블에서 계약 정보 조회
-	const fetchContractInfo = async (ancd: string, pnum: string) => {
+	// F10110 계약 전체 목록 (PK: ANCD, PNUM, CDT)
+	const fetchContractList = async (
+		ancd: string,
+		pnum: string,
+		autoSelectFirst: boolean = true
+	) => {
 		if (!ancd || !pnum) {
-			setContractInfo(null);
+			setContractList([]);
+			setSelectedContract(null);
 			return;
 		}
 
@@ -233,28 +396,33 @@ export default function MemberContractInfo() {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					query: `
-						SELECT TOP 1
+						SELECT
 							[ANCD], [PNUM], [CDT], [SVSDT], [SVEDT],
 							[INSPER], [USRPER], [USRGU], [USRINFO],
 							[EAMT], [ETAMT], [ESAMT],
 							[CHGU], [INDT], [ETC], [INEMPNO], [INEMPNM]
 						FROM [돌봄시설DB].[dbo].[F10110]
 						WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
-						ORDER BY [INDT] DESC
+						ORDER BY [CDT] DESC
 					`,
 					params: { ANCD: String(ancd), PNUM: String(pnum) }
 				})
 			});
 
 			const result = await response.json();
-			if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
-				setContractInfo(result.data[0]);
+			const rows = result.success && Array.isArray(result.data) ? result.data : [];
+			setContractList(rows);
+			if (autoSelectFirst && rows.length > 0) {
+				setSelectedContract(rows[0]);
+			} else if (!autoSelectFirst) {
+				// 유지: 목록만 갱신
 			} else {
-				setContractInfo(null);
+				setSelectedContract(null);
 			}
 		} catch (err) {
-			console.error('계약 정보 조회 오류:', err);
-			setContractInfo(null);
+			console.error('계약 목록 조회 오류:', err);
+			setContractList([]);
+			setSelectedContract(null);
 		} finally {
 			setContractLoading(false);
 		}
@@ -326,6 +494,101 @@ export default function MemberContractInfo() {
 		setCurrentPage(page);
 	};
 
+	const handlePrintContractReport = async () => {
+		if (filteredMembers.length === 0) {
+			alert('출력할 수급자가 없습니다. 목록 필터를 확인해 주세요.');
+			return;
+		}
+		setPrintLoading(true);
+		try {
+			const basis = new Date().toISOString().slice(0, 10);
+			const printDate = basis;
+			const groups = await Promise.all(
+				filteredMembers.map(async (m) => {
+					const [cRes, gRes] = await Promise.all([
+						fetch('/api/f10010', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								query: `
+									SELECT [ANCD],[PNUM],[CDT],[SVSDT],[SVEDT],[USRGU]
+									FROM [돌봄시설DB].[dbo].[F10110]
+									WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
+									ORDER BY [CDT] DESC
+								`,
+								params: { ANCD: String(m.ANCD), PNUM: String(m.PNUM) }
+							})
+						}),
+						fetch(
+							`/api/f10020?ancd=${encodeURIComponent(String(m.ANCD))}&pnum=${encodeURIComponent(String(m.PNUM))}`
+						)
+					]);
+					const cj = await cRes.json();
+					const gj = await gRes.json();
+					const contracts = cj.success && Array.isArray(cj.data) ? cj.data : [];
+					const guardians = gj.success && Array.isArray(gj.data) ? gj.data : [];
+					const g0 =
+						guardians.find((g: MemberData) => String(g.CONGU) === '1') ?? guardians[0];
+					const contractor = g0?.BHNM != null ? String(g0.BHNM) : '';
+					const rel =
+						g0?.BHREL === '10'
+							? '남편'
+							: g0?.BHREL === '11'
+								? '부인'
+								: g0?.BHREL === '20'
+									? '아들'
+									: g0?.BHREL === '21'
+										? '딸'
+										: g0?.BHREL === '22'
+											? '며느리'
+											: g0?.BHREL === '23'
+												? '사위'
+												: g0?.BHREL === '31'
+													? '손주'
+													: g0?.BHETC && String(g0.BHETC).trim() !== ''
+														? String(g0.BHETC)
+														: g0?.BHREL != null && String(g0.BHREL) !== ''
+															? String(g0.BHREL)
+															: '';
+					return { member: m, contracts, contractor, rel };
+				})
+			);
+			const html = buildContractPrintHtml(basis, printDate, groups);
+			const w = window.open('', '_blank');
+			if (!w) {
+				alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.');
+				return;
+			}
+			w.document.write(html);
+			w.document.close();
+			setTimeout(() => {
+				w.focus();
+				w.print();
+			}, 300);
+		} catch (e) {
+			console.error(e);
+			alert('출력 준비 중 오류가 발생했습니다.');
+		} finally {
+			setPrintLoading(false);
+		}
+	};
+
+	const contractRowKey = (row: MemberData) => String(row.CDT ?? '');
+	const isSameContractRow = (a: MemberData | null, b: MemberData | null) => {
+		if (!a || !b) return false;
+		return (
+			String(a.ANCD) === String(b.ANCD) &&
+			String(a.PNUM) === String(b.PNUM) &&
+			contractRowKey(a) === contractRowKey(b)
+		);
+	};
+	const contractPeriodLabel = (row: MemberData) => {
+		const s = formatMemberDate(row.SVSDT);
+		const e = formatMemberDate(row.SVEDT);
+		if (!s && !e) return '-';
+		return `${s || '-'} ~ ${e || '-'}`;
+	};
+
 	useEffect(() => {
 		fetchMembers();
 	}, []);
@@ -340,12 +603,13 @@ export default function MemberContractInfo() {
 		setCurrentPage(1);
 	}, [selectedStatus, selectedGrade, selectedFloor]);
 
-	// 선택된 수급자가 변경될 때 계약 정보 조회
+	// 선택된 수급자가 변경될 때 계약 목록 조회 (handleMemberSelect에서도 호출 — 초기 로드·동기화용)
 	useEffect(() => {
-		if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
-			fetchContractInfo(selectedMember.ANCD, selectedMember.PNUM);
+		if (selectedMember && selectedMember.ANCD != null && selectedMember.PNUM != null) {
+			fetchContractList(String(selectedMember.ANCD), String(selectedMember.PNUM), true);
 		} else {
-			setContractInfo(null);
+			setContractList([]);
+			setSelectedContract(null);
 		}
 		setIsCreating(false);
 		setIsEditing(false);
@@ -359,6 +623,7 @@ export default function MemberContractInfo() {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
+		setSelectedContract(null);
 		setIsCreating(true);
 		// F10010의 P_CTDT를 초기 계약일자로 설정
 		const initialContractDate = selectedMember.P_CTDT 
@@ -481,7 +746,7 @@ export default function MemberContractInfo() {
 				// 수급자 목록과 계약정보 다시 조회
 				await fetchMembers(undefined, { ancd: selectedMember.ANCD, pnum: selectedMember.PNUM });
 				if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
-					await fetchContractInfo(selectedMember.ANCD, selectedMember.PNUM);
+					await fetchContractList(String(selectedMember.ANCD), String(selectedMember.PNUM), true);
 				}
 			} else {
 				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
@@ -498,19 +763,22 @@ export default function MemberContractInfo() {
 
 	// 계약정보 수정 버튼 클릭
 	const handleEditClick = () => {
-		if (!contractInfo || !selectedMember) return;
+		if (!selectedContract || !selectedMember) return;
 		setIsEditing(true);
-		// F10010의 P_CTDT를 계약일자로 사용 (없으면 F10110의 CDT 사용)
-		const contractDate = selectedMember?.P_CTDT 
+		const cdtRaw = selectedContract.CDT != null ? String(selectedContract.CDT) : '';
+		const cdtDay = cdtRaw.length >= 10 ? cdtRaw.substring(0, 10) : '';
+		const contractDate = selectedMember?.P_CTDT
 			? selectedMember.P_CTDT.substring(0, 10)
-			: (contractInfo.CDT ? contractInfo.CDT.substring(0, 10) : '');
-		setEditedContractInfo({ 
-			...contractInfo,
+			: cdtDay;
+		setEditedContractInfo({
+			...selectedContract,
+			_originalCdtSql: formatDateSql(cdtDay),
 			CDT: contractDate,
 			P_NM: selectedMember.P_NM != null ? String(selectedMember.P_NM) : '',
-			P_ST: selectedMember.P_ST != null && String(selectedMember.P_ST).trim() !== ''
-				? String(selectedMember.P_ST).trim()
-				: '',
+			P_ST:
+				selectedMember.P_ST != null && String(selectedMember.P_ST).trim() !== ''
+					? String(selectedMember.P_ST).trim()
+					: '',
 			P_SDT: formatMemberDate(selectedMember.P_SDT) || '',
 			P_EDT: formatMemberDate(selectedMember.P_EDT) || '',
 			P_CINFO: selectedMember.P_CINFO != null ? String(selectedMember.P_CINFO) : ''
@@ -546,7 +814,7 @@ export default function MemberContractInfo() {
 				}
 			};
 
-			// UPDATE 쿼리 생성
+			// UPDATE 쿼리 (PK: ANCD, PNUM, CDT)
 			const updateQuery = `
 				UPDATE [돌봄시설DB].[dbo].[F10110]
 				SET 
@@ -564,13 +832,13 @@ export default function MemberContractInfo() {
 					[ETC] = @ETC,
 					[INEMPNO] = @INEMPNO,
 					[INEMPNM] = @INEMPNM
-				WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [INDT] = @INDT
+				WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [CDT] = @OLD_CDT
 			`;
 
 			const params = {
 				ANCD: selectedMember.ANCD,
 				PNUM: selectedMember.PNUM,
-				INDT: editedContractInfo.INDT,
+				OLD_CDT: editedContractInfo._originalCdtSql,
 				CDT: formatDate(editedContractInfo.CDT),
 				SVSDT: formatDate(editedContractInfo.SVSDT),
 				SVEDT: formatDate(editedContractInfo.SVEDT),
@@ -645,7 +913,7 @@ export default function MemberContractInfo() {
 			setEditedContractInfo(null);
 			await fetchMembers(undefined, { ancd: selectedMember.ANCD, pnum: selectedMember.PNUM });
 			if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
-				await fetchContractInfo(selectedMember.ANCD, selectedMember.PNUM);
+				await fetchContractList(String(selectedMember.ANCD), String(selectedMember.PNUM), true);
 			}
 		} catch (err) {
 			console.error('계약정보 수정 오류:', err);
@@ -657,20 +925,22 @@ export default function MemberContractInfo() {
 
 	// 계약정보 삭제
 	const handleDelete = async () => {
-		if (!contractInfo || !selectedMember) return;
+		if (!selectedContract || !selectedMember) return;
 
 		if (confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
 			setContractLoading(true);
 			try {
+				const cdtKey = selectedContract.CDT != null ? String(selectedContract.CDT) : '';
+				const cdtDay = cdtKey.length >= 10 ? cdtKey.substring(0, 10) : '';
 				const deleteQuery = `
 					DELETE FROM [돌봄시설DB].[dbo].[F10110]
-					WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [INDT] = @INDT
+					WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM AND [CDT] = @CDT
 				`;
 
 				const params = {
 					ANCD: selectedMember.ANCD,
 					PNUM: selectedMember.PNUM,
-					INDT: contractInfo.INDT
+					CDT: formatDateSql(cdtDay)
 				};
 
 				const response = await fetch('/api/f10010', {
@@ -683,9 +953,12 @@ export default function MemberContractInfo() {
 
 				if (result && result.success) {
 					alert('계약정보가 삭제되었습니다.');
-					setContractInfo(null);
+					setSelectedContract(null);
 					setIsEditing(false);
 					setEditedContractInfo(null);
+					if (selectedMember.ANCD != null && selectedMember.PNUM != null) {
+						await fetchContractList(String(selectedMember.ANCD), String(selectedMember.PNUM), true);
+					}
 				} else {
 					const errorMessage = result?.error || result?.details || '알 수 없는 오류';
 					console.error('계약정보 삭제 실패:', result);
@@ -711,222 +984,310 @@ export default function MemberContractInfo() {
 	};
 
 	return (
-		<div className="min-h-screen bg-white text-black">
-			<div className="mx-auto max-w-[1200px] p-4">
-				<div className="flex gap-4">
-					{/* 좌측: 수급자 목록 */}
-					<aside className="w-1/3 shrink-0">
-						<div className="overflow-hidden bg-white border border-blue-300 rounded-lg shadow-sm">
-							<div className="px-3 py-2 font-semibold text-blue-900 bg-blue-100 border-b border-blue-300">수급자 목록</div>
-							{/* 상단 상태/검색 영역 */}
-							<div className="px-3 py-2 space-y-2 border-b border-blue-100">
-								{/* 현황 필터 */}
-								<div className="space-y-1">
-									<div className="text-xs text-blue-900/80">현황</div>
-									<select
-										value={selectedStatus}
-										onChange={(e) => {
-											setSelectedStatus(e.target.value);
+		<div className="min-h-screen bg-white text-black flex flex-col">
+			<div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-blue-200 bg-white">
+				<h1 className="text-sm font-semibold text-blue-900">수급자 계약정보</h1>
+				<button
+					type="button"
+					onClick={handlePrintContractReport}
+					disabled={printLoading || filteredMembers.length === 0}
+					className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-700 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{printLoading ? '출력 준비 중...' : '계약서 출력'}
+				</button>
+			</div>
+			<div className="flex h-[calc(80vh-56px)] min-h-0 flex-1">
+				{/* 좌측: 수급자 목록 (보호자정보등록과 동일 패턴) */}
+				<div className="w-1/4 min-w-0 border-r border-blue-200 bg-white flex flex-col p-4">
+					<div className="mb-3">
+						<h3 className="text-sm font-semibold text-blue-900 mb-2">수급자 목록</h3>
+						<div className="space-y-2">
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">이름 검색</div>
+								<input
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded"
+									placeholder="예) 홍길동"
+									value={searchTerm}
+									onChange={(e) => setSearchTerm(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === 'Enter') {
 											setCurrentPage(1);
-										}}
-										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
-									>
-										<option value="">현황 전체</option>
-										<option value="입소">입소</option>
-										<option value="퇴소">퇴소</option>
-									</select>
-								</div>
-								{/* 등급 필터 */}
-								<div className="space-y-1">
-									<div className="text-xs text-blue-900/80">등급</div>
-									<select
-										value={selectedGrade}
-										onChange={(e) => {
-											setSelectedGrade(e.target.value);
-											setCurrentPage(1);
-										}}
-										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
-									>
-										<option value="">등급 전체</option>
-										<option value="1">1등급</option>
-										<option value="2">2등급</option>
-										<option value="3">3등급</option>
-										<option value="4">4등급</option>
-										<option value="5">5등급</option>
-										<option value="9">인지지원</option>
-									</select>
-								</div>
-								{/* 층수 필터 */}
-								<div className="space-y-1">
-									<div className="text-xs text-blue-900/80">층수</div>
-									<select
-										value={selectedFloor}
-										onChange={(e) => {
-											setSelectedFloor(e.target.value);
-											setCurrentPage(1);
-										}}
-										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
-									>
-										<option value="">층수 전체</option>
-										{/* 동적으로 층수 목록 생성 */}
-										{Array.from(new Set(members.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-											<option key={floor} value={String(floor)}>{floor}층</option>
-										))}
-									</select>
-								</div>
-								{/* 이름 검색 */}
-								<div className="space-y-1">
-									<div className="text-xs text-blue-900/80">이름 검색</div>
-									<input 
-										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded" 
-										placeholder="예) 홍길동"
-										value={searchTerm}
-										onChange={(e) => setSearchTerm(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === 'Enter') {
-												setCurrentPage(1);
-												fetchMembers(searchTerm);
-											}
-										}}
-									/>
-								</div>
-								<button 
-									className="w-full py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
-									onClick={() => {
-										setCurrentPage(1);
-										fetchMembers(searchTerm);
+											fetchMembers(searchTerm);
+										}
 									}}
+								/>
+							</div>
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">현황</div>
+								<select
+									value={selectedStatus}
+									onChange={(e) => {
+										setSelectedStatus(e.target.value);
+										setCurrentPage(1);
+									}}
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
 								>
-									{loading ? '검색 중...' : '검색'}
-								</button>
+									<option value="">현황 전체</option>
+									<option value="입소">입소</option>
+									<option value="퇴소">퇴소</option>
+								</select>
 							</div>
-							{/* 목록 테이블 */}
-							<div className="max-h-[540px] overflow-auto">
-								<table className="w-full text-sm">
-									<thead className="sticky top-0 border-b border-blue-200 bg-blue-50">
-										<tr>
-											<th className="px-2 py-2 font-semibold text-left text-blue-900">이름</th>
-											<th className="px-2 py-2 font-semibold text-left text-blue-900">등급</th>
-											<th className="px-2 py-2 font-semibold text-left text-blue-900">상태</th>
-										</tr>
-									</thead>
-									<tbody>
-										{loading ? (
-											<tr>
-												<td colSpan={3} className="px-2 py-4 text-center text-blue-900/60">
-													로딩 중...
-												</td>
-											</tr>
-										) : error ? (
-											<tr>
-												<td colSpan={3} className="px-2 py-4 text-center text-red-600">
-													{error}
-												</td>
-											</tr>
-										) : filteredMembers.length === 0 ? (
-											<tr>
-												<td colSpan={3} className="px-2 py-4 text-center text-blue-900/60">
-													수급자 데이터가 없습니다
-												</td>
-											</tr>
-										) : (
-											currentMembers.map((member, idx) => (
-												<tr 
-													key={`${member.ANCD}-${member.PNUM}-${idx}`} 
-													className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-														selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
-													}`}
-													onClick={() => handleMemberSelect(member)}
-												>
-													<td className="px-2 py-2">{member.P_NM || member.ANCD || '이름 없음'}</td>
-													<td className="px-2 py-2">{formatCareGradeLabel(member.P_GRD, '등급 없음')}</td>
-													<td className="px-2 py-2">
-														{member.P_ST === '1' 
-															? '입소' 
-															: member.P_ST === '9' 
-																? '퇴소' 
-																: '-'}
-													</td>
-												</tr>
-											))
-										)}
-									</tbody>
-								</table>
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">등급</div>
+								<select
+									value={selectedGrade}
+									onChange={(e) => {
+										setSelectedGrade(e.target.value);
+										setCurrentPage(1);
+									}}
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+								>
+									<option value="">등급 전체</option>
+									<option value="1">1등급</option>
+									<option value="2">2등급</option>
+									<option value="3">3등급</option>
+									<option value="4">4등급</option>
+									<option value="5">5등급</option>
+									<option value="9">인지지원</option>
+								</select>
 							</div>
-							
-							{/* 페이지네이션 */}
-							{totalPages > 1 && (
-								<div className="p-3 border-t border-blue-100">
-									<div className="flex items-center justify-center">
-										<div className="flex gap-1">
-											<button
-												onClick={() => handlePageChange(1)}
-												disabled={currentPage === 1}
-												className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-											>
-												&lt;&lt;
-											</button>
-											<button
-												onClick={() => handlePageChange(currentPage - 1)}
-												disabled={currentPage === 1}
-												className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-											>
-												&lt;
-											</button>
-											
-											{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-												const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
-												return (
-													<button
-														key={pageNum}
-														onClick={() => handlePageChange(pageNum)}
-														className={`px-2 py-1 text-xs border rounded ${
-															currentPage === pageNum
-																? 'bg-blue-500 text-white border-blue-500'
-																: 'border-blue-300 hover:bg-blue-50'
-														}`}
-													>
-														{pageNum}
-													</button>
-												);
-											})}
-											
-											<button
-												onClick={() => handlePageChange(currentPage + 1)}
-												disabled={currentPage === totalPages}
-												className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-											>
-												&gt;
-											</button>
-											<button
-												onClick={() => handlePageChange(totalPages)}
-												disabled={currentPage === totalPages}
-												className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-											>
-												&gt;&gt;
-											</button>
-										</div>
-									</div>
-								</div>
-							)}
+							<div className="space-y-1">
+								<div className="text-xs text-blue-900/80">층수</div>
+								<select
+									value={selectedFloor}
+									onChange={(e) => {
+										setSelectedFloor(e.target.value);
+										setCurrentPage(1);
+									}}
+									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
+								>
+									<option value="">층수 전체</option>
+									{Array.from(
+										new Set(
+											members.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== '')
+										)
+									)
+										.sort((a, b) => Number(a) - Number(b))
+										.map(floor => (
+											<option key={floor} value={String(floor)}>
+												{floor}층
+											</option>
+										))}
+								</select>
+							</div>
 						</div>
-					</aside>
+						<button
+							type="button"
+							className="w-full mt-2 py-1 text-xs text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
+							onClick={() => {
+								setCurrentPage(1);
+								fetchMembers(searchTerm);
+							}}
+						>
+							{loading ? '검색 중...' : '검색'}
+						</button>
+					</div>
+					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white flex flex-col flex-1 min-h-0">
+						<div className="overflow-y-auto flex-1 min-h-0">
+							<table className="w-full text-xs">
+								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
+									<tr>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">현황</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">수급자명</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">성별</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">등급</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold">나이</th>
+									</tr>
+								</thead>
+								<tbody>
+									{loading ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">
+												로딩 중...
+											</td>
+										</tr>
+									) : error ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-red-600">
+												{error}
+											</td>
+										</tr>
+									) : filteredMembers.length === 0 ? (
+										<tr>
+											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">
+												수급자 데이터가 없습니다
+											</td>
+										</tr>
+									) : (
+										currentMembers.map((member, index) => (
+											<tr
+												key={`${member.ANCD}-${member.PNUM}-${index}`}
+												onClick={() => handleMemberSelect(member)}
+												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM
+														? 'bg-blue-100'
+														: ''
+												}`}
+											>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{startIndex + index + 1}
+												</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
+												</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{member.P_NM || '-'}
+												</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
+												</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{formatCareGradeLabel(member.P_GRD)}
+												</td>
+												<td className="text-center px-1 py-1.5">{calculateAge(member.P_BRDT)}</td>
+											</tr>
+										))
+									)}
+								</tbody>
+							</table>
+						</div>
+						{totalPages > 1 && (
+							<div className="p-2 border-t border-blue-200 bg-white flex-shrink-0">
+								<div className="flex items-center justify-center gap-1">
+									<button
+										type="button"
+										onClick={() => handlePageChange(1)}
+										disabled={currentPage === 1}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&lt;&lt;
+									</button>
+									<button
+										type="button"
+										onClick={() => handlePageChange(currentPage - 1)}
+										disabled={currentPage === 1}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&lt;
+									</button>
+									{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+										const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
+										return (
+											<button
+												type="button"
+												key={pageNum}
+												onClick={() => handlePageChange(pageNum)}
+												className={`px-2 py-1 text-xs border rounded ${
+													currentPage === pageNum
+														? 'bg-blue-500 text-white border-blue-500'
+														: 'border-blue-300 hover:bg-blue-50'
+												}`}
+											>
+												{pageNum}
+											</button>
+										);
+									})}
+									<button
+										type="button"
+										onClick={() => handlePageChange(currentPage + 1)}
+										disabled={currentPage === totalPages}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&gt;
+									</button>
+									<button
+										type="button"
+										onClick={() => handlePageChange(totalPages)}
+										disabled={currentPage === totalPages}
+										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+									>
+										&gt;&gt;
+									</button>
+								</div>
+							</div>
+						)}
+					</div>
+				</div>
 
-					{/* 우측: 계약정보 상세 영역 */}
-					<section className="flex-1 space-y-4">
+				{/* 중간: 계약 목록 */}
+				<div className="w-1/4 min-w-0 border-r border-blue-200 bg-white flex flex-col p-4">
+					<div className="mb-3 flex items-center justify-between gap-2">
+						<h3 className="text-sm font-semibold text-blue-900">계약 목록</h3>
+						{selectedMember && (
+							<button
+								type="button"
+								onClick={handleCreateClick}
+								className="px-2 py-1 text-xs text-white bg-blue-500 border border-blue-600 rounded hover:bg-blue-600 shrink-0"
+							>
+								계약정보 생성
+							</button>
+						)}
+					</div>
+					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white flex-1 flex flex-col min-h-0">
+						<div className="overflow-y-auto flex-1 min-h-0">
+							<table className="w-full text-xs">
+								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
+									<tr>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">계약일자</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">계약기간</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold">급여구분</th>
+									</tr>
+								</thead>
+								<tbody>
+									{!selectedMember ? (
+										<tr>
+											<td colSpan={4} className="text-center px-2 py-6 text-blue-900/60">
+												수급자를 선택하세요
+											</td>
+										</tr>
+									) : contractLoading ? (
+										<tr>
+											<td colSpan={4} className="text-center px-2 py-6 text-blue-900/60">
+												계약 목록 로딩 중...
+											</td>
+										</tr>
+									) : contractList.length === 0 ? (
+										<tr>
+											<td colSpan={4} className="text-center px-2 py-6 text-blue-900/60">
+												등록된 계약이 없습니다
+											</td>
+										</tr>
+									) : (
+										contractList.map((row, i) => (
+											<tr
+												key={`${row.ANCD}-${row.PNUM}-${contractRowKey(row)}-${i}`}
+												onClick={() => handleSelectContract(row)}
+												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+													isSameContractRow(selectedContract, row) ? 'bg-blue-100' : ''
+												}`}
+											>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">{i + 1}</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{formatMemberDate(row.CDT) || '-'}
+												</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100 whitespace-nowrap">
+													{contractPeriodLabel(row)}
+												</td>
+												<td className="text-center px-1 py-1.5">{getUSRGULabel(row.USRGU)}</td>
+											</tr>
+										))
+									)}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+
+				{/* 우측: 계약정보 상세 */}
+				<section className="flex-1 min-w-0 overflow-y-auto p-4 space-y-4 bg-white">
 						{/* 계약정보 카드 */}
 						<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
 							<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
 								<h2 className="text-xl font-semibold text-blue-900">계약정보</h2>
 								<div className="flex items-center gap-2">
-									{!contractInfo && !isCreating ? (
-										<button 
-											onClick={handleCreateClick}
-											className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900"
-										>
-											계약정보 생성
-										</button>
-									) : contractInfo && !isEditing ? (
+									{contractInfo && !isEditing ? (
 										<button 
 											onClick={handleEditClick}
 											className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900"
@@ -1533,7 +1894,6 @@ export default function MemberContractInfo() {
 							</div>
 						</div>
 					</section>
-				</div>
 			</div>
 		</div>
     );
