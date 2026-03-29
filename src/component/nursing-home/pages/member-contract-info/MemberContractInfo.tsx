@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { formatCareGradeLabel } from '../../utils/careGrade';
 
 interface MemberData {
   [key: string]: any;
@@ -127,7 +128,7 @@ export default function MemberContractInfo() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
-	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
 	const [selectedGrade, setSelectedGrade] = useState<string>('');
 	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [currentPage, setCurrentPage] = useState(1);
@@ -752,7 +753,7 @@ export default function MemberContractInfo() {
 										<option value="3">3등급</option>
 										<option value="4">4등급</option>
 										<option value="5">5등급</option>
-										<option value="6">6등급</option>
+										<option value="9">인지지원</option>
 									</select>
 								</div>
 								{/* 층수 필터 */}
@@ -838,7 +839,7 @@ export default function MemberContractInfo() {
 													onClick={() => handleMemberSelect(member)}
 												>
 													<td className="px-2 py-2">{member.P_NM || member.ANCD || '이름 없음'}</td>
-													<td className="px-2 py-2">{member.P_GRD || '등급 없음'}</td>
+													<td className="px-2 py-2">{formatCareGradeLabel(member.P_GRD, '등급 없음')}</td>
 													<td className="px-2 py-2">
 														{member.P_ST === '1' 
 															? '입소' 

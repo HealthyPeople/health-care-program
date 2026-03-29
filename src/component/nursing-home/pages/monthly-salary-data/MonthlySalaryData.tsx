@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { formatCareGradeLabel } from "../../utils/careGrade";
 
 interface MemberData {
 	ANCD: string;
@@ -68,7 +69,7 @@ export default function MonthlySalaryData() {
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
-	const [selectedStatus, setSelectedStatus] = useState<string>("");
+	const [selectedStatus, setSelectedStatus] = useState<string>("입소");
 	const [selectedGrade, setSelectedGrade] = useState<string>("");
 	const [selectedFloor, setSelectedFloor] = useState<string>("");
 	const [searchTerm, setSearchTerm] = useState("");
@@ -239,7 +240,7 @@ export default function MonthlySalaryData() {
 									<option value="3">3등급</option>
 									<option value="4">4등급</option>
 									<option value="5">5등급</option>
-									<option value="6">6등급</option>
+									<option value="9">인지지원</option>
 								</select>
 							</div>
 							<div className="space-y-1">
@@ -334,11 +335,7 @@ export default function MonthlySalaryData() {
 													{member.P_SEX === "1" ? "남" : member.P_SEX === "2" ? "여" : "-"}
 												</td>
 												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_GRD === "0"
-														? "등급외"
-														: member.P_GRD
-															? `${member.P_GRD}등급`
-															: "-"}
+													{formatCareGradeLabel(member.P_GRD)}
 												</td>
 												<td className="px-2 py-1.5 text-center">
 													{calculateAge(member.P_BRDT)}

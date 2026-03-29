@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import { formatCareGradeLabel } from '../../utils/careGrade';
 
 interface MemberData {
 	ANCD: string;
@@ -36,7 +37,7 @@ interface CounselingData {
 export default function CounselingRecord() {
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
-	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
 	const [selectedGrade, setSelectedGrade] = useState<string>('');
 	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [consultationDates, setConsultationDates] = useState<string[]>([]);
@@ -941,7 +942,7 @@ export default function CounselingRecord() {
 			</tr>
 			<tr>
 				<td class="label">장기요양등급</td>
-				<td class="value">${selectedMember.P_GRD === '0' ? '등급외' : selectedMember.P_GRD ? `${selectedMember.P_GRD}등급` : '-'}</td>
+				<td class="value">${formatCareGradeLabel(selectedMember.P_GRD)}</td>
 				<td class="label">수급자성명</td>
 				<td class="value">${formData.beneficiary || '-'}</td>
 			</tr>
@@ -1102,7 +1103,7 @@ export default function CounselingRecord() {
 									<option value="3">3등급</option>
 									<option value="4">4등급</option>
 									<option value="5">5등급</option>
-									<option value="6">6등급</option>
+									<option value="9">인지지원</option>
 								</select>
 							</div>
 							{/* 층수 필터 */}
@@ -1164,7 +1165,7 @@ export default function CounselingRecord() {
 													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
 												</td>
 												<td className="text-center px-2 py-1.5 border-r border-blue-100">
-													{member.P_GRD === '0' ? '등급외' : member.P_GRD ? `${member.P_GRD}등급` : '-'}
+													{formatCareGradeLabel(member.P_GRD)}
 												</td>
 												<td className="text-center px-2 py-1.5">{calculateAge(member.P_BRDT)}</td>
 											</tr>

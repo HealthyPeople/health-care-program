@@ -16,7 +16,7 @@ const initialForm = {
 	outpatientPrice: "46,540",
 };
 
-const GRADES = ["1등급", "2등급", "3등급", "4등급", "5등급", "6등급", "등급외"];
+const GRADES = ["1등급", "2등급", "3등급", "4등급", "5등급", "인지지원", "등급외"];
 
 export default function GradeSalaryTable() {
 	const [salaryRows, setSalaryRows] = useState<SalaryTableRow[]>([

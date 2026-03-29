@@ -1,8 +1,42 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
+import { formatCareGradeLabel, normalizePGrdForSelect } from '../../utils/careGrade';
 
 interface MemberData {
   [key: string]: any;
+}
+
+/** DB/API에서 오는 날짜를 date input용 YYYY-MM-DD 문자열로 */
+function toDateInputString(v: unknown): string {
+	if (v == null || v === '') return '';
+	if (typeof v === 'string') {
+		const s = v.trim();
+		return s.length >= 10 ? s.slice(0, 10) : s;
+	}
+	if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+	return '';
+}
+
+/** 수정 모드 진입 시 select·input과 맞추기 위해 스칼라 필드 정규화 */
+function buildMemberForEdit(m: MemberData): MemberData {
+	const floor = m.P_FLOOR;
+	const floorStr =
+		floor === 0 || floor === '0'
+			? String(floor)
+			: floor !== null && floor !== undefined && floor !== ''
+				? String(floor)
+				: '';
+
+	return {
+		...m,
+		selectedANCD: String(m.ANCD ?? ''),
+		P_GRD: normalizePGrdForSelect(m.P_GRD),
+		P_FLOOR: floorStr,
+		P_YYSDT: toDateInputString(m.P_YYSDT),
+		P_YYEDT: toDateInputString(m.P_YYEDT),
+		INSPER: m.INSPER !== undefined && m.INSPER !== null ? String(m.INSPER) : '',
+		USRPER: m.USRPER !== undefined && m.USRPER !== null ? String(m.USRPER) : '',
+	};
 }
 
 export default function MemberInfoView() {
@@ -11,7 +45,7 @@ export default function MemberInfoView() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
-	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
 	const [selectedGrade, setSelectedGrade] = useState<string>('');
 	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [isEditing, setIsEditing] = useState(false);
@@ -91,7 +125,8 @@ export default function MemberInfoView() {
 	const handleEditClick = () => {
 		if (selectedMember) {
 			setIsEditing(true);
-			setEditedMember({ ...selectedMember, selectedANCD: selectedMember.ANCD });
+			setEditedMember(buildMemberForEdit({ ...selectedMember, selectedANCD: selectedMember.ANCD }));
+			setEditedMemberDetailAddr('');
 			hasUnsavedChanges.current = false;
 		}
 	};
@@ -171,7 +206,7 @@ export default function MemberInfoView() {
 				P_ADDR: fullAddress,
 				P_TEL: editedMember.P_TEL?.trim() || null,
 				P_HP: editedMember.P_HP?.trim() || null,
-				P_GRD: editedMember.P_GRD?.trim() || null,
+				P_GRD: String(editedMember.P_GRD ?? '').trim() || null,
 				P_YYNO: editedMember.P_YYNO?.trim() || null,
 				P_YYDT: formatDate(editedMember.P_YYDT),
 				P_ST: editedMember.P_ST || null,
@@ -291,14 +326,12 @@ export default function MemberInfoView() {
 	};
 
 	const handleFieldChange = (field: string, value: any) => {
-		if (editedMember) {
-			setEditedMember({ ...editedMember, [field]: value });
-			hasUnsavedChanges.current = true;
-		}
+		hasUnsavedChanges.current = true;
+		setEditedMember((prev) => (prev ? { ...prev, [field]: value } : null));
 	};
 
 	const handleNewMemberFieldChange = (field: string, value: any) => {
-		setNewMember({ ...newMember, [field]: value });
+		setNewMember((prev) => ({ ...prev, [field]: value }));
 	};
 
 	// ANCD별 최대 PNUM 조회 및 새 PNUM 생성
@@ -427,7 +460,7 @@ export default function MemberInfoView() {
 				P_ADDR: fullAddress,
 				P_TEL: newMember.P_TEL?.trim() || null,
 				P_HP: newMember.P_HP?.trim() || null,
-				P_GRD: newMember.P_GRD?.trim() || null,
+				P_GRD: String(newMember.P_GRD ?? '').trim() || null,
 				P_YYNO: newMember.P_YYNO?.trim() || null,
 				P_YYDT: formatDate(newMember.P_YYDT),
 				P_ST: newMember.P_ST || null,
@@ -593,17 +626,20 @@ export default function MemberInfoView() {
 				const extraAddress = data.addressType === 'R' ? data.bname + data.buildingName : '';
 
 				if (isNewMember) {
-					setNewMember({
-						...newMember,
+					setNewMember((prev) => ({
+						...prev,
 						P_ZIP: zipCode,
 						P_ADDR: address + (extraAddress ? ' ' + extraAddress : '')
-					});
+					}));
 					setNewMemberDetailAddr(''); // 상세주소 초기화
-				} else if (editedMember) {
-					setEditedMember({
-						...editedMember,
-						P_ZIP: zipCode,
-						P_ADDR: address + (extraAddress ? ' ' + extraAddress : '')
+				} else {
+					setEditedMember((prev) => {
+						if (!prev) return null;
+						return {
+							...prev,
+							P_ZIP: zipCode,
+							P_ADDR: address + (extraAddress ? ' ' + extraAddress : '')
+						};
 					});
 					setEditedMemberDetailAddr(''); // 상세주소 초기화
 					hasUnsavedChanges.current = true;
@@ -681,7 +717,7 @@ export default function MemberInfoView() {
 										<option value="3">3등급</option>
 										<option value="4">4등급</option>
 										<option value="5">5등급</option>
-										<option value="6">6등급</option>
+										<option value="9">인지지원</option>
 									</select>
 								</div>
 								{/* 층수 필터 */}
@@ -768,7 +804,7 @@ export default function MemberInfoView() {
 												>
 													<td className="px-2 py-2">{member.P_NM || member.ANCD || '이름 없음'}</td>
 													<td className="px-2 py-2">
-														{member.P_GRD === '0' ? '등급외' : member.P_GRD ? `${member.P_GRD}등급` : '등급 없음'}
+														{formatCareGradeLabel(member.P_GRD, '등급 없음')}
 													</td>
 													<td className="px-2 py-2">
 														{member.P_ST === '1' 
@@ -1001,10 +1037,10 @@ export default function MemberInfoView() {
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">연락처</label>
 													<input
 														type="text"
-														value={newMember.P_HP || newMember.P_TEL || ''}
+														value={newMember.P_HP ?? newMember.P_TEL ?? ''}
 														onChange={(e) => {
-															handleNewMemberFieldChange('P_HP', e.target.value);
-															handleNewMemberFieldChange('P_TEL', e.target.value);
+															const v = e.target.value;
+															setNewMember((prev) => ({ ...prev, P_HP: v, P_TEL: v }));
 														}}
 														className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														placeholder="연락처를 입력하세요"
@@ -1013,17 +1049,18 @@ export default function MemberInfoView() {
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">요양등급</label>
 													<select
-														value={newMember.P_GRD || ''}
+														value={String(newMember.P_GRD ?? '')}
 														onChange={(e) => handleNewMemberFieldChange('P_GRD', e.target.value)}
 														className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 													>
 														<option value="">선택</option>
+														<option value="0">등급외</option>
 														<option value="1">1등급</option>
 														<option value="2">2등급</option>
 														<option value="3">3등급</option>
 														<option value="4">4등급</option>
 														<option value="5">5등급</option>
-														<option value="6">6등급</option>
+														<option value="9">인지지원</option>
 													</select>
 												</div>
 
@@ -1260,13 +1297,13 @@ export default function MemberInfoView() {
 													<div className="flex flex-col col-span-12 gap-1">
 														<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">기관명</label>
 														<select
-															value={editedMember.selectedANCD || editedMember.ANCD || ''}
+															value={String(editedMember.selectedANCD ?? editedMember.ANCD ?? '')}
 															onChange={(e) => handleFieldChange('selectedANCD', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														>
 															<option value="">기관을 선택하세요</option>
 															{institutions.map((inst) => (
-																<option key={inst.ANCD} value={inst.ANCD}>
+																<option key={String(inst.ANCD)} value={String(inst.ANCD)}>
 																	{inst.ANNM}
 																</option>
 															))}
@@ -1362,10 +1399,13 @@ export default function MemberInfoView() {
 													{isEditing && editedMember ? (
 														<input
 															type="text"
-															value={editedMember.P_TEL || editedMember.P_HP || ''}
+															value={editedMember.P_TEL ?? editedMember.P_HP ?? ''}
 															onChange={(e) => {
-																handleFieldChange('P_TEL', e.target.value);
-																handleFieldChange('P_HP', e.target.value);
+																const v = e.target.value;
+																hasUnsavedChanges.current = true;
+																setEditedMember((prev) =>
+																	prev ? { ...prev, P_TEL: v, P_HP: v } : null
+																);
 															}}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														/>
@@ -1393,27 +1433,22 @@ export default function MemberInfoView() {
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">등급</label>
 													{isEditing && editedMember ? (
 														<select
-															value={editedMember.P_GRD || ''}
+															value={normalizePGrdForSelect(editedMember.P_GRD)}
 															onChange={(e) => handleFieldChange('P_GRD', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														>
 															<option value="">선택</option>
+															<option value="0">등급외</option>
 															<option value="1">1등급</option>
 															<option value="2">2등급</option>
 															<option value="3">3등급</option>
 															<option value="4">4등급</option>
 															<option value="5">5등급</option>
-															<option value="6">6등급</option>
+															<option value="9">인지지원</option>
 														</select>
 													) : (
 														<span className="w-full border-b border-blue-200">
-															{
-																selectedMember.P_GRD 
-																	? selectedMember.P_GRD === '0' 
-																		? '등급외' 
-																		: `${selectedMember.P_GRD}등급`
-																	: '등급 없음'
-															}
+															{formatCareGradeLabel(selectedMember.P_GRD, '등급 없음')}
 														</span>
 													)}
 												</div>
@@ -1479,7 +1514,13 @@ export default function MemberInfoView() {
 															type="number"
 															min="0"
 															step="1"
-															value={editedMember.P_FLOOR || ''}
+															value={
+																editedMember.P_FLOOR === '' ||
+																editedMember.P_FLOOR === undefined ||
+																editedMember.P_FLOOR === null
+																	? ''
+																	: String(editedMember.P_FLOOR)
+															}
 															onChange={(e) => {
 																const value = e.target.value;
 																// 0 이상의 정수만 허용
@@ -1502,7 +1543,7 @@ export default function MemberInfoView() {
 													{isEditing && editedMember ? (
 														<input
 															type="date"
-															value={editedMember.P_YYSDT ? editedMember.P_YYSDT.substring(0, 10) : ''}
+															value={editedMember.P_YYSDT ? String(editedMember.P_YYSDT).slice(0, 10) : ''}
 															onChange={(e) => handleFieldChange('P_YYSDT', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														/>
@@ -1518,7 +1559,7 @@ export default function MemberInfoView() {
 													{isEditing && editedMember ? (
 														<input
 															type="date"
-															value={editedMember.P_YYEDT ? editedMember.P_YYEDT.substring(0, 10) : ''}
+															value={editedMember.P_YYEDT ? String(editedMember.P_YYEDT).slice(0, 10) : ''}
 															onChange={(e) => handleFieldChange('P_YYEDT', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														/>
@@ -1565,7 +1606,7 @@ export default function MemberInfoView() {
 												{isEditing && editedMember ? (
 													<input
 														type="text"
-														value={editedMember.INSPER || ''}
+														value={editedMember.INSPER !== undefined && editedMember.INSPER !== null ? String(editedMember.INSPER) : ''}
 														onChange={(e) => handleFieldChange('INSPER', e.target.value)}
 														className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														placeholder="숫자만 입력"
@@ -1581,7 +1622,7 @@ export default function MemberInfoView() {
 												{isEditing && editedMember ? (
 													<input
 														type="text"
-														value={editedMember.USRPER || ''}
+														value={editedMember.USRPER !== undefined && editedMember.USRPER !== null ? String(editedMember.USRPER) : ''}
 														onChange={(e) => handleFieldChange('USRPER', e.target.value)}
 														className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														placeholder="숫자만 입력"

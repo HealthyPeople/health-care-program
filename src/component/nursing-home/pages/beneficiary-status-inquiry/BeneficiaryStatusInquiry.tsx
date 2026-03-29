@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import { formatCareGradeLabel } from '../../utils/careGrade';
 
 interface MemberData {
 	ANCD: string;
@@ -22,7 +23,7 @@ interface MemberData {
 export default function BeneficiaryStatusInquiry() {
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
 	const [selectedGrade, setSelectedGrade] = useState<string>('');
 	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [searchTerm, setSearchTerm] = useState('');
@@ -111,12 +112,6 @@ export default function BeneficiaryStatusInquiry() {
 		return '-';
 	};
 
-	// 등급 표시
-	const formatGrade = (grade: string) => {
-		if (!grade || grade === '0') return '기타등급';
-		return `${grade}등급`;
-	};
-
 	// 부담금 유형 표시
 	const formatPaymentType = (usrgu: string) => {
 		if (!usrgu) return '일반';
@@ -181,15 +176,24 @@ export default function BeneficiaryStatusInquiry() {
 	// 입소 상태인 수급자만 필터링 (요약 통계용)
 	const activeMembers = memberList.filter(member => member.P_ST === '1');
 
-	// 등급별계 계산
+	// 등급별계 계산 (P_GRD: 1~5, 9=인지지원, 구 6은 인지지원으로 통계)
 	const gradeSummary = {
 		total: activeMembers.length,
-		grade1: activeMembers.filter(m => m.P_GRD === '1').length,
-		grade2: activeMembers.filter(m => m.P_GRD === '2').length,
-		grade3: activeMembers.filter(m => m.P_GRD === '3').length,
-		grade4: activeMembers.filter(m => m.P_GRD === '4').length,
-		grade5: activeMembers.filter(m => m.P_GRD === '5').length,
-		other: activeMembers.filter(m => !m.P_GRD || m.P_GRD === '0' || (m.P_GRD !== '1' && m.P_GRD !== '2' && m.P_GRD !== '3' && m.P_GRD !== '4' && m.P_GRD !== '5')).length
+		grade1: activeMembers.filter(m => String(m.P_GRD ?? '').trim() === '1').length,
+		grade2: activeMembers.filter(m => String(m.P_GRD ?? '').trim() === '2').length,
+		grade3: activeMembers.filter(m => String(m.P_GRD ?? '').trim() === '3').length,
+		grade4: activeMembers.filter(m => String(m.P_GRD ?? '').trim() === '4').length,
+		grade5: activeMembers.filter(m => String(m.P_GRD ?? '').trim() === '5').length,
+		gradeCognitive: activeMembers.filter(m => {
+			const g = String(m.P_GRD ?? '').trim();
+			return g === '9' || g === '6';
+		}).length,
+		other: activeMembers.filter(m => {
+			const g = String(m.P_GRD ?? '').trim();
+			if (['1', '2', '3', '4', '5'].includes(g)) return false;
+			if (g === '9' || g === '6') return false;
+			return true;
+		}).length
 	};
 
 	// 성별계 계산
@@ -218,7 +222,7 @@ export default function BeneficiaryStatusInquiry() {
 
 		const summaryRows = activeMembers.map(member => `
 			<tr>
-				<td>${formatGrade(member.P_GRD || '')}</td>
+				<td>${formatCareGradeLabel(member.P_GRD)}</td>
 				<td>${member.P_NM || '-'}</td>
 				<td>${calculateAge(member.P_BRDT || '')}</td>
 				<td>${formatGender(member.P_SEX || '')}</td>
@@ -323,6 +327,7 @@ export default function BeneficiaryStatusInquiry() {
 					<th>3등급</th>
 					<th>4등급</th>
 					<th>5등급</th>
+					<th>인지지원</th>
 					<th>기타등급</th>
 				</tr>
 			</thead>
@@ -334,6 +339,7 @@ export default function BeneficiaryStatusInquiry() {
 					<td>${gradeSummary.grade3}</td>
 					<td>${gradeSummary.grade4}</td>
 					<td>${gradeSummary.grade5}</td>
+					<td>${gradeSummary.gradeCognitive}</td>
 					<td>${gradeSummary.other}</td>
 				</tr>
 			</tbody>
@@ -482,7 +488,7 @@ export default function BeneficiaryStatusInquiry() {
 									<option value="3">3등급</option>
 									<option value="4">4등급</option>
 									<option value="5">5등급</option>
-									<option value="6">6등급</option>
+									<option value="9">인지지원</option>
 								</select>
 							</div>
 							{/* 층수 필터 */}
@@ -540,7 +546,7 @@ export default function BeneficiaryStatusInquiry() {
 													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
 												</td>
 												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_GRD === '0' ? '등급외' : member.P_GRD ? `${member.P_GRD}등급` : '-'}
+													{formatCareGradeLabel(member.P_GRD)}
 												</td>
 												<td className="px-2 py-1.5 text-center">{calculateAge(member.P_BRDT)}</td>
 											</tr>
@@ -620,6 +626,7 @@ export default function BeneficiaryStatusInquiry() {
 									<th className="px-4 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">3등급</th>
 									<th className="px-4 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">4등급</th>
 									<th className="px-4 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">5등급</th>
+									<th className="px-4 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">인지지원</th>
 									<th className="px-4 py-2 font-semibold text-center text-blue-900">기타등급</th>
 								</tr>
 							</thead>
@@ -631,6 +638,7 @@ export default function BeneficiaryStatusInquiry() {
 									<td className="px-4 py-2 text-center text-blue-900 border-r border-blue-200">{gradeSummary.grade3}</td>
 									<td className="px-4 py-2 text-center text-blue-900 border-r border-blue-200">{gradeSummary.grade4}</td>
 									<td className="px-4 py-2 text-center text-blue-900 border-r border-blue-200">{gradeSummary.grade5}</td>
+									<td className="px-4 py-2 text-center text-blue-900 border-r border-blue-200">{gradeSummary.gradeCognitive}</td>
 									<td className="px-4 py-2 text-center text-blue-900">{gradeSummary.other}</td>
 								</tr>
 							</tbody>
@@ -714,7 +722,7 @@ export default function BeneficiaryStatusInquiry() {
 											key={`${member.ANCD}-${member.PNUM}-${index}`}
 											className="border-b border-blue-50 hover:bg-blue-50"
 										>
-											<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatGrade(member.P_GRD || '')}</td>
+											<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatCareGradeLabel(member.P_GRD)}</td>
 											<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{member.P_NM || '-'}</td>
 											<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{calculateAge(member.P_BRDT || '')}</td>
 											<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatGender(member.P_SEX || '')}</td>

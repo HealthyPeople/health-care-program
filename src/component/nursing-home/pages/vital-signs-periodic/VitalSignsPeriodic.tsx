@@ -30,7 +30,7 @@ interface VitalSignsPeriodicData {
 
 export default function VitalSignsPeriodic() {
 	const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-	const [selectedStatus, setSelectedStatus] = useState<string>('');
+	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
 	const [selectedLivingRoom, setSelectedLivingRoom] = useState<string>('');
 	const [editingRowId, setEditingRowId] = useState<number | null>(null);
 	const [loading, setLoading] = useState(false);
