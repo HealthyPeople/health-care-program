@@ -1799,14 +1799,14 @@ export default function MemberContractInfo() {
 												</div>
 
 												{/* 4행 */}
-												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
+												{/* <div className="col-span-12 md:col-span-6 flex items-center gap-2">
 													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">등록 사원</label>
 													<input 
 														className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" 
 														value={contractInfo.INEMPNM || ''}
 														readOnly
 													/>
-												</div>
+												</div> */}
 												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
 													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">비고</label>
 													<input 
@@ -1878,12 +1878,12 @@ export default function MemberContractInfo() {
 										<span className="w-24 text-blue-900/80">부담금액</span>
 										<span className="flex-1 border-b border-blue-200">-</span>
 									</div>
-									<div className="flex items-center gap-2">
+									{/* <div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">수급자 내용</span>
 										<span className="flex-1 border-b border-blue-200">
 											{contractInfo?.USRINFO || '-'}
 										</span>
-									</div>
+									</div> */}
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">결제방법</span>
 										<span className="flex-1 border-b border-blue-200">
