@@ -39,6 +39,7 @@ export default function DailyBeneficiaryPerformance() {
 	const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 	const [memberPrintData, setMemberPrintData] = useState<PerformanceData[]>([]);
 	const [loadingMemberData, setLoadingMemberData] = useState(false);
+	const [printingMonthly, setPrintingMonthly] = useState(false);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -77,7 +78,7 @@ export default function DailyBeneficiaryPerformance() {
 				const transformedData: PerformanceData[] = result.data.map((item: any, index: number) => {
 					return {
 						id: index + 1,
-						serialNo: item.MENUM || index + 1,
+						serialNo: Number(item.MENUM) || index + 1,
 						name: item.P_NM || '',
 						birthDate: formatDate(item.P_BRDT),
 						ancd: item.ANCD || '',
@@ -187,13 +188,13 @@ export default function DailyBeneficiaryPerformance() {
 			specialNotes: '',
 			snackStatus: { morning: '1', afternoon: '1' } // 기본값: 양호
 		};
-		
-		// 기존 데이터들의 연번을 하나씩 증가
+
+		// 기존 데이터들의 연번을 하나씩 증가 (한 칸씩 뒤로 밀기)
 		const updatedData = combinedData.map(row => ({
 			...row,
-			serialNo: row.serialNo + 1
+			serialNo: Number(row.serialNo) + 1
 		}));
-		
+
 		setCombinedData([newRow, ...updatedData]); // 맨 위에 추가
 		setNextId(prev => prev + 1);
 		setEditingRowId(newRow.id); // 새로 추가된 행을 수정 모드로 설정
@@ -255,28 +256,19 @@ export default function DailyBeneficiaryPerformance() {
 		return dateStr;
 	};
 
-	// 일자별 출력 함수
-	const handlePrintDaily = () => {
-		// 데이터가 없는 경우 알림 표시
-		if (!combinedData || combinedData.length === 0) {
-			alert('출력할 데이터가 없습니다.');
-			return;
+	// API SVDT → yyyy-mm-dd (월 출력 시 일자별 그룹용)
+	const normalizeSvdtToYmd = (svdt: unknown): string => {
+		if (svdt == null || svdt === '') return '';
+		const s = String(svdt).trim();
+		if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+		const digits = s.replace(/\D/g, '');
+		if (digits.length >= 8) {
+			return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
 		}
+		return formatDate(s);
+	};
 
-		// 날짜 포맷팅 (요일 포함)
-		const date = new Date(selectedDate);
-		const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
-		const dayName = days[date.getDay()];
-		const formattedDate = `${selectedDate} ${dayName}`;
-
-		// 출력용 HTML 생성
-		const printContent = `
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<meta charset="UTF-8">
-				<title>서비스 실적표</title>
-				<style>
+	const PERFORMANCE_PRINT_STYLES = `
 					@page {
 						size: A4;
 						margin: 10mm;
@@ -286,6 +278,12 @@ export default function DailyBeneficiaryPerformance() {
 						font-size: 11pt;
 						margin: 0;
 						padding: 0;
+					}
+					.print-section {
+						page-break-after: always;
+					}
+					.print-section:last-of-type {
+						page-break-after: auto;
 					}
 					.header {
 						display: flex;
@@ -348,12 +346,46 @@ export default function DailyBeneficiaryPerformance() {
 							padding: 0;
 						}
 					}
-				</style>
-			</head>
-			<body>
+	`;
+
+	const buildPerformanceTableRowsHtml = (rows: PerformanceData[]) => {
+		if (rows.length === 0) {
+			return '<tr><td colspan="9" style="text-align:center">해당 일자 데이터 없음</td></tr>';
+		}
+		return rows
+			.map((row) => {
+				const gynText = row.gyn === '1' ? '입원' : row.gyn === '0' ? '외출' : '';
+				const breakfast = row.mealStatus.breakfast === '1' ? '○' : '';
+				const lunch = row.mealStatus.lunch === '1' ? '○' : '';
+				const dinner = row.mealStatus.dinner === '1' ? '○' : '';
+				const morningSnack = row.snackStatus.morning === '1' ? '○' : '';
+				const afternoonSnack = row.snackStatus.afternoon === '1' ? '○' : '';
+				const mealTypeText =
+					row.mealType === '1' ? '일반식' : row.mealType === '2' ? '죽' : row.mealType === '3' ? '유동식(미음)' : '';
+
+				return `
+								<tr>
+									<td>${row.name || ''}</td>
+									<td>${row.birthDate || ''}</td>
+									<td>${gynText}</td>
+									<td class="check-mark">${breakfast}</td>
+									<td class="check-mark">${lunch}</td>
+									<td class="check-mark">${dinner}</td>
+									<td class="check-mark">${morningSnack}</td>
+									<td class="check-mark">${afternoonSnack}</td>
+									<td>${mealTypeText}</td>
+								</tr>
+							`;
+			})
+			.join('');
+	};
+
+	const buildPerformancePrintSectionHtml = (formattedDate: string, rows: PerformanceData[]) => {
+		return `
+			<div class="print-section">
 				<div class="header">
 					<div class="date-info">일자: ${formattedDate}</div>
-					<div class="title">서비스 실적표</div>
+					<div class="title">수급자급여실적</div>
 					<table class="signature-table">
 						<tr>
 							<th>담당</th>
@@ -372,45 +404,51 @@ export default function DailyBeneficiaryPerformance() {
 						<tr>
 							<th>수급자명</th>
 							<th>생일</th>
-							<th>외박여</th>
-							<th>아</th>
-							<th>정</th>
-							<th>저</th>
-							<th>오전간</th>
-							<th>오후간</th>
+							<th>입원/외출</th>
+							<th>아침</th>
+							<th>점심</th>
+							<th>저녁</th>
+							<th>오전간식</th>
+							<th>오후간식</th>
 							<th>식이</th>
 						</tr>
 					</thead>
 					<tbody>
-						${combinedData.map(row => {
-							const gynText = row.gyn === '1' ? '입원' : row.gyn === '0' ? '외출' : '';
-							const breakfast = row.mealStatus.breakfast === '1' ? '○' : '';
-							const lunch = row.mealStatus.lunch === '1' ? '○' : '';
-							const dinner = row.mealStatus.dinner === '1' ? '○' : '';
-							const morningSnack = row.snackStatus.morning === '1' ? '○' : '';
-							const afternoonSnack = row.snackStatus.afternoon === '1' ? '○' : '';
-							const mealTypeText = row.mealType === '1' ? '일반식' : row.mealType === '2' ? '죽' : row.mealType === '3' ? '유동식(미음)' : '';
-							
-							return `
-								<tr>
-									<td>${row.name || ''}</td>
-									<td>${row.birthDate || ''}</td>
-									<td>${gynText}</td>
-									<td class="check-mark">${breakfast}</td>
-									<td class="check-mark">${lunch}</td>
-									<td class="check-mark">${dinner}</td>
-									<td class="check-mark">${morningSnack}</td>
-									<td class="check-mark">${afternoonSnack}</td>
-									<td>${mealTypeText}</td>
-								</tr>
-							`;
-						}).join('')}
+						${buildPerformanceTableRowsHtml(rows)}
 					</tbody>
 				</table>
 				<div class="footer">
 					<div>R14020</div>
 					<div>페이지: 1</div>
 				</div>
+			</div>
+		`;
+	};
+
+	// 일자별 출력 함수
+	const handlePrintDaily = () => {
+		// 데이터가 없는 경우 알림 표시
+		if (!combinedData || combinedData.length === 0) {
+			alert('출력할 데이터가 없습니다.');
+			return;
+		}
+
+		// 날짜 포맷팅 (요일 포함)
+		const date = new Date(selectedDate + 'T12:00:00');
+		const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+		const dayName = days[date.getDay()];
+		const formattedDate = `${selectedDate} ${dayName}`;
+
+		const printContent = `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>수급자급여실적</title>
+				<style>${PERFORMANCE_PRINT_STYLES}</style>
+			</head>
+			<body>
+				${buildPerformancePrintSectionHtml(formattedDate, combinedData)}
 			</body>
 			</html>
 		`;
@@ -425,6 +463,106 @@ export default function DailyBeneficiaryPerformance() {
 			setTimeout(() => {
 				printWindow.print();
 			}, 250);
+		}
+	};
+
+	// 월식사상태 출력: 선택된 날짜가 속한 달의 전체 일자 조회 후 일자별 출력 폼과 동일하게 출력
+	const handlePrintMonthly = async () => {
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
+			alert('날짜를 먼저 선택해주세요.');
+			return;
+		}
+
+		const [yStr, mStr] = selectedDate.split('-');
+		const y = Number(yStr);
+		const m = Number(mStr);
+		const monthStart = `${yStr}-${mStr}-01`;
+		const lastDay = new Date(y, m, 0).getDate();
+		const monthEnd = `${yStr}-${mStr}-${String(lastDay).padStart(2, '0')}`;
+
+		setPrintingMonthly(true);
+		try {
+			const url = `/api/f14020?startDate=${encodeURIComponent(monthStart)}&endDate=${encodeURIComponent(monthEnd)}`;
+			const response = await fetch(url);
+			const result = await response.json();
+
+			if (!result.success || !Array.isArray(result.data)) {
+				alert('데이터를 조회할 수 없습니다.');
+				return;
+			}
+
+			if (result.data.length === 0) {
+				alert('해당 월에 출력할 데이터가 없습니다.');
+				return;
+			}
+
+			const byDate = new Map<string, PerformanceData[]>();
+			result.data.forEach((item: any, index: number) => {
+				const d = normalizeSvdtToYmd(item.SVDT);
+				if (!d) return;
+				const row: PerformanceData = {
+					id: index + 1,
+					serialNo: Number(item.MENUM) || index + 1,
+					name: item.P_NM || '',
+					birthDate: formatDate(item.P_BRDT),
+					ancd: item.ANCD || '',
+					pnum: item.PNUM || '',
+					mealLocation: item.ST_PLAC || '',
+					mealType: item.ST_KIND || '1',
+					gyn: item.GYN || '0',
+					mealStatus: {
+						breakfast: item.MOST || '1',
+						lunch: item.LCST || '1',
+						dinner: item.DNST || '1'
+					},
+					specialNotes: item.ST_ETC || '',
+					snackStatus: {
+						morning: item.MGST || '1',
+						afternoon: item.AGST || '1'
+					}
+				};
+				if (!byDate.has(d)) byDate.set(d, []);
+				byDate.get(d)!.push(row);
+			});
+
+			const weekdayLabels = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+			const sectionsHtml: string[] = [];
+			for (let d = 1; d <= lastDay; d++) {
+				const dateStr = `${yStr}-${mStr}-${String(d).padStart(2, '0')}`;
+				const dateObj = new Date(y, m - 1, d);
+				const dayName = weekdayLabels[dateObj.getDay()];
+				const formatted = `${dateStr} ${dayName}`;
+				const rows = byDate.get(dateStr) ?? [];
+				sectionsHtml.push(buildPerformancePrintSectionHtml(formatted, rows));
+			}
+
+			const printContent = `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>수급자급여실적 (${yStr}년 ${mStr}월)</title>
+				<style>${PERFORMANCE_PRINT_STYLES}</style>
+			</head>
+			<body>
+				${sectionsHtml.join('')}
+			</body>
+			</html>
+		`;
+
+			const printWindow = window.open('', '_blank');
+			if (printWindow) {
+				printWindow.document.write(printContent);
+				printWindow.document.close();
+				setTimeout(() => {
+					printWindow.print();
+				}, 250);
+			}
+		} catch (e) {
+			console.error('월 식사상태 출력 조회 오류:', e);
+			alert('월 데이터 조회 중 오류가 발생했습니다.');
+		} finally {
+			setPrintingMonthly(false);
 		}
 	};
 
@@ -564,7 +702,7 @@ export default function DailyBeneficiaryPerformance() {
 			<html>
 			<head>
 				<meta charset="UTF-8">
-				<title>서비스 실적표</title>
+				<title>수급자급여실적</title>
 				<style>
 					@page {
 						size: A4;
@@ -642,7 +780,7 @@ export default function DailyBeneficiaryPerformance() {
 			<body>
 				<div class="header">
 					<div class="date-info">일자: ${periodText}</div>
-					<div class="title">서비스 실적표</div>
+					<div class="title">수급자급여실적</div>
 					<table class="signature-table">
 						<tr>
 							<th>담당</th>
@@ -661,7 +799,7 @@ export default function DailyBeneficiaryPerformance() {
 						<tr>
 							<th>수급자명</th>
 							<th>생일</th>
-							<th>외박여</th>
+							<th>외박여부</th>
 							<th>아</th>
 							<th>정</th>
 							<th>저</th>
@@ -779,8 +917,13 @@ export default function DailyBeneficiaryPerformance() {
 						>
 							수급자별 출력
 						</button>
-						<button className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium">
-							월식사상태 출력
+						<button
+							type="button"
+							onClick={handlePrintMonthly}
+							disabled={printingMonthly}
+							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{printingMonthly ? '조회 중...' : '월식사상태 출력'}
 						</button>
 					</div>
 				</div>

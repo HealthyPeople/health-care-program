@@ -136,13 +136,51 @@ function formatYmd(d: string | null | undefined): string {
 	return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
-function usrguLabel(v: string | number | null | undefined): string {
+/** USRGU: 1=일반, 2=40%경감, 3=60%경감, 4=국민기초 (구 DB에서 3만 쓰이던 기초수급은 USRPER≈0·INSPER≈100이면 국민기초로 표시) */
+function burdenRatesFromUsrgu(code: string): { ins: number; usr: number } | null {
+	const c = String(code);
+	if (c === '1') return { ins: 80, usr: 20 };
+	if (c === '2') return { ins: 88, usr: 12 };
+	if (c === '3') return { ins: 92, usr: 8 };
+	if (c === '4') return { ins: 100, usr: 0 };
+	return null;
+}
+
+/** 편집 폼: 구(기초)=코드3+100/0 인 경우 선택값을 4로 맞춤 */
+function normalizeUsrguForSelect(row: MemberData | null | undefined): string {
+	if (!row) return '';
+	const gu = String(row.USRGU ?? '');
+	const ur = Number(row.USRPER);
+	const ins = Number(row.INSPER);
+	if (gu === '3' && !Number.isNaN(ur) && ur < 1 && !Number.isNaN(ins) && ins >= 99) return '4';
+	return gu;
+}
+
+function formatUsrguLabel(v: string | number | null | undefined, row?: MemberData | null): string {
 	if (v == null || v === '') return '-';
 	const x = String(v);
 	if (x === '1') return '일반';
-	if (x === '2') return '50%경감대상자';
-	if (x === '3') return '국민기초생활수급권자';
+	if (x === '2') return '40%경감';
+	if (x === '3') {
+		const ur = Number(row?.USRPER);
+		const ins = Number(row?.INSPER);
+		if (!Number.isNaN(ur) && ur < 1 && !Number.isNaN(ins) && ins >= 99) return '국민기초생활수급권자';
+		return '60%경감';
+	}
+	if (x === '4') return '국민기초생활수급권자';
 	return x;
+}
+
+function usrguLabel(v: string | number | null | undefined, row?: MemberData | null): string {
+	return formatUsrguLabel(v, row);
+}
+
+function recipientBurdenAmountWon(row: MemberData | null | undefined): number | null {
+	if (!row) return null;
+	const total = Number(row.EAMT || 0) + Number(row.ETAMT || 0) + Number(row.ESAMT || 0);
+	const ur = Number(row.USRPER);
+	if (Number.isNaN(total) || Number.isNaN(ur)) return null;
+	return Math.round(total * (ur / 100));
 }
 
 function buildContractPrintHtml(
@@ -170,7 +208,7 @@ function buildContractPrintHtml(
 						ct && (ct as MemberData).SVSDT
 							? `${formatYmd((ct as MemberData).SVSDT)}~${formatYmd((ct as MemberData).SVEDT)}`
 							: '-';
-					const benefit = ct ? usrguLabel((ct as MemberData).USRGU) : '-';
+					const benefit = ct ? usrguLabel((ct as MemberData).USRGU, ct as MemberData) : '-';
 					return `
 						<tr>
 							${i === 0 ? `<td rowspan="${n}" class="c">${escapeHtml(m.P_NM || '')}</td>` : ''}
@@ -344,14 +382,28 @@ export default function MemberContractInfo() {
 		setEditedContractInfo(null);
 	};
 
-	// USRGU 값 변환 함수
-	const getUSRGULabel = (value: string | number | null | undefined): string => {
-		if (!value) return '-';
-		const val = String(value);
-		if (val === '1') return '일반';
-		if (val === '2') return '50%경감대상자';
-		if (val === '3') return '국민기초생활수급권자';
-		return val;
+	const getUSRGULabel = (value: string | number | null | undefined, row?: MemberData | null) =>
+		formatUsrguLabel(value, row);
+
+	const handleNewUsrguChange = (value: string) => {
+		const rates = burdenRatesFromUsrgu(value);
+		setNewContractInfo((prev) => ({
+			...prev,
+			USRGU: value,
+			...(rates ? { INSPER: String(rates.ins), USRPER: String(rates.usr) } : {})
+		}));
+	};
+
+	const handleEditedUsrguChange = (value: string) => {
+		const rates = burdenRatesFromUsrgu(value);
+		setEditedContractInfo((prev) => {
+			if (!prev) return null;
+			return {
+				...prev,
+				USRGU: value,
+				...(rates ? { INSPER: String(rates.ins), USRPER: String(rates.usr) } : {})
+			};
+		});
 	};
 
 	// CHGU 값 변환 함수
@@ -770,8 +822,10 @@ export default function MemberContractInfo() {
 		const contractDate = selectedMember?.P_CTDT
 			? selectedMember.P_CTDT.substring(0, 10)
 			: cdtDay;
+		const usrGuNorm = normalizeUsrguForSelect(selectedContract);
 		setEditedContractInfo({
 			...selectedContract,
+			USRGU: usrGuNorm || selectedContract.USRGU,
 			_originalCdtSql: formatDateSql(cdtDay),
 			CDT: contractDate,
 			P_NM: selectedMember.P_NM != null ? String(selectedMember.P_NM) : '',
@@ -982,6 +1036,9 @@ export default function MemberContractInfo() {
 			setEditedContractInfo({ ...editedContractInfo, [field]: value });
 		}
 	};
+
+	const burdenRow = isEditing && editedContractInfo ? editedContractInfo : contractInfo;
+	const recipientBurdenWon = recipientBurdenAmountWon(burdenRow);
 
 	return (
 		<div className="min-h-screen bg-white text-black flex flex-col">
@@ -1270,7 +1327,7 @@ export default function MemberContractInfo() {
 												<td className="text-center px-1 py-1.5 border-r border-blue-100 whitespace-nowrap">
 													{contractPeriodLabel(row)}
 												</td>
-												<td className="text-center px-1 py-1.5">{getUSRGULabel(row.USRGU)}</td>
+												<td className="text-center px-1 py-1.5">{getUSRGULabel(row.USRGU, row)}</td>
 											</tr>
 										))
 									)}
@@ -1404,39 +1461,48 @@ export default function MemberContractInfo() {
 													/>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">보험자 부담율 (%)</label>
-													<input 
-														type="number"
-														step="0.01"
-														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={newContractInfo.INSPER || ''}
-														onChange={(e) => handleNewContractFieldChange('INSPER', e.target.value)}
-														placeholder="예: 80"
-													/>
-												</div>
-												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 부담율 (%)</label>
-													<input 
-														type="number"
-														step="0.01"
-														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={newContractInfo.USRPER || ''}
-														onChange={(e) => handleNewContractFieldChange('USRPER', e.target.value)}
-														placeholder="예: 20"
-													/>
-												</div>
-												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 부담율 구분</label>
 													<select
 														className="w-full border border-blue-300 rounded px-2 py-1 bg-white"
 														value={newContractInfo.USRGU || ''}
-														onChange={(e) => handleNewContractFieldChange('USRGU', e.target.value)}
+														onChange={(e) => handleNewUsrguChange(e.target.value)}
 													>
 														<option value="">선택</option>
-														<option value="1">일반</option>
-														<option value="2">50%경감대상자</option>
-														<option value="3">국민기초생활수급권자</option>
+														<option value="1">일반 (보험자 80% / 수급자 20%)</option>
+														<option value="2">40%경감 (보험자 88% / 수급자 12%)</option>
+														<option value="3">60%경감 (보험자 92% / 수급자 8%)</option>
+														<option value="4">국민기초생활수급권자 (보험자 100% / 수급자 0%)</option>
 													</select>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">
+														보험자 부담율 (%) <span className="text-blue-700/80 font-normal">· 구분 자동</span>
+													</label>
+													<input
+														readOnly
+														tabIndex={-1}
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-slate-50 cursor-default"
+														value={
+															newContractInfo.INSPER != null && newContractInfo.INSPER !== ''
+																? `${newContractInfo.INSPER}%`
+																: '—'
+														}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">
+														수급자 부담율 (%) <span className="text-blue-700/80 font-normal">· 구분 자동</span>
+													</label>
+													<input
+														readOnly
+														tabIndex={-1}
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-slate-50 cursor-default"
+														value={
+															newContractInfo.USRPER != null && newContractInfo.USRPER !== ''
+																? `${newContractInfo.USRPER}%`
+																: '—'
+														}
+													/>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 내용</label>
@@ -1597,37 +1663,48 @@ export default function MemberContractInfo() {
 													/>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">보험자 부담율 (%)</label>
-													<input 
-														type="number"
-														step="0.01"
-														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={editedContractInfo.INSPER || ''}
-														onChange={(e) => handleEditedContractFieldChange('INSPER', e.target.value)}
-													/>
-												</div>
-												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 부담율 (%)</label>
-													<input 
-														type="number"
-														step="0.01"
-														className="w-full border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={editedContractInfo.USRPER || ''}
-														onChange={(e) => handleEditedContractFieldChange('USRPER', e.target.value)}
-													/>
-												</div>
-												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 부담율 구분</label>
 													<select
 														className="w-full border border-blue-300 rounded px-2 py-1 bg-white"
 														value={editedContractInfo.USRGU || ''}
-														onChange={(e) => handleEditedContractFieldChange('USRGU', e.target.value)}
+														onChange={(e) => handleEditedUsrguChange(e.target.value)}
 													>
 														<option value="">선택</option>
-														<option value="1">일반</option>
-														<option value="2">50%경감대상자</option>
-														<option value="3">국민기초생활수급권자</option>
+														<option value="1">일반 (보험자 80% / 수급자 20%)</option>
+														<option value="2">40%경감 (보험자 88% / 수급자 12%)</option>
+														<option value="3">60%경감 (보험자 92% / 수급자 8%)</option>
+														<option value="4">국민기초생활수급권자 (보험자 100% / 수급자 0%)</option>
 													</select>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">
+														보험자 부담율 (%) <span className="text-blue-700/80 font-normal">· 구분 자동</span>
+													</label>
+													<input
+														readOnly
+														tabIndex={-1}
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-slate-50 cursor-default"
+														value={
+															editedContractInfo.INSPER != null && editedContractInfo.INSPER !== ''
+																? `${editedContractInfo.INSPER}%`
+																: '—'
+														}
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">
+														수급자 부담율 (%) <span className="text-blue-700/80 font-normal">· 구분 자동</span>
+													</label>
+													<input
+														readOnly
+														tabIndex={-1}
+														className="w-full border border-blue-300 rounded px-2 py-1 bg-slate-50 cursor-default"
+														value={
+															editedContractInfo.USRPER != null && editedContractInfo.USRPER !== ''
+																? `${editedContractInfo.USRPER}%`
+																: '—'
+														}
+													/>
 												</div>
 												<div className="col-span-12 md:col-span-6 flex flex-col gap-1">
 													<label className="px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 내용</label>
@@ -1758,6 +1835,14 @@ export default function MemberContractInfo() {
 
 												{/* 2행 */}
 												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
+													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 부담율 구분</label>
+													<input 
+														className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" 
+														value={getUSRGULabel(contractInfo.USRGU, contractInfo)}
+														readOnly
+													/>
+												</div>
+												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
 													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">보험자 부담율</label>
 													<input 
 														className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" 
@@ -1775,14 +1860,6 @@ export default function MemberContractInfo() {
 												</div>
 
 												{/* 3행 */}
-												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">수급자 부담율 구분</label>
-													<input 
-														className="flex-1 border border-blue-300 rounded px-2 py-1 bg-white" 
-														value={getUSRGULabel(contractInfo.USRGU)}
-														readOnly
-													/>
-												</div>
 												<div className="col-span-12 md:col-span-6 flex items-center gap-2">
 													<label className="w-24 px-2 py-1 text-sm bg-blue-100 border border-blue-300 rounded text-blue-900">계약기간</label>
 													<input 
@@ -1834,28 +1911,27 @@ export default function MemberContractInfo() {
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">기본급여</span>
 										<span className="flex-1 border-b border-blue-200">
-											{contractInfo?.EAMT ? `${Number(contractInfo.EAMT).toLocaleString()}원` : '-'}
+											{burdenRow?.EAMT ? `${Number(burdenRow.EAMT).toLocaleString()}원` : '-'}
 										</span>
 									</div>
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">추가급여</span>
 										<span className="flex-1 border-b border-blue-200">
-											{contractInfo?.ETAMT ? `${Number(contractInfo.ETAMT).toLocaleString()}원` : '-'}
+											{burdenRow?.ETAMT ? `${Number(burdenRow.ETAMT).toLocaleString()}원` : '-'}
 										</span>
 									</div>
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">특별급여</span>
 										<span className="flex-1 border-b border-blue-200">
-											{contractInfo?.ESAMT ? `${Number(contractInfo.ESAMT).toLocaleString()}원` : '-'}
+											{burdenRow?.ESAMT ? `${Number(burdenRow.ESAMT).toLocaleString()}원` : '-'}
 										</span>
 									</div>
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">총급여</span>
 										<span className="flex-1 border-b border-blue-200">
-											{contractInfo ? 
-												`${(Number(contractInfo.EAMT || 0) + Number(contractInfo.ETAMT || 0) + Number(contractInfo.ESAMT || 0)).toLocaleString()}원`
-												: '-'
-											}
+											{burdenRow
+												? `${(Number(burdenRow.EAMT || 0) + Number(burdenRow.ETAMT || 0) + Number(burdenRow.ESAMT || 0)).toLocaleString()}원`
+												: '-'}
 										</span>
 									</div>
 								</div>
@@ -1871,12 +1947,18 @@ export default function MemberContractInfo() {
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">본인부담률</span>
 										<span className="flex-1 border-b border-blue-200">
-											{contractInfo?.USRPER ? `${contractInfo.USRPER}%` : '-'}
+											{burdenRow?.USRPER != null && burdenRow.USRPER !== ''
+												? `${burdenRow.USRPER}%`
+												: '-'}
 										</span>
 									</div>
 									<div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">부담금액</span>
-										<span className="flex-1 border-b border-blue-200">-</span>
+										<span className="flex-1 border-b border-blue-200">
+											{recipientBurdenWon != null
+												? `${recipientBurdenWon.toLocaleString()}원 (총급여×본인부담률)`
+												: '-'}
+										</span>
 									</div>
 									{/* <div className="flex items-center gap-2">
 										<span className="w-24 text-blue-900/80">수급자 내용</span>
