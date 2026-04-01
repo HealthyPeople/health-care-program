@@ -11,9 +11,15 @@ config.dbconfig.options = {
 let poolPromise = null;
 let poolInstance = null;
 
+function isDatabaseConfigured() {
+  const s = config.dbconfig && config.dbconfig.server;
+  return typeof s === 'string' && s.length > 0;
+}
+
 /**
  * 데이터베이스 연결 풀을 가져옵니다 (지연 로딩)
  * 첫 호출 시에만 연결을 시도하고, 이후에는 기존 연결을 재사용합니다.
+ * DB_DEV_SERVER 등이 없으면(Vercel 프리뷰 등) 연결하지 않고 null을 반환합니다.
  */
 function getConnectionPool() {
   // 이미 연결된 풀이 있으면 재사용
@@ -23,6 +29,14 @@ function getConnectionPool() {
 
   // 연결 중인 Promise가 있으면 재사용
   if (poolPromise) {
+    return poolPromise;
+  }
+
+  if (!isDatabaseConfigured()) {
+    console.warn(
+      '[DB] DB_DEV_SERVER 미설정 — SQL 연결을 건너뜁니다. Vercel에는 DB 환경변수를 설정하세요.'
+    );
+    poolPromise = Promise.resolve(null);
     return poolPromise;
   }
 
@@ -66,5 +80,6 @@ const connPool = getConnectionPool();
 module.exports = {
   sql,
   connPool,
-  getConnectionPool
+  getConnectionPool,
+  isDatabaseConfigured,
 };
