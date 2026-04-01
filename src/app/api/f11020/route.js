@@ -1,22 +1,15 @@
 import { connPool } from '../../../config/server';
 import { NextRequest } from 'next/server';
+import { assertAnCdMatchesSession } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
-    const pool = await connPool;
-    if (!pool) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: '데이터베이스 연결 실패' 
-      }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
     const searchParams = req.nextUrl.searchParams;
     const ancd = searchParams.get('ancd');
     const pnum = searchParams.get('pnum');
+
+    const gate = assertAnCdMatchesSession(req, ancd);
+    if (!gate.ok) return gate.response;
 
     if (!ancd || !pnum) {
       return new Response(JSON.stringify({ 
@@ -24,6 +17,17 @@ export async function GET(req) {
         error: 'ANCD와 PNUM 파라미터가 필요합니다' 
       }), { 
         status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const pool = await connPool;
+    if (!pool) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: '데이터베이스 연결 실패' 
+      }), { 
+        status: 500,
         headers: { 'Content-Type': 'application/json' }
       });
     }

@@ -1,7 +1,16 @@
 import { connPool } from '../../../config/server';
+import { getSessionAncd } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
+    const sessionAncd = getSessionAncd(req);
+    if (sessionAncd == null) {
+      return new Response(
+        JSON.stringify({ success: false, error: '로그인이 필요합니다.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({ 
@@ -24,7 +33,7 @@ export async function GET(req) {
 
     for (const tableName of possibleTableNames) {
       try {
-        // 제공된 쿼리 사용 (TOP 1000으로 제한)
+        // 로그인한 기관(ANCD)만 조회
         const query = `SELECT TOP (1000) [ANCD]
       ,[ANNM]
       ,[ANGH]
@@ -74,9 +83,10 @@ export async function GET(req) {
       ,[OUT_COMP_FLAG]
       ,[CPY_CNTR_FLAG]
       ,[CPY_CNTR_ANCD]
-  FROM ${tableName}`;
+  FROM ${tableName}
+  WHERE [ANCD] = @sessionAncd`;
         
-        result = await pool.request().query(query);
+        result = await pool.request().input('sessionAncd', sessionAncd).query(query);
         console.log(`성공적으로 조회된 테이블: ${tableName}`);
         break;
       } catch (err) {

@@ -1,8 +1,13 @@
 import { connPool } from '../../../config/server';
 import { NextRequest } from 'next/server';
+import { assertAnCdMatchesSession } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
+    const urlAncd = req.nextUrl.searchParams.get('ancd') || '';
+    const gate = assertAnCdMatchesSession(req, urlAncd || null);
+    if (!gate.ok) return gate.response;
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({
@@ -18,7 +23,6 @@ export async function GET(req) {
     const searchName = searchParams.get('name') || '';
     const uid = searchParams.get('uid') || '';
     const empno = searchParams.get('empno') || '';
-    const ancd = searchParams.get('ancd') || '';
 
     // F01010 테이블에서 사원 정보 조회
     let query = `
@@ -55,11 +59,9 @@ export async function GET(req) {
 
     const request = pool.request();
 
-    // ancd로 먼저 필터링
-    if (ancd && ancd.trim() !== '') {
-      query += ` AND [ANCD] = @ancd`;
-      request.input('ancd', parseInt(ancd));
-    }
+    query += ` AND [ANCD] = @ancd`;
+    const sa = gate.sessionAncd;
+    request.input('ancd', typeof sa === 'number' ? sa : parseInt(String(sa), 10));
 
     // uid로 조회 (사원명 또는 사원번호로 매칭)
     if (uid && uid.trim() !== '') {

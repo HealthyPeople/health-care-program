@@ -1,8 +1,16 @@
 import { connPool } from '../../../config/server';
 import { NextRequest } from 'next/server';
+import { assertAnCdMatchesSession } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
+    const searchParams = req.nextUrl.searchParams;
+    const urlAncd = searchParams.get('ancd');
+    const pnum = searchParams.get('pnum');
+
+    const gate = assertAnCdMatchesSession(req, urlAncd || null);
+    if (!gate.ok) return gate.response;
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({ 
@@ -13,11 +21,6 @@ export async function GET(req) {
         headers: { 'Content-Type': 'application/json' }
       });
     }
-
-    // URL에서 파라미터 추출
-    const searchParams = req.nextUrl.searchParams;
-    const ancd = searchParams.get('ancd');
-    const pnum = searchParams.get('pnum');
 
     // F10020 테이블에서 보호자 정보 조회하고 F10110과 조인하여 계약기간 정보 가져오기
     let query = `
@@ -56,17 +59,13 @@ export async function GET(req) {
     `;
 
     const request = pool.request();
+    const sessionAncd = gate.sessionAncd;
 
-    // ANCD와 PNUM으로 필터링
-    if (ancd && pnum) {
-      query += ` WHERE f10020.[ANCD] = @ancd AND f10020.[PNUM] = @pnum`;
-      request.input('ancd', ancd);
-      request.input('pnum', pnum);
-    } else if (ancd) {
-      query += ` WHERE f10020.[ANCD] = @ancd`;
-      request.input('ancd', ancd);
-    } else if (pnum) {
-      query += ` WHERE f10020.[PNUM] = @pnum`;
+    query += ` WHERE f10020.[ANCD] = @sessionAncd`;
+    request.input('sessionAncd', sessionAncd);
+
+    if (pnum) {
+      query += ` AND f10020.[PNUM] = @pnum`;
       request.input('pnum', pnum);
     }
 

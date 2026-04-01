@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { connPool } from '../../../../config/server';
+import { parseUserInfoCookieValue } from '../../../../config/sessionServer';
 
 export async function GET(req) {
   try {
@@ -15,23 +17,38 @@ export async function GET(req) {
       });
     }
 
-    // JSON 파싱
-    let parsedUserInfo;
-    try {
-      parsedUserInfo = JSON.parse(userInfo);
-    } catch (err) {
-      // URL 디코딩 시도
+    let parsedUserInfo = parseUserInfoCookieValue(userInfo);
+    if (!parsedUserInfo) {
+      return NextResponse.json({
+        success: false,
+        error: '쿠키 파싱 오류'
+      }, {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 기관명(F00110)이 쿠키에 없거나 비어 있으면 DB에서 보강 (모의 로그인 등)
+    if (parsedUserInfo.ancd != null && parsedUserInfo.ancd !== '' && !parsedUserInfo.annm) {
       try {
-        const decoded = decodeURIComponent(userInfo);
-        parsedUserInfo = JSON.parse(decoded);
+        const pool = await connPool;
+        if (pool) {
+          const n = parseInt(String(parsedUserInfo.ancd), 10);
+          if (!Number.isNaN(n)) {
+            const r = await pool
+              .request()
+              .input('ancd', n)
+              .query(
+                `SELECT TOP 1 [ANNM] FROM [돌봄시설DB].[dbo].[F00110] WHERE [ANCD] = @ancd`
+              );
+            const annm = r.recordset?.[0]?.ANNM;
+            if (annm) {
+              parsedUserInfo = { ...parsedUserInfo, annm };
+            }
+          }
+        }
       } catch (e) {
-        return NextResponse.json({
-          success: false,
-          error: '쿠키 파싱 오류'
-        }, {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        console.error('user-info ANNM 보강 실패:', e);
       }
     }
 

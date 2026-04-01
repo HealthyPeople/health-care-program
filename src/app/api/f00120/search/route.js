@@ -1,15 +1,19 @@
 import { connPool } from '../../../../config/server';
+import { assertAnCdMatchesSession } from '../../../../config/sessionServer';
 
 /**
  * F00120 사용자정보에서 사원명(EMPNM) 부분 검색.
- * ancd 생략 시: F00120 전체에서 검색 (모든 고객코드 직원).
- * ancd 지정 시: 해당 고객코드로만 제한.
+ * 로그인 세션의 ANCD로만 조회합니다. URL의 ancd는 세션과 일치할 때만 허용됩니다.
  * activeOnly=1: F01010 근무상태 JOBST='1'만 (기본 아님, 명시 시).
  * activeOnly=0(기본): F00120만 조회.
- * 검색 일치 행은 건수 제한 없이 모두 반환합니다.
  */
 export async function GET(req) {
 	try {
+		const searchParams = req.nextUrl.searchParams;
+		const ancdParam = searchParams.get('ancd');
+		const gate = assertAnCdMatchesSession(req, ancdParam || null);
+		if (!gate.ok) return gate.response;
+
 		const pool = await connPool;
 		if (!pool) {
 			return new Response(
@@ -18,10 +22,7 @@ export async function GET(req) {
 			);
 		}
 
-		const searchParams = req.nextUrl.searchParams;
 		const q = (searchParams.get('q') || '').trim();
-		const ancdParam = searchParams.get('ancd');
-		const ancd = ancdParam != null ? String(ancdParam).trim() : '';
 		const activeOnly = searchParams.get('activeOnly') === '1';
 
 		if (!q) {
@@ -31,20 +32,18 @@ export async function GET(req) {
 			});
 		}
 
-		let ancdNum = null;
-		if (ancd !== '') {
-			ancdNum = parseInt(ancd, 10);
-			if (Number.isNaN(ancdNum)) {
-				return new Response(
-					JSON.stringify({ success: false, error: 'ancd가 올바르지 않습니다' }),
-					{ status: 400, headers: { 'Content-Type': 'application/json' } }
-				);
-			}
+		const sa = gate.sessionAncd;
+		const ancdNum = typeof sa === 'number' ? sa : parseInt(String(sa), 10);
+		if (Number.isNaN(ancdNum)) {
+			return new Response(
+				JSON.stringify({ success: false, error: 'ancd가 올바르지 않습니다' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
 		}
 
 		let query;
-		const ancdClause = ancdNum != null ? 'AND f120.[ANCD] = @ancd' : '';
-		const ancdClauseSimple = ancdNum != null ? 'AND [ANCD] = @ancd' : '';
+		const ancdClause = 'AND f120.[ANCD] = @ancd';
+		const ancdClauseSimple = 'AND [ANCD] = @ancd';
 
 		if (activeOnly) {
 			query = `
@@ -77,9 +76,7 @@ export async function GET(req) {
 		}
 
 		const request = pool.request();
-		if (ancdNum != null) {
-			request.input('ancd', ancdNum);
-		}
+		request.input('ancd', ancdNum);
 		request.input('pattern', `%${q}%`);
 
 		const result = await request.query(query);

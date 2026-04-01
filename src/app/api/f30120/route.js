@@ -1,8 +1,17 @@
 import { connPool } from '../../../config/server';
 import { NextRequest } from 'next/server';
+import { assertAnCdMatchesSession } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
+    const searchParams = req.nextUrl.searchParams;
+    const rsdt = searchParams.get('rsdt'); // 조사일자 (yyyy-mm-dd 형식, 단일 날짜)
+    const pnum = searchParams.get('pnum'); // 수급자번호 (선택)
+    const ancd = searchParams.get('ancd'); // 시설코드 (선택, PNUM과 함께 사용)
+
+    const gate = assertAnCdMatchesSession(req, ancd || null);
+    if (!gate.ok) return gate.response;
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({ 
@@ -13,11 +22,6 @@ export async function GET(req) {
         headers: { 'Content-Type': 'application/json' }
       });
     }
-
-    const searchParams = req.nextUrl.searchParams;
-    const rsdt = searchParams.get('rsdt'); // 조사일자 (yyyy-mm-dd 형식, 단일 날짜)
-    const pnum = searchParams.get('pnum'); // 수급자번호 (선택)
-    const ancd = searchParams.get('ancd'); // 시설코드 (선택, PNUM과 함께 사용)
     const startDate = searchParams.get('startDate'); // 시작일 (yyyy-mm-dd 형식, 선택)
     const endDate = searchParams.get('endDate'); // 종료일 (yyyy-mm-dd 형식, 선택)
 
@@ -72,6 +76,8 @@ export async function GET(req) {
     `;
 
     const request = pool.request();
+    request.input('sessionAncd', gate.sessionAncd);
+    query += ` AND f30120.[ANCD] = @sessionAncd`;
 
     // 날짜 범위 조회 (startDate, endDate가 있는 경우)
     if (startDate && endDate) {
@@ -118,12 +124,6 @@ export async function GET(req) {
     if (pnum) {
       query += ` AND CAST(f30120.[PNUM] AS VARCHAR) = CAST(@pnum AS VARCHAR)`;
       request.input('pnum', String(pnum));
-      
-      // ANCD도 함께 필터링 (정확한 수급자 식별)
-      if (ancd) {
-        query += ` AND f30120.[ANCD] = @ancd`;
-        request.input('ancd', ancd);
-      }
     }
 
     query += ` ORDER BY f30120.[RSDT] ASC, f30120.[INDT] DESC`;

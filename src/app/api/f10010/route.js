@@ -1,8 +1,17 @@
 import { connPool } from '../../../config/server';
 import { NextRequest } from 'next/server';
+import { getSessionAncd, ancdEquals } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
+    const sessionAncd = getSessionAncd(req);
+    if (sessionAncd == null) {
+      return new Response(
+        JSON.stringify({ success: false, error: '로그인이 필요합니다.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({ 
@@ -114,10 +123,13 @@ export async function GET(req) {
     `;
 
     const request = pool.request();
+    request.input('sessionAncd', sessionAncd);
+
+    query += ` WHERE f10010.[ANCD] = @sessionAncd`;
 
     // 이름 검색 조건 추가
     if (searchName && searchName.trim() !== '') {
-      query += ` WHERE f10010.[P_NM] LIKE @searchName`;
+      query += ` AND f10010.[P_NM] LIKE @searchName`;
       request.input('searchName', `%${searchName.trim()}%`);
     }
 
@@ -160,6 +172,14 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
+    const sessionAncd = getSessionAncd(req);
+    if (sessionAncd == null) {
+      return new Response(
+        JSON.stringify({ success: false, error: '로그인이 필요합니다.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({ 
@@ -173,6 +193,16 @@ export async function POST(req) {
 
     const body = await req.json();
     const { query, params } = body;
+
+    if (params && typeof params === 'object') {
+      const rowAncd = params.ANCD ?? params.ancd;
+      if (rowAncd != null && rowAncd !== '' && !ancdEquals(rowAncd, sessionAncd)) {
+        return new Response(
+          JSON.stringify({ success: false, error: '해당 기관에 대한 접근 권한이 없습니다.' }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     if (!query) {
       return new Response(JSON.stringify({ 

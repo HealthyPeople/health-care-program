@@ -19,6 +19,7 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
   const router = useRouter();
   const pathname = usePathname();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [institutionName, setInstitutionName] = useState<string>('');
 
   // 인증 체크 및 강제 로그아웃
   useEffect(() => {
@@ -35,6 +36,23 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
     const interval = setInterval(verifyAuth, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/user-info', { credentials: 'include' });
+        const json = await res.json();
+        const annm = json?.success && json?.data?.annm ? String(json.data.annm).trim() : '';
+        if (!cancelled) setInstitutionName(annm);
+      } catch {
+        if (!cancelled) setInstitutionName('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   
   const handleLogoClick = () => {
     if (pathname?.includes('nursingHome')) {
@@ -68,14 +86,18 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
   };
   
   const getDisplayText = () => {
+    let base = 'CareProgram_DEMO';
     if (pathname?.includes('nursingHome')) {
-      return 'CareProgram_DEMO 요양원';
+      base = 'CareProgram_DEMO 요양원';
     } else if (pathname?.includes('dayNightCare')) {
-      return 'CareProgram_DEMO 주야간보호';
+      base = 'CareProgram_DEMO 주야간보호';
     } else if (pathname?.includes('shortTermCare')) {
-      return 'CareProgram_DEMO 단기보호';
+      base = 'CareProgram_DEMO 단기보호';
     }
-    return 'CareProgram_DEMO';
+    if (institutionName) {
+      return `${base} · ${institutionName}`;
+    }
+    return base;
   };
   
   const displayText = getDisplayText();

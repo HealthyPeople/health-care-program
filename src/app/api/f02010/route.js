@@ -1,8 +1,17 @@
 import { connPool } from '../../../config/server';
 import { NextRequest } from 'next/server';
+import { getSessionAncd, ancdEquals } from '../../../config/sessionServer';
 
 export async function GET(req) {
   try {
+    const sessionAncd = getSessionAncd(req);
+    if (sessionAncd == null) {
+      return new Response(
+        JSON.stringify({ success: false, error: '로그인이 필요합니다.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({
@@ -46,12 +55,13 @@ export async function GET(req) {
       LEFT JOIN [돌봄시설DB].[dbo].[F01010] f01010
         ON f02010.[ANCD] = f01010.[ANCD]
         AND f02010.[EMPNO] = f01010.[EMPNO]
-      WHERE f02010.[WDT] = @workDate
+      WHERE f02010.[WDT] = @workDate AND f02010.[ANCD] = @sessionAncd
       ORDER BY f01010.[EMPNM]
     `;
 
     const request = pool.request();
     request.input('workDate', workDate);
+    request.input('sessionAncd', sessionAncd);
 
     const result = await request.query(query);
 
@@ -79,6 +89,14 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
+    const sessionAncd = getSessionAncd(req);
+    if (sessionAncd == null) {
+      return new Response(
+        JSON.stringify({ success: false, error: '로그인이 필요합니다.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({
@@ -92,6 +110,16 @@ export async function POST(req) {
 
     const body = await req.json();
     const { ANCD, EMPNO, WDT, JOBADD, JOBSH, WGU, HODES, STM, ETM } = body;
+
+    if (!ancdEquals(ANCD, sessionAncd)) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: '해당 기관에 대한 접근 권한이 없습니다.'
+      }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     if (!ANCD || !EMPNO || !WDT) {
       return new Response(JSON.stringify({
@@ -160,6 +188,14 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
+    const sessionAncd = getSessionAncd(req);
+    if (sessionAncd == null) {
+      return new Response(
+        JSON.stringify({ success: false, error: '로그인이 필요합니다.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     const pool = await connPool;
     if (!pool) {
       return new Response(JSON.stringify({
@@ -175,6 +211,16 @@ export async function DELETE(req) {
     const ancd = searchParams.get('ancd');
     const empno = searchParams.get('empno');
     const wdt = searchParams.get('wdt');
+
+    if (!ancdEquals(ancd, sessionAncd)) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: '해당 기관에 대한 접근 권한이 없습니다.'
+      }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     if (!ancd || !empno || !wdt) {
       return new Response(JSON.stringify({

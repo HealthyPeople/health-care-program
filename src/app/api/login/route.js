@@ -2,6 +2,24 @@ import { connPool } from '../../../config/server';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+async function fetchAnnmForAncd(pool, ancd) {
+  if (!pool || ancd == null || ancd === '') return '';
+  try {
+    const n = typeof ancd === 'number' ? ancd : parseInt(String(ancd), 10);
+    if (Number.isNaN(n)) return '';
+    const r = await pool
+      .request()
+      .input('ancd', n)
+      .query(
+        `SELECT TOP 1 [ANNM] FROM [돌봄시설DB].[dbo].[F00110] WHERE [ANCD] = @ancd`
+      );
+    return r.recordset?.[0]?.ANNM ?? '';
+  } catch (e) {
+    console.error('F00110 ANNM 조회 실패:', e);
+    return '';
+  }
+}
+
 export async function POST(req) {
   try {
     // 도메인 확인 (vercel 포함 여부 체크)
@@ -28,13 +46,22 @@ export async function POST(req) {
       const token = crypto.randomBytes(32).toString('hex');
       const expiresIn = 24 * 60 * 60 * 1000; // 24시간
       const expiresAt = new Date(Date.now() + expiresIn);
-      
+
+      let annm = '';
+      try {
+        const pool = await connPool;
+        annm = await fetchAnnmForAncd(pool, ancd);
+      } catch (e) {
+        console.error('[LOGIN] Vercel 분기 ANNM 조회 실패:', e);
+      }
+
       // 사용자 정보 객체 생성
       const userInfo = {
         ancd: ancd,
         uid: uid,
         token: token,
         expiresAt: expiresAt.toISOString(),
+        annm,
       };
       
       // 응답 생성 (IP 제한 알림과 함께)
@@ -47,6 +74,7 @@ export async function POST(req) {
           user: {
             ancd: userInfo.ancd,
             uid: userInfo.uid,
+            annm: userInfo.annm || undefined,
           },
         },
         { status: 200 }
@@ -178,12 +206,15 @@ export async function POST(req) {
     const expiresIn = 24 * 60 * 60 * 1000; // 24시간
     const expiresAt = new Date(Date.now() + expiresIn);
 
+    const annm = await fetchAnnmForAncd(pool, result.recordset[0].ANCD);
+
     // 사용자 정보 저장 (세션이나 DB에 저장할 수도 있음)
     const userInfo = {
       ancd: result.recordset[0].ANCD,
       uid: result.recordset[0].UID,
       token,
       expiresAt: expiresAt.toISOString(),
+      annm,
     };
 
     // 응답 생성 (정상 로그인)
@@ -195,6 +226,7 @@ export async function POST(req) {
         user: {
           ancd: userInfo.ancd,
           uid: userInfo.uid,
+          annm: userInfo.annm || undefined,
         },
       },
       { status: 200 }
