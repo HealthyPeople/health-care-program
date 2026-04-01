@@ -28,13 +28,13 @@ export async function GET(req) {
       });
     }
 
-    // 기관명(F00110)이 쿠키에 없거나 비어 있으면 DB에서 보강 (모의 로그인 등)
-    if (parsedUserInfo.ancd != null && parsedUserInfo.ancd !== '' && !parsedUserInfo.annm) {
-      try {
-        const pool = await connPool;
-        if (pool) {
-          const n = parseInt(String(parsedUserInfo.ancd), 10);
-          if (!Number.isNaN(n)) {
+    // DB에서 기관명·로그인 사원명 보강 (쿠키에 없거나 DB만 가능할 때)
+    try {
+      const pool = await connPool;
+      if (pool && parsedUserInfo.ancd != null && parsedUserInfo.ancd !== '') {
+        const n = parseInt(String(parsedUserInfo.ancd), 10);
+        if (!Number.isNaN(n)) {
+          if (!parsedUserInfo.annm) {
             const r = await pool
               .request()
               .input('ancd', n)
@@ -46,10 +46,23 @@ export async function GET(req) {
               parsedUserInfo = { ...parsedUserInfo, annm };
             }
           }
+          if (parsedUserInfo.uid) {
+            const r2 = await pool
+              .request()
+              .input('ancd', n)
+              .input('uid', String(parsedUserInfo.uid).trim())
+              .query(
+                `SELECT TOP 1 [EMPNM] FROM [돌봄시설DB].[dbo].[F00120] WHERE [ANCD] = @ancd AND [UID] = @uid`
+              );
+            const empnm = r2.recordset?.[0]?.EMPNM;
+            if (empnm) {
+              parsedUserInfo = { ...parsedUserInfo, empnm };
+            }
+          }
         }
-      } catch (e) {
-        console.error('user-info ANNM 보강 실패:', e);
       }
+    } catch (e) {
+      console.error('user-info DB 보강 실패:', e);
     }
 
     return NextResponse.json({

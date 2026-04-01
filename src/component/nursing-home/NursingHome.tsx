@@ -20,6 +20,8 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
   const pathname = usePathname();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [institutionName, setInstitutionName] = useState<string>('');
+  /** 사원명(F00120 EMPNM), 없으면 로그인 아이디(uid) */
+  const [accountDisplayName, setAccountDisplayName] = useState<string>('');
 
   // 인증 체크 및 강제 로그아웃
   useEffect(() => {
@@ -43,10 +45,20 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
       try {
         const res = await fetch('/api/auth/user-info', { credentials: 'include' });
         const json = await res.json();
-        const annm = json?.success && json?.data?.annm ? String(json.data.annm).trim() : '';
-        if (!cancelled) setInstitutionName(annm);
+        const d = json?.success ? json.data : null;
+        const annm = d?.annm ? String(d.annm).trim() : '';
+        const empnm = d?.empnm ? String(d.empnm).trim() : '';
+        const uid = d?.uid != null ? String(d.uid).trim() : '';
+        const label = empnm || uid;
+        if (!cancelled) {
+          setInstitutionName(annm);
+          setAccountDisplayName(label);
+        }
       } catch {
-        if (!cancelled) setInstitutionName('');
+        if (!cancelled) {
+          setInstitutionName('');
+          setAccountDisplayName('');
+        }
       }
     })();
     return () => {
@@ -134,13 +146,17 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
           {/* <button className="ml-2 px-2 py-1 bg-blue-700 rounded text-xs">최근내역</button>
           <button className="ml-1 px-2 py-1 bg-blue-700 rounded text-xs">즐겨찾기</button> */}
         </div>
-        <div className="flex items-center gap-4">
-          {/* <span className="text-sm">사용메뉴</span> */}
-          {/* <span className="text-sm">20250711-1550</span> */}
-          {/* <span className="text-sm">KR</span> */}
-          {/* <span className="text-sm">dhmaster ▼</span> */}
-          {/* <button className="px-2 py-1 bg-blue-700 rounded text-xs">회사변경</button> */}
-          {/* <button className="px-2 py-1 bg-blue-700 rounded text-xs">비밀번호 변경</button> */}
+        <div className="flex items-center gap-3">
+          {accountDisplayName ? (
+            <span
+              className="text-sm font-medium text-white/95 max-w-[min(100%,280px)] truncate inline-block align-middle"
+              title={`안녕하세요 ${accountDisplayName}님`}
+            >
+              안녕하세요{' '}
+              <span className="text-base font-bold">{accountDisplayName}</span>
+              님
+            </span>
+          ) : null}
           <button 
             onClick={handleLogout}
             className="px-2 py-1 bg-blue-700 rounded text-xs hover:bg-blue-800 transition-colors"
