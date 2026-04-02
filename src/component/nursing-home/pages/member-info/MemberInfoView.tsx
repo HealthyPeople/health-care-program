@@ -1149,7 +1149,7 @@ export default function MemberInfoView() {
 												</div>
 
 												{/* 9행 */}
-												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+												{/* <div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">담당의</label>
 													<input
 														type="text"
@@ -1168,7 +1168,7 @@ export default function MemberInfoView() {
 														className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														placeholder="주치의 연락처"
 													/>
-												</div>
+												</div> */}
 
 												{/* 10행 */}
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
@@ -1612,7 +1612,7 @@ export default function MemberInfoView() {
 													)}
 												</div>
 
-												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+												{/* <div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">담당의</label>
 													{isEditing && editedMember ? (
 														<input
@@ -1639,7 +1639,7 @@ export default function MemberInfoView() {
 													) : (
 														<span className="w-full border-b border-blue-200 py-1">{selectedMember.DTTEL || '-'}</span>
 													)}
-												</div>
+												</div> */}
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">이용병원</label>
 													{isEditing && editedMember ? (

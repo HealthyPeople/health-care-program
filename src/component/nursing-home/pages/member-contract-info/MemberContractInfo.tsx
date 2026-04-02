@@ -277,6 +277,60 @@ function buildContractPrintHtml(
 </html>`;
 }
 
+/** 인쇄 1행분: 수급자 1명 + F10110 계약 목록 + 보호자(계약자) */
+async function fetchContractPrintGroupForMember(m: MemberData): Promise<{
+	member: MemberData;
+	contracts: MemberData[];
+	contractor: string;
+	rel: string;
+}> {
+	const [cRes, gRes] = await Promise.all([
+		fetch('/api/f10010', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				query: `
+					SELECT [ANCD],[PNUM],[CDT],[SVSDT],[SVEDT],[USRGU]
+					FROM [돌봄시설DB].[dbo].[F10110]
+					WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
+					ORDER BY [CDT] DESC
+				`,
+				params: { ANCD: String(m.ANCD), PNUM: String(m.PNUM) }
+			})
+		}),
+		fetch(
+			`/api/f10020?ancd=${encodeURIComponent(String(m.ANCD))}&pnum=${encodeURIComponent(String(m.PNUM))}`
+		)
+	]);
+	const cj = await cRes.json();
+	const gj = await gRes.json();
+	const contracts = cj.success && Array.isArray(cj.data) ? cj.data : [];
+	const guardians = gj.success && Array.isArray(gj.data) ? gj.data : [];
+	const g0 = guardians.find((g: MemberData) => String(g.CONGU) === '1') ?? guardians[0];
+	const contractor = g0?.BHNM != null ? String(g0.BHNM) : '';
+	const rel =
+		g0?.BHREL === '10'
+			? '남편'
+			: g0?.BHREL === '11'
+				? '부인'
+				: g0?.BHREL === '20'
+					? '아들'
+					: g0?.BHREL === '21'
+						? '딸'
+						: g0?.BHREL === '22'
+							? '며느리'
+							: g0?.BHREL === '23'
+								? '사위'
+								: g0?.BHREL === '31'
+									? '손주'
+									: g0?.BHETC && String(g0.BHETC).trim() !== ''
+										? String(g0.BHETC)
+										: g0?.BHREL != null && String(g0.BHREL) !== ''
+											? String(g0.BHREL)
+											: '';
+	return { member: m, contracts, contractor, rel };
+}
+
 export default function MemberContractInfo() {
 	const [members, setMembers] = useState<MemberData[]>([]);
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
@@ -546,6 +600,20 @@ export default function MemberContractInfo() {
 		setCurrentPage(page);
 	};
 
+	const openPrintWindow = (html: string) => {
+		const w = window.open('', '_blank');
+		if (!w) {
+			alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.');
+			return;
+		}
+		w.document.write(html);
+		w.document.close();
+		setTimeout(() => {
+			w.focus();
+			w.print();
+		}, 300);
+	};
+
 	const handlePrintContractReport = async () => {
 		if (filteredMembers.length === 0) {
 			alert('출력할 수급자가 없습니다. 목록 필터를 확인해 주세요.');
@@ -556,67 +624,29 @@ export default function MemberContractInfo() {
 			const basis = new Date().toISOString().slice(0, 10);
 			const printDate = basis;
 			const groups = await Promise.all(
-				filteredMembers.map(async (m) => {
-					const [cRes, gRes] = await Promise.all([
-						fetch('/api/f10010', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({
-								query: `
-									SELECT [ANCD],[PNUM],[CDT],[SVSDT],[SVEDT],[USRGU]
-									FROM [돌봄시설DB].[dbo].[F10110]
-									WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
-									ORDER BY [CDT] DESC
-								`,
-								params: { ANCD: String(m.ANCD), PNUM: String(m.PNUM) }
-							})
-						}),
-						fetch(
-							`/api/f10020?ancd=${encodeURIComponent(String(m.ANCD))}&pnum=${encodeURIComponent(String(m.PNUM))}`
-						)
-					]);
-					const cj = await cRes.json();
-					const gj = await gRes.json();
-					const contracts = cj.success && Array.isArray(cj.data) ? cj.data : [];
-					const guardians = gj.success && Array.isArray(gj.data) ? gj.data : [];
-					const g0 =
-						guardians.find((g: MemberData) => String(g.CONGU) === '1') ?? guardians[0];
-					const contractor = g0?.BHNM != null ? String(g0.BHNM) : '';
-					const rel =
-						g0?.BHREL === '10'
-							? '남편'
-							: g0?.BHREL === '11'
-								? '부인'
-								: g0?.BHREL === '20'
-									? '아들'
-									: g0?.BHREL === '21'
-										? '딸'
-										: g0?.BHREL === '22'
-											? '며느리'
-											: g0?.BHREL === '23'
-												? '사위'
-												: g0?.BHREL === '31'
-													? '손주'
-													: g0?.BHETC && String(g0.BHETC).trim() !== ''
-														? String(g0.BHETC)
-														: g0?.BHREL != null && String(g0.BHREL) !== ''
-															? String(g0.BHREL)
-															: '';
-					return { member: m, contracts, contractor, rel };
-				})
+				filteredMembers.map((m) => fetchContractPrintGroupForMember(m))
 			);
 			const html = buildContractPrintHtml(basis, printDate, groups);
-			const w = window.open('', '_blank');
-			if (!w) {
-				alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.');
-				return;
-			}
-			w.document.write(html);
-			w.document.close();
-			setTimeout(() => {
-				w.focus();
-				w.print();
-			}, 300);
+			openPrintWindow(html);
+		} catch (e) {
+			console.error(e);
+			alert('출력 준비 중 오류가 발생했습니다.');
+		} finally {
+			setPrintLoading(false);
+		}
+	};
+
+	const handlePrintSingleMemberContractReport = async () => {
+		if (!selectedMember || selectedMember.ANCD == null || selectedMember.PNUM == null) {
+			alert('수급자를 선택해 주세요.');
+			return;
+		}
+		setPrintLoading(true);
+		try {
+			const basis = new Date().toISOString().slice(0, 10);
+			const group = await fetchContractPrintGroupForMember(selectedMember);
+			const html = buildContractPrintHtml(basis, basis, [group]);
+			openPrintWindow(html);
 		} catch (e) {
 			console.error(e);
 			alert('출력 준비 중 오류가 발생했습니다.');
@@ -1043,14 +1073,14 @@ export default function MemberContractInfo() {
 	return (
 		<div className="min-h-screen bg-white text-black flex flex-col">
 			<div className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-blue-200 bg-white">
-				<h1 className="text-sm font-semibold text-blue-900">수급자 계약정보</h1>
+				{/* <h1 className="text-sm font-semibold text-blue-900">수급자 계약정보</h1> */}
 				<button
 					type="button"
 					onClick={handlePrintContractReport}
 					disabled={printLoading || filteredMembers.length === 0}
 					className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-700 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
-					{printLoading ? '출력 준비 중...' : '계약서 출력'}
+					{printLoading ? '출력 준비 중...' : '전체 계약서 출력'}
 				</button>
 			</div>
 			<div className="flex h-[calc(80vh-56px)] min-h-0 flex-1">
@@ -1343,13 +1373,23 @@ export default function MemberContractInfo() {
 						<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
 							<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
 								<h2 className="text-xl font-semibold text-blue-900">계약정보</h2>
-								<div className="flex items-center gap-2">
+								<div className="flex items-center gap-2 flex-wrap">
 									{contractInfo && !isEditing ? (
 										<button 
 											onClick={handleEditClick}
 											className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900"
 										>
 											수정 및 삭제
+										</button>
+									) : null}
+									{selectedMember && !isEditing && !isCreating ? (
+										<button
+											type="button"
+											onClick={handlePrintSingleMemberContractReport}
+											disabled={printLoading}
+											className="px-3 py-1 text-sm border border-blue-500 rounded bg-white hover:bg-blue-50 text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+										>
+											{printLoading ? '출력 준비 중...' : '계약내역 출력'}
 										</button>
 									) : null}
 									{isCreating && (
