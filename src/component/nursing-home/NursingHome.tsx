@@ -147,14 +147,30 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
           <button className="ml-1 px-2 py-1 bg-blue-700 rounded text-xs">즐겨찾기</button> */}
         </div>
         <div className="flex items-center gap-3">
-          {accountDisplayName ? (
+          {institutionName || accountDisplayName ? (
             <span
-              className="text-sm font-medium text-white/95 max-w-[min(100%,280px)] truncate inline-block align-middle"
-              title={`안녕하세요 ${accountDisplayName}님`}
+              className="text-sm font-medium text-white/95 max-w-[min(100%,420px)] truncate inline-block align-middle"
+              title={
+                [institutionName && `기관명 ${institutionName}`, accountDisplayName && `${accountDisplayName}님`]
+                  .filter(Boolean)
+                  .join(' · ') || undefined
+              }
             >
-              안녕하세요{' '}
-              <span className="text-base font-bold">{accountDisplayName}</span>
-              님
+              {institutionName ? (
+                <>
+                 <span className="text-base font-bold">{institutionName}</span>
+                </>
+              ) : null}
+              {institutionName && accountDisplayName ? (
+                <span className="mx-1.5 text-white/70" aria-hidden>
+                  ·
+                </span>
+              ) : null}
+              {accountDisplayName ? (
+                <>
+                  <span className="text-base font-bold">{accountDisplayName}</span>님
+                </>
+              ) : null}
             </span>
           ) : null}
           <button 
