@@ -32,6 +32,11 @@ function buildMemberForEdit(m: MemberData): MemberData {
 		selectedANCD: String(m.ANCD ?? ''),
 		P_GRD: normalizePGrdForSelect(m.P_GRD),
 		P_FLOOR: floorStr,
+		P_BRDT: toDateInputString(m.P_BRDT),
+		P_YYDT: toDateInputString(m.P_YYDT),
+		P_CTDT: toDateInputString(m.P_CTDT),
+		P_SDT: toDateInputString(m.P_SDT),
+		P_EDT: toDateInputString(m.P_EDT),
 		P_YYSDT: toDateInputString(m.P_YYSDT),
 		P_YYEDT: toDateInputString(m.P_YYEDT),
 		INSPER: m.INSPER !== undefined && m.INSPER !== null ? String(m.INSPER) : '',
@@ -919,13 +924,8 @@ export default function MemberInfoView() {
 
 									<div className="p-4">
 										<div className="grid grid-cols-12 gap-4">
-											{/* 사진 영역 */}
-											<div className="col-span-12 md:col-span-3">
-												<div className="flex items-center justify-center bg-white border border-blue-300 rounded-lg h-36 text-blue-900/70">사진</div>
-											</div>
-
 											{/* 입력 필드 영역 */}
-											<div className="grid grid-cols-12 col-span-12 gap-3 md:col-span-9">
+											<div className="grid grid-cols-12 col-span-12 gap-3">
 												{/* 기관 선택 */}
 												<div className="flex flex-col col-span-12 gap-1">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">기관명 *</label>
@@ -1281,21 +1281,12 @@ export default function MemberInfoView() {
 
 									<div className="p-4">
 										<div className="grid grid-cols-12 gap-4">
-											{/* 사진 영역 */}
-											<div className="col-span-12 md:col-span-3">
-												<div className="flex items-center justify-center bg-white border border-blue-300 rounded-lg h-36 text-blue-900/70">사진</div>
-												{/* <div className="flex gap-2 mt-2">
-													<button className="flex-1 px-2 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300">촬영</button>
-													<button className="flex-1 px-2 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300">첨부</button>
-												</div> */}
-											</div>
-
 											{/* 입력 필드 영역 */}
-											<div className="grid grid-cols-12 col-span-12 gap-3 md:col-span-9">
-												{/* 기관 선택 */}
-												{isEditing && editedMember && (
-													<div className="flex flex-col col-span-12 gap-1">
-														<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">기관명</label>
+											<div className="grid grid-cols-12 col-span-12 gap-3">
+												{/* 기관명 — 수급자 생성 폼과 동일한 필드 순서 */}
+												<div className="flex flex-col col-span-12 gap-1">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">기관명 *</label>
+													{isEditing && editedMember ? (
 														<select
 															value={String(editedMember.selectedANCD ?? editedMember.ANCD ?? '')}
 															onChange={(e) => handleFieldChange('selectedANCD', e.target.value)}
@@ -1308,32 +1299,80 @@ export default function MemberInfoView() {
 																</option>
 															))}
 														</select>
-													</div>
-												)}
-												{/* 1행 */}
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{institutions.find((i) => String(i.ANCD) === String(selectedMember.ANCD))?.ANNM ||
+																selectedMember.ANCD ||
+																'-'}
+														</span>
+													)}
+												</div>
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">수급자명</label>
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">수급자명 *</label>
 													{isEditing && editedMember ? (
 														<input
 															type="text"
 															value={editedMember.P_NM || ''}
 															onChange={(e) => handleFieldChange('P_NM', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="수급자명을 입력하세요"
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_NM || '-'}
-														</span>
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.P_NM || '-'}</span>
 													)}
 												</div>
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">수급자번호</label>
-													<span className="w-full border-b border-blue-200">
-														{selectedMember.PNUM || '-'}
-													</span>
+													<span className="w-full border-b border-blue-200 py-1">{selectedMember.PNUM || '-'}</span>
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">생년월일</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_BRDT || ''}
+															onChange={(e) => handleFieldChange('P_BRDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_BRDT) || '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">주민번호</label>
+													{isEditing && editedMember ? (
+														<input
+															type="text"
+															value={editedMember.P_NO || ''}
+															onChange={(e) => handleFieldChange('P_NO', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="주민번호를 입력하세요"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.P_NO || '-'}</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">성별</label>
+													{isEditing && editedMember ? (
+														<select
+															value={editedMember.P_SEX || ''}
+															onChange={(e) => handleFieldChange('P_SEX', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														>
+															<option value="">선택</option>
+															<option value="1">남자</option>
+															<option value="2">여자</option>
+														</select>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{selectedMember.P_SEX === '1' ? '남자' : selectedMember.P_SEX === '2' ? '여자' : '-'}
+														</span>
+													)}
 												</div>
 
-												{/* 2행 - 주소 검색 버튼 */}
 												{isEditing && editedMember && (
 													<div className="flex col-span-12 gap-2">
 														<button
@@ -1345,7 +1384,6 @@ export default function MemberInfoView() {
 														</button>
 													</div>
 												)}
-												{/* 3행 */}
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">우편번호</label>
 													{isEditing && editedMember ? (
@@ -1357,9 +1395,7 @@ export default function MemberInfoView() {
 															readOnly
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_ZIP || '-'}
-														</span>
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.P_ZIP || '-'}</span>
 													)}
 												</div>
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
@@ -1373,15 +1409,12 @@ export default function MemberInfoView() {
 															readOnly
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_ADDR || '-'}
-														</span>
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.P_ADDR || '-'}</span>
 													)}
 												</div>
-												{/* 상세주소 */}
-												{isEditing && editedMember && (
-													<div className="flex flex-col col-span-12 gap-1">
-														<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">상세주소</label>
+												<div className="flex flex-col col-span-12 gap-1">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">상세주소</label>
+													{isEditing && editedMember ? (
 														<input
 															type="text"
 															value={editedMemberDetailAddr}
@@ -1392,48 +1425,36 @@ export default function MemberInfoView() {
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 															placeholder="상세주소를 입력하세요 (예: 101동 101호)"
 														/>
-													</div>
-												)}
+													) : (
+														<span className="w-full border-b border-blue-200 py-1 text-blue-900/70">—</span>
+													)}
+												</div>
+
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">연락처</label>
 													{isEditing && editedMember ? (
 														<input
 															type="text"
-															value={editedMember.P_TEL ?? editedMember.P_HP ?? ''}
+															value={editedMember.P_HP ?? editedMember.P_TEL ?? ''}
 															onChange={(e) => {
 																const v = e.target.value;
 																hasUnsavedChanges.current = true;
-																setEditedMember((prev) =>
-																	prev ? { ...prev, P_TEL: v, P_HP: v } : null
-																);
+																setEditedMember((prev) => (prev ? { ...prev, P_HP: v, P_TEL: v } : null));
 															}}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="연락처를 입력하세요"
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_TEL || selectedMember.P_HP || '-'}
+														<span className="w-full border-b border-blue-200 py-1">
+															{selectedMember.P_HP || selectedMember.P_TEL || '-'}
 														</span>
 													)}
 												</div>
-
-												{/* 4행 */}
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">성별</label>
-													<span className="w-full border-b border-blue-200">
-														{
-															selectedMember.P_SEX === '1' 
-																? '남자' 
-																: selectedMember.P_SEX === '2' 
-																	? '여자' 
-																	: '-'
-														}
-													</span>
-												</div>
-												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">등급</label>
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">요양등급</label>
 													{isEditing && editedMember ? (
 														<select
-															value={normalizePGrdForSelect(editedMember.P_GRD)}
+															value={String(editedMember.P_GRD ?? '')}
 															onChange={(e) => handleFieldChange('P_GRD', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														>
@@ -1447,35 +1468,150 @@ export default function MemberInfoView() {
 															<option value="9">인지지원</option>
 														</select>
 													) : (
-														<span className="w-full border-b border-blue-200">
+														<span className="w-full border-b border-blue-200 py-1">
 															{formatCareGradeLabel(selectedMember.P_GRD, '등급 없음')}
 														</span>
 													)}
 												</div>
 
-												{/* 5행 */}
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">입소일</label>
-													<span className="w-full border-b border-blue-200">
-														{selectedMember.P_SDT ? selectedMember.P_SDT.substring(0, 10) : '-'}
-													</span>
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">장기요양인정번호</label>
+													{isEditing && editedMember ? (
+														<input
+															type="text"
+															value={editedMember.P_YYNO || ''}
+															onChange={(e) => handleFieldChange('P_YYNO', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="장기요양인정번호"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.P_YYNO || '-'}</span>
+													)}
 												</div>
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">퇴소일</label>
-													<span className="w-full border-b border-blue-200">
-														{
-															selectedMember.P_ST === '1' 
-																? '입소중' 
-																: selectedMember.P_ST === '9'
-																	? '퇴소'
-																	: selectedMember.P_EDT
-																		? selectedMember.P_EDT.substring(0, 10)
-																		: '-'
-														}
-													</span>
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">인정번호 발급일</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_YYDT || ''}
+															onChange={(e) => handleFieldChange('P_YYDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_YYDT) || '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">장기요양유효시작일</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_YYSDT || ''}
+															onChange={(e) => handleFieldChange('P_YYSDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_YYSDT) || '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">장기요양유효종료일</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_YYEDT || ''}
+															onChange={(e) => handleFieldChange('P_YYEDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_YYEDT) || '-'}
+														</span>
+													)}
 												</div>
 
-												{/* 6행 */}
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">상태</label>
+													{isEditing && editedMember ? (
+														<select
+															value={editedMember.P_ST || ''}
+															onChange={(e) => handleFieldChange('P_ST', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														>
+															<option value="">선택</option>
+															<option value="1">입소</option>
+															<option value="9">퇴소</option>
+														</select>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{selectedMember.P_ST === '1' ? '입소' : selectedMember.P_ST === '9' ? '퇴소' : '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">계약일자</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_CTDT || ''}
+															onChange={(e) => handleFieldChange('P_CTDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_CTDT) || '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">입소일자</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_SDT || ''}
+															onChange={(e) => handleFieldChange('P_SDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_SDT) || '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">퇴소일자</label>
+													{isEditing && editedMember ? (
+														<input
+															type="date"
+															value={editedMember.P_EDT || ''}
+															onChange={(e) => handleFieldChange('P_EDT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">
+															{toDateInputString(selectedMember.P_EDT) || '-'}
+														</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">퇴소 사유</label>
+													{isEditing && editedMember ? (
+														<input
+															type="text"
+															value={editedMember.P_CINFO || ''}
+															onChange={(e) => handleFieldChange('P_CINFO', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="퇴소 시 사유"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.P_CINFO || '-'}</span>
+													)}
+												</div>
+
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">담당의</label>
 													{isEditing && editedMember ? (
@@ -1484,11 +1620,10 @@ export default function MemberInfoView() {
 															value={editedMember.DTNM || ''}
 															onChange={(e) => handleFieldChange('DTNM', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="담당의 이름"
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.DTNM || '-'}
-														</span>
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.DTNM || '-'}</span>
 													)}
 												</div>
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
@@ -1499,14 +1634,54 @@ export default function MemberInfoView() {
 															value={editedMember.DTTEL || ''}
 															onChange={(e) => handleFieldChange('DTTEL', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="주치의 연락처"
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.DTTEL || '-'}
-														</span>
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.DTTEL || '-'}</span>
 													)}
 												</div>
-												{/* 층수 */}
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">이용병원</label>
+													{isEditing && editedMember ? (
+														<input
+															type="text"
+															value={editedMember.HSPT || ''}
+															onChange={(e) => handleFieldChange('HSPT', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="이용병원"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.HSPT || '-'}</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">간호지시서번호</label>
+													{isEditing && editedMember ? (
+														<input
+															type="text"
+															value={editedMember.HCANUM || ''}
+															onChange={(e) => handleFieldChange('HCANUM', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="간호지시서번호"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.HCANUM || '-'}</span>
+													)}
+												</div>
+												<div className="flex flex-col col-span-12 gap-1">
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">간호지시서정보</label>
+													{isEditing && editedMember ? (
+														<input
+															type="text"
+															value={editedMember.HCAINFO || ''}
+															onChange={(e) => handleFieldChange('HCAINFO', e.target.value)}
+															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="간호지시서정보"
+														/>
+													) : (
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.HCAINFO || '-'}</span>
+													)}
+												</div>
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
 													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">층수</label>
 													{isEditing && editedMember ? (
@@ -1523,8 +1698,10 @@ export default function MemberInfoView() {
 															}
 															onChange={(e) => {
 																const value = e.target.value;
-																// 0 이상의 정수만 허용
-																if (value === '' || (!isNaN(Number(value)) && Number(value) >= 0 && Number.isInteger(Number(value)))) {
+																if (
+																	value === '' ||
+																	(!isNaN(Number(value)) && Number(value) >= 0 && Number.isInteger(Number(value)))
+																) {
 																	handleFieldChange('P_FLOOR', value);
 																}
 															}}
@@ -1532,41 +1709,25 @@ export default function MemberInfoView() {
 															placeholder="층수 (0 이상의 정수)"
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_FLOOR !== null && selectedMember.P_FLOOR !== undefined ? selectedMember.P_FLOOR : '-'}
+														<span className="w-full border-b border-blue-200 py-1">
+															{selectedMember.P_FLOOR !== null && selectedMember.P_FLOOR !== undefined
+																? selectedMember.P_FLOOR
+																: '-'}
 														</span>
 													)}
 												</div>
-												{/* 장기요양유효시작일 */}
 												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">장기요양유효시작일</label>
+													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">비고</label>
 													{isEditing && editedMember ? (
 														<input
-															type="date"
-															value={editedMember.P_YYSDT ? String(editedMember.P_YYSDT).slice(0, 10) : ''}
-															onChange={(e) => handleFieldChange('P_YYSDT', e.target.value)}
+															type="text"
+															value={editedMember.ETC || ''}
+															onChange={(e) => handleFieldChange('ETC', e.target.value)}
 															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+															placeholder="비고"
 														/>
 													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_YYSDT ? selectedMember.P_YYSDT.substring(0, 10) : '-'}
-														</span>
-													)}
-												</div>
-												{/* 장기요양유효종료일 */}
-												<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
-													<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">장기요양유효종료일</label>
-													{isEditing && editedMember ? (
-														<input
-															type="date"
-															value={editedMember.P_YYEDT ? String(editedMember.P_YYEDT).slice(0, 10) : ''}
-															onChange={(e) => handleFieldChange('P_YYEDT', e.target.value)}
-															className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
-														/>
-													) : (
-														<span className="w-full border-b border-blue-200">
-															{selectedMember.P_YYEDT ? selectedMember.P_YYEDT.substring(0, 10) : '-'}
-														</span>
+														<span className="w-full border-b border-blue-200 py-1">{selectedMember.ETC || '-'}</span>
 													)}
 												</div>
 											</div>
@@ -1583,24 +1744,6 @@ export default function MemberInfoView() {
 											{/* <button className="px-3 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300">계약상세</button> */}
 										</div>
 										<div className="p-4 space-y-2 text-sm">
-											<div className="flex items-center gap-2">
-												<span className="w-24 text-blue-900/80">계약일자</span>
-												<span className="flex-1 border-b border-blue-200">
-													{selectedMember.P_CTDT ? selectedMember.P_CTDT.substring(0, 10) : '-'}
-												</span>
-											</div>
-											{/* <div className="flex items-center gap-2">
-												<span className="w-24 text-blue-900/80">서비스 시작일</span>
-												<span className="flex-1 border-b border-blue-200">
-													{selectedMember.SVSDT ? selectedMember.SVSDT.substring(0, 10) : '-'}
-												</span>
-											</div> */}
-											{/* <div className="flex items-center gap-2">
-												<span className="w-24 text-blue-900/80">서비스 종료일</span>
-												<span className="flex-1 border-b border-blue-200">
-													{selectedMember.SVEDT ? selectedMember.SVEDT.substring(0, 10) : '-'}
-												</span>
-											</div> */}
 											<div className="flex items-center gap-2">
 												<span className="w-24 text-blue-900/80">보험자부담율</span>
 												{isEditing && editedMember ? (
@@ -1651,21 +1794,6 @@ export default function MemberInfoView() {
 													{selectedMember.ESAMT || '-'}
 												</span>
 											</div> */}
-											<div className="flex items-center gap-2">
-												<span className="w-24 text-blue-900/80">비고</span>
-												{isEditing && editedMember ? (
-													<input
-														type="text"
-														value={editedMember.ETC || ''}
-														onChange={(e) => handleFieldChange('ETC', e.target.value)}
-														className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
-													/>
-												) : (
-													<span className="flex-1 border-b border-blue-200">
-														{selectedMember.ETC || '-'}
-													</span>
-												)}
-											</div>
 										</div>
 									</div>
 

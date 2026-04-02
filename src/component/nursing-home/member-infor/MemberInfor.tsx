@@ -29,14 +29,14 @@ export const MemberInfor = () => {
     />
     {/* 자동완성 드롭다운 */}
     {selectedName && (
-      <ul className="absolute z-10 w-full overflow-y-auto bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-600 max-h-40">
+      <ul className="absolute z-10 w-full overflow-y-auto bg-white border border-gray-300 text-black dark:bg-gray-800 dark:border-gray-600 dark:text-white max-h-40">
         {members
           .filter((m) => m.name.includes(selectedName) && m.name !== selectedName)
           .map((m, i) => (
             <li
               key={`${m.name}-${i}`}
               onClick={() => setSelectedName(m.name)}
-              className="px-2 py-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="px-2 py-1 cursor-pointer text-black hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
             >
               {m.name}
             </li>

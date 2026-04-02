@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface PerformanceData {
 	id: number;
@@ -35,6 +36,14 @@ export default function DailyBeneficiaryPerformance() {
 	const [memberSearchTerm, setMemberSearchTerm] = useState('');
 	const [memberSearchResults, setMemberSearchResults] = useState<any[]>([]);
 	const [showMemberSearchResults, setShowMemberSearchResults] = useState(false);
+	const memberSearchInputRef = useRef<HTMLInputElement | null>(null);
+	const memberPrintModalBodyRef = useRef<HTMLDivElement | null>(null);
+	const [memberSearchDropdownLayout, setMemberSearchDropdownLayout] = useState<{
+		top: number;
+		left: number;
+		width: number;
+	} | null>(null);
+	const printSearchRequestIdRef = useRef(0);
 	const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
 	const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 	const [memberPrintData, setMemberPrintData] = useState<PerformanceData[]>([]);
@@ -286,19 +295,26 @@ export default function DailyBeneficiaryPerformance() {
 						page-break-after: auto;
 					}
 					.header {
-						display: flex;
-						justify-content: space-between;
-						align-items: flex-start;
+						display: grid;
+						grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1fr);
+						align-items: start;
+						column-gap: 12px;
 						margin-bottom: 15px;
+					}
+					.date-info {
+						font-size: 11pt;
+						justify-self: start;
+						text-align: left;
 					}
 					.title {
 						font-size: 18pt;
 						font-weight: bold;
 						text-align: center;
-						flex: 1;
+						justify-self: center;
+						width: 100%;
 					}
-					.date-info {
-						font-size: 11pt;
+					.header-sign {
+						justify-self: end;
 					}
 					.signature-table {
 						border: 1px solid #000;
@@ -386,6 +402,7 @@ export default function DailyBeneficiaryPerformance() {
 				<div class="header">
 					<div class="date-info">일자: ${formattedDate}</div>
 					<div class="title">수급자급여실적</div>
+					<div class="header-sign">
 					<table class="signature-table">
 						<tr>
 							<th>담당</th>
@@ -398,6 +415,7 @@ export default function DailyBeneficiaryPerformance() {
 							<td></td>
 						</tr>
 					</table>
+					</div>
 				</div>
 				<table class="main-table">
 					<thead>
@@ -572,6 +590,8 @@ export default function DailyBeneficiaryPerformance() {
 		setSelectedMemberForPrint(null);
 		setMemberSearchTerm('');
 		setMemberSearchResults([]);
+		setShowMemberSearchResults(false);
+		setMemberSearchDropdownLayout(null);
 		setStartDate(new Date().toISOString().split('T')[0]);
 		setEndDate(new Date().toISOString().split('T')[0]);
 	};
@@ -582,16 +602,21 @@ export default function DailyBeneficiaryPerformance() {
 		setSelectedMemberForPrint(null);
 		setMemberSearchTerm('');
 		setMemberSearchResults([]);
+		setShowMemberSearchResults(false);
+		setMemberSearchDropdownLayout(null);
 		setMemberPrintData([]);
 	};
 
-	// 수급자 검색 (모달용)
+	// 수급자 검색 (모달용) — overflow에 잘리지 않도록 Portal + 레이스 방지
 	const handleSearchMemberForPrint = async (searchValue: string) => {
 		if (!searchValue || searchValue.trim().length < 1) {
+			printSearchRequestIdRef.current += 1;
 			setMemberSearchResults([]);
 			setShowMemberSearchResults(false);
 			return;
 		}
+
+		const requestId = ++printSearchRequestIdRef.current;
 
 		try {
 			const response = await fetch(`/api/f10010/search?q=${encodeURIComponent(searchValue.trim())}`);
@@ -599,8 +624,12 @@ export default function DailyBeneficiaryPerformance() {
 				throw new Error('검색 요청 실패');
 			}
 			const data = await response.json();
-			
-			if (data.success && data.data) {
+
+			if (requestId !== printSearchRequestIdRef.current) {
+				return;
+			}
+
+			if (data.success && Array.isArray(data.data)) {
 				setMemberSearchResults(data.data);
 				setShowMemberSearchResults(data.data.length > 0);
 			} else {
@@ -609,10 +638,53 @@ export default function DailyBeneficiaryPerformance() {
 			}
 		} catch (error) {
 			console.error('수급자 검색 오류:', error);
+			if (requestId !== printSearchRequestIdRef.current) {
+				return;
+			}
 			setMemberSearchResults([]);
 			setShowMemberSearchResults(false);
 		}
 	};
+
+	// 모달 수급자 검색 드롭다운 위치 (overflow 클립 방지: body Portal + fixed)
+	useLayoutEffect(() => {
+		if (!showMemberSearchResults || memberSearchResults.length === 0) {
+			setMemberSearchDropdownLayout(null);
+			return;
+		}
+
+		const updateLayout = () => {
+			const el = memberSearchInputRef.current;
+			if (!el) {
+				setMemberSearchDropdownLayout(null);
+				return;
+			}
+			const r = el.getBoundingClientRect();
+			setMemberSearchDropdownLayout({
+				top: r.bottom,
+				left: r.left,
+				width: r.width
+			});
+		};
+
+		updateLayout();
+
+		const onScrollOrResize = () => updateLayout();
+		window.addEventListener('scroll', onScrollOrResize, true);
+		window.addEventListener('resize', onScrollOrResize);
+		const scrollParent = memberPrintModalBodyRef.current;
+		if (scrollParent) {
+			scrollParent.addEventListener('scroll', onScrollOrResize);
+		}
+
+		return () => {
+			window.removeEventListener('scroll', onScrollOrResize, true);
+			window.removeEventListener('resize', onScrollOrResize);
+			if (scrollParent) {
+				scrollParent.removeEventListener('scroll', onScrollOrResize);
+			}
+		};
+	}, [showMemberSearchResults, memberSearchResults]);
 
 	// 수급자 선택 (모달용)
 	const handleSelectMemberForPrint = (member: any) => {
@@ -715,19 +787,26 @@ export default function DailyBeneficiaryPerformance() {
 						padding: 0;
 					}
 					.header {
-						display: flex;
-						justify-content: space-between;
-						align-items: flex-start;
+						display: grid;
+						grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1fr);
+						align-items: start;
+						column-gap: 12px;
 						margin-bottom: 15px;
+					}
+					.date-info {
+						font-size: 11pt;
+						justify-self: start;
+						text-align: left;
 					}
 					.title {
 						font-size: 18pt;
 						font-weight: bold;
 						text-align: center;
-						flex: 1;
+						justify-self: center;
+						width: 100%;
 					}
-					.date-info {
-						font-size: 11pt;
+					.header-sign {
+						justify-self: end;
 					}
 					.signature-table {
 						border: 1px solid #000;
@@ -781,6 +860,7 @@ export default function DailyBeneficiaryPerformance() {
 				<div class="header">
 					<div class="date-info">일자: ${periodText}</div>
 					<div class="title">수급자급여실적</div>
+					<div class="header-sign">
 					<table class="signature-table">
 						<tr>
 							<th>담당</th>
@@ -793,6 +873,7 @@ export default function DailyBeneficiaryPerformance() {
 							<td></td>
 						</tr>
 					</table>
+					</div>
 				</div>
 				<table class="main-table">
 					<thead>
@@ -1028,7 +1109,7 @@ export default function DailyBeneficiaryPerformance() {
 												const rect = input?.getBoundingClientRect();
 												return (
 													<div 
-														className="fixed z-[9999] bg-white border border-blue-300 rounded shadow-lg max-h-60 overflow-y-auto"
+														className="fixed z-[9999] bg-white border border-blue-300 rounded shadow-lg max-h-60 overflow-y-auto text-black"
 														style={{
 															top: rect ? `${rect.bottom + window.scrollY}px` : '0',
 															left: rect ? `${rect.left + window.scrollX}px` : '0',
@@ -1044,10 +1125,10 @@ export default function DailyBeneficiaryPerformance() {
 																	e.stopPropagation();
 																	handleSelectMember(row.id, member);
 																}}
-																className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-blue-100 last:border-b-0"
+																className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-blue-100 last:border-b-0 text-black"
 															>
-																<div className="font-medium">{member.P_NM}</div>
-																<div className="text-xs text-gray-500">
+																<div className="font-medium text-black">{member.P_NM}</div>
+																<div className="text-xs text-black">
 																	{member.P_BRDT && `(${formatDate(member.P_BRDT)})`}
 																	{/* {member.PNUM && ` | 수급자번호: ${member.PNUM}`} */}
 																</div>
@@ -1334,6 +1415,7 @@ export default function DailyBeneficiaryPerformance() {
 					onClick={handleCloseMemberPrintModal}
 				>
 					<div 
+						ref={memberPrintModalBodyRef}
 						className="bg-white rounded-lg border border-blue-400 w-[600px] max-w-[90vw] max-h-[90vh] overflow-y-auto shadow-xl"
 						onClick={(e) => e.stopPropagation()}
 					>
@@ -1355,6 +1437,7 @@ export default function DailyBeneficiaryPerformance() {
 								<label className="block text-sm font-medium text-blue-900">수급자 검색</label>
 								<div className="relative">
 									<input
+										ref={memberSearchInputRef}
 										type="text"
 										value={memberSearchTerm}
 										onChange={(e) => {
@@ -1374,26 +1457,37 @@ export default function DailyBeneficiaryPerformance() {
 										placeholder="수급자명 검색"
 										className="w-full px-3 py-2 border border-blue-300 rounded text-blue-900"
 									/>
-									{/* 검색 결과 드롭다운 */}
-									{showMemberSearchResults && memberSearchResults.length > 0 && (
-										<div className="absolute z-10 w-full mt-1 bg-white border border-blue-300 rounded shadow-lg max-h-60 overflow-y-auto">
-											{memberSearchResults.map((member: any, idx: number) => (
-												<div
-													key={idx}
-													onMouseDown={(e) => {
-														e.preventDefault();
-														handleSelectMemberForPrint(member);
-													}}
-													className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-blue-100 last:border-b-0"
-												>
-													<div className="font-medium">{member.P_NM}</div>
-													<div className="text-xs text-gray-500">
-														{member.P_BRDT && `(${formatDate(member.P_BRDT)})`}
+									{typeof document !== 'undefined' &&
+										showMemberSearchResults &&
+										memberSearchResults.length > 0 &&
+										memberSearchDropdownLayout &&
+										createPortal(
+											<div
+												className="fixed z-[10000] bg-white border border-blue-300 rounded shadow-lg max-h-60 overflow-y-auto text-black"
+												style={{
+													top: memberSearchDropdownLayout.top,
+													left: memberSearchDropdownLayout.left,
+													width: Math.max(memberSearchDropdownLayout.width, 200)
+												}}
+											>
+												{memberSearchResults.map((member: any, idx: number) => (
+													<div
+														key={idx}
+														onMouseDown={(e) => {
+															e.preventDefault();
+															handleSelectMemberForPrint(member);
+														}}
+														className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-blue-100 last:border-b-0 text-black"
+													>
+														<div className="font-medium text-black">{member.P_NM}</div>
+														<div className="text-xs text-black">
+															{member.P_BRDT && `(${formatDate(member.P_BRDT)})`}
+														</div>
 													</div>
-												</div>
-											))}
-										</div>
-									)}
+												))}
+											</div>,
+											document.body
+										)}
 								</div>
 								{selectedMemberForPrint && (
 									<div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
