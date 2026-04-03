@@ -65,6 +65,12 @@ export default function GuardianInfo() {
 		CONGU: '0' // 계약자구분 (기본값: 0, 체크 시: 1)
 	});
 
+	/** F10020 보호자-수급자 관계코드: 기타 */
+	const BHREL_OTHER = '99';
+
+	const isOtherRelationship = (rel: string | undefined | null) =>
+		String(rel ?? '').trim() === BHREL_OTHER;
+
 	// 수급자 목록 조회
 	const fetchMembers = async () => {
 		setLoading(true);
@@ -235,6 +241,11 @@ export default function GuardianInfo() {
 			return;
 		}
 
+		if (isOtherRelationship(formData.BHREL) && !formData.BHETC?.trim()) {
+			alert('기타 관계명을 입력해주세요.');
+			return;
+		}
+
 		setSaving(true);
 		try {
 			// 현재 날짜/시간
@@ -243,6 +254,11 @@ export default function GuardianInfo() {
 
 			// BHNUM 자동 생성
 			const nextBHNUM = await getNextBHNUM(selectedMember.ANCD, selectedMember.PNUM);
+
+			const bhrelForDb = formData.BHREL?.trim() || null;
+			const bhetcForDb = isOtherRelationship(formData.BHREL)
+				? formData.BHETC?.trim() || null
+				: null;
 
 			// INSERT 쿼리 생성
 			const insertQuery = `
@@ -267,8 +283,8 @@ export default function GuardianInfo() {
 				PNUM: selectedMember.PNUM,
 				BHNUM: nextBHNUM,
 				BHNM: formData.BHNM?.trim() || null,
-				BHREL: formData.BHREL?.trim() || null,
-				BHETC: formData.BHETC?.trim() || null,
+				BHREL: bhrelForDb,
+				BHETC: bhetcForDb,
 				BHJB: formData.BHJB || null,
 				P_ZIP: formData.P_ZIP?.trim() || null,
 				P_ADDR: fullAddress,
@@ -356,11 +372,21 @@ export default function GuardianInfo() {
 			return;
 		}
 
+		if (isOtherRelationship(formData.BHREL) && !formData.BHETC?.trim()) {
+			alert('기타 관계명을 입력해주세요.');
+			return;
+		}
+
 		setSaving(true);
 		try {
 			// 주소와 상세주소 합치기
 			const fullAddress = formData.P_ADDR?.trim() 
 				? (formData.P_ADDR.trim() + (detailAddress.trim() ? ' ' + detailAddress.trim() : ''))
+				: null;
+
+			const bhrelForDb = formData.BHREL?.trim() || null;
+			const bhetcForDb = isOtherRelationship(formData.BHREL)
+				? formData.BHETC?.trim() || null
 				: null;
 
 			// UPDATE 쿼리 생성
@@ -386,8 +412,8 @@ export default function GuardianInfo() {
 				PNUM: selectedMember.PNUM,
 				BHNUM: selectedGuardian.BHNUM,
 				BHNM: formData.BHNM?.trim() || null,
-				BHREL: formData.BHREL?.trim() || null,
-				BHETC: formData.BHETC?.trim() || null,
+				BHREL: bhrelForDb,
+				BHETC: bhetcForDb,
 				BHJB: formData.BHJB || null,
 				P_ZIP: formData.P_ZIP?.trim() || null,
 				P_ADDR: fullAddress,
@@ -566,7 +592,17 @@ export default function GuardianInfo() {
 	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
 
 	const handleFormChange = (field: string, value: string | boolean) => {
-		setFormData(prev => ({ ...prev, [field]: value }));
+		setFormData(prev => {
+			if (field === 'BHREL') {
+				const rel = String(value);
+				return {
+					...prev,
+					BHREL: rel,
+					BHETC: isOtherRelationship(rel) ? prev.BHETC : ''
+				};
+			}
+			return { ...prev, [field]: value };
+		});
 	};
 
 	// 다음 주소 API 스크립트 로드
@@ -941,7 +977,7 @@ export default function GuardianInfo() {
 						<div className="mb-4 flex items-center gap-2">
 							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">관계</label>
 							<select
-								value={formData.BHREL}
+								value={formData.BHREL != null && formData.BHREL !== '' ? String(formData.BHREL) : ''}
 								onChange={(e) => handleFormChange('BHREL', e.target.value)}
 								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
 								disabled={!isCreating && !isEditing}
@@ -954,20 +990,24 @@ export default function GuardianInfo() {
 								<option value="22">며느리</option>
 								<option value="23">사위</option>
 								<option value="31">손주</option>
+								<option value={BHREL_OTHER}>기타</option>
 							</select>
 						</div>
 
-						{/* 기타관계 */}
-						<div className="mb-4 flex items-center gap-2">
-							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">기타관계</label>
-							<input
-								type="text"
-								value={formData.BHETC}
-								onChange={(e) => handleFormChange('BHETC', e.target.value)}
-								className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
-								disabled={!isCreating && !isEditing}
-							/>
-						</div>
+						{/* 기타 관계명 (BHREL=99일 때만, BHETC 저장) */}
+						{isOtherRelationship(formData.BHREL) && (
+							<div className="mb-4 flex items-center gap-2">
+								<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">기타 관계명</label>
+								<input
+									type="text"
+									value={formData.BHETC}
+									onChange={(e) => handleFormChange('BHETC', e.target.value)}
+									className="flex-1 px-3 py-1.5 text-sm border-b-2 border-blue-300 bg-transparent focus:outline-none focus:border-blue-500"
+									placeholder="관계를 입력하세요"
+									disabled={!isCreating && !isEditing}
+								/>
+							</div>
+						)}
 
 						{/* 주보호자 */}
 						<div className="mb-4 flex items-center gap-2">
