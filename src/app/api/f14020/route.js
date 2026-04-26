@@ -157,3 +157,101 @@ export async function GET(req) {
   }
 }
 
+export async function POST(req) {
+  try {
+    const searchParams = req.nextUrl.searchParams;
+    const ancd = searchParams.get('ancd'); // optional, 세션 검증용
+
+    const gate = assertAnCdMatchesSession(req, ancd || null);
+    if (!gate.ok) return gate.response;
+
+    const pool = await connPool;
+    if (!pool) {
+      return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const body = await req.json();
+    const { svdt, rows } = body || {};
+
+    if (!svdt || !Array.isArray(rows)) {
+      return new Response(JSON.stringify({ success: false, error: 'svdt와 rows 배열이 필요합니다' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // yyyy-mm-dd 또는 yyyymmdd 지원
+    const svdtDigits = String(svdt).includes('-') ? String(svdt).replace(/-/g, '') : String(svdt);
+    if (!/^\d{8}$/.test(svdtDigits)) {
+      return new Response(JSON.stringify({ success: false, error: 'svdt 형식이 올바르지 않습니다 (yyyy-mm-dd 또는 yyyymmdd)' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const now = new Date();
+    const nowStr = now.toISOString().slice(0, 19).replace('T', ' ');
+
+    // 단건씩 MERGE 업서트 (동일 ANCD/PNUM/SVDT는 업데이트)
+    const results = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || {};
+      const pnum = r.pnum ?? r.PNUM;
+      if (!pnum) continue;
+
+      const request = pool.request();
+      request.input('ANCD', gate.sessionAncd);
+      request.input('PNUM', String(pnum));
+      request.input('SVDT', svdtDigits);
+      request.input('ST_PLAC', r.mealLocation ?? r.ST_PLAC ?? '');
+      request.input('ST_KIND', String(r.mealType ?? r.ST_KIND ?? '1'));
+      request.input('GYN', String(r.gyn ?? r.GYN ?? '0'));
+      request.input('MOST', String(r.most ?? r.MOST ?? r.mealStatus?.breakfast ?? '1'));
+      request.input('LCST', String(r.lcst ?? r.LCST ?? r.mealStatus?.lunch ?? '1'));
+      request.input('DNST', String(r.dnst ?? r.DNST ?? r.mealStatus?.dinner ?? '1'));
+      request.input('MGST', String(r.mgst ?? r.MGST ?? r.snackStatus?.morning ?? '1'));
+      request.input('AGST', String(r.agst ?? r.AGST ?? r.snackStatus?.afternoon ?? '1'));
+      request.input('ST_ETC', r.specialNotes ?? r.ST_ETC ?? '');
+      request.input('INDT', nowStr);
+
+      const query = `
+        MERGE [돌봄시설DB].[dbo].[F14020] AS T
+        USING (SELECT @ANCD AS ANCD, @PNUM AS PNUM, @SVDT AS SVDT) AS S
+          ON (T.[ANCD] = S.[ANCD] AND CAST(T.[PNUM] AS VARCHAR) = CAST(S.[PNUM] AS VARCHAR) AND T.[SVDT] = S.[SVDT])
+        WHEN MATCHED THEN
+          UPDATE SET
+            [ST_PLAC] = @ST_PLAC,
+            [ST_KIND] = @ST_KIND,
+            [GYN] = @GYN,
+            [MOST] = @MOST,
+            [LCST] = @LCST,
+            [DNST] = @DNST,
+            [MGST] = @MGST,
+            [AGST] = @AGST,
+            [ST_ETC] = @ST_ETC,
+            [INDT] = @INDT
+        WHEN NOT MATCHED THEN
+          INSERT ([ANCD],[PNUM],[SVDT],[ST_PLAC],[ST_KIND],[GYN],[MOST],[LCST],[DNST],[MGST],[AGST],[ST_ETC],[INDT])
+          VALUES (@ANCD,@PNUM,@SVDT,@ST_PLAC,@ST_KIND,@GYN,@MOST,@LCST,@DNST,@MGST,@AGST,@ST_ETC,@INDT);
+      `;
+
+      const result = await request.query(query);
+      results.push({ index: i, pnum: String(pnum), ok: true, rowsAffected: result.rowsAffected || [] });
+    }
+
+    return new Response(JSON.stringify({ success: true, data: results, count: results.length }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (err) {
+    console.error('F14020 저장 오류:', err);
+    return new Response(JSON.stringify({ success: false, error: err.message, details: err.toString() }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+

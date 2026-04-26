@@ -49,6 +49,7 @@ export default function DailyBeneficiaryPerformance() {
 	const [memberPrintData, setMemberPrintData] = useState<PerformanceData[]>([]);
 	const [loadingMemberData, setLoadingMemberData] = useState(false);
 	const [printingMonthly, setPrintingMonthly] = useState(false);
+	const [bulkAdding, setBulkAdding] = useState(false);
 
 	// 날짜 변경 함수
 	const handleDateChange = (days: number) => {
@@ -213,6 +214,142 @@ export default function DailyBeneficiaryPerformance() {
 		setNextId(prev => prev + 1);
 		setEditingRowId(newRow.id); // 새로 추가된 행을 수정 모드로 설정
 		setCurrentPage(1); // 첫 페이지로 이동
+	};
+
+	const buildDefaultRowForMember = (member: any, mealTypeDefault: string | undefined): PerformanceData => {
+		return {
+			id: 0, // 임시 (추가 시 재부여)
+			serialNo: 0, // 임시 (추가 시 재부여)
+			name: member.P_NM || '',
+			birthDate: formatDate(member.P_BRDT),
+			ancd: member.ANCD || '',
+			pnum: member.PNUM || '',
+			mealLocation: '식장',
+			mealType: mealTypeDefault || '1',
+			gyn: '1', // 기본: 입원(외박)
+			mealStatus: { breakfast: '1', lunch: '1', dinner: '1' },
+			specialNotes: '',
+			snackStatus: { morning: '1', afternoon: '1' }
+		};
+	};
+
+	// 전체추가: 입소중 수급자 일괄 등록 + 디폴트 값 세팅 + 전체저장
+	const handleBulkAddAdmittedMembers = async () => {
+		if (bulkAdding) return;
+		setBulkAdding(true);
+		try {
+			// 1) 입소중 수급자 목록 조회 (세션 ANCD 기준)
+			const memberRes = await fetch('/api/f10010');
+			const memberJson = await memberRes.json();
+			if (!memberJson?.success || !Array.isArray(memberJson.data)) {
+				alert('입소중 수급자 목록을 조회할 수 없습니다.');
+				return;
+			}
+
+			const admitted = memberJson.data
+				.filter((m: any) => String(m.P_ST || '').trim() === '1')
+				.sort((a: any, b: any) => String(a.P_NM || '').localeCompare(String(b.P_NM || ''), 'ko'));
+
+			if (admitted.length === 0) {
+				alert('현재 입소중인 수급자가 없습니다.');
+				return;
+			}
+
+			// 2) F30112 기준정보로 식사종류(ST_KIND) 디폴트 조회 (PNUM 배치)
+			const pnums = admitted.map((m: any) => String(m.PNUM || '').trim()).filter(Boolean);
+			const 기준Res = await fetch(`/api/f30112?pnums=${encodeURIComponent(pnums.join(','))}`);
+			const 기준Json = await 기준Res.json();
+			const byPnum = new Map<string, any>();
+			if (기준Json?.success && Array.isArray(기준Json.data)) {
+				기준Json.data.forEach((row: any) => {
+					const key = String(row.PNUM ?? '').trim();
+					if (key) byPnum.set(key, row);
+				});
+			}
+
+			// 3) 기존에 이미 등록된 PNUM은 중복 추가 방지
+			const existingPnums = new Set(combinedData.map((r) => String(r.pnum || '').trim()).filter(Boolean));
+
+			// 4) 디폴트 행 생성
+			const newRowsRaw: PerformanceData[] = admitted
+				.filter((m: any) => {
+					const p = String(m.PNUM || '').trim();
+					return p && !existingPnums.has(p);
+				})
+				.map((m: any) => {
+					const 기준 = byPnum.get(String(m.PNUM || '').trim());
+					const mealTypeDefault = 기준?.ST_KIND != null ? String(기준.ST_KIND) : undefined;
+					return buildDefaultRowForMember(m, mealTypeDefault);
+				});
+
+			if (newRowsRaw.length === 0) {
+				alert('이미 모두 등록되어 있습니다.');
+				return;
+			}
+
+			// 5) 화면에 반영 (가나다순 유지 + 연번 재부여)
+			const merged = [...combinedData, ...newRowsRaw]
+				.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'))
+				.map((row, idx) => ({
+					...row,
+					id: idx + 1,
+					serialNo: idx + 1
+				}));
+			setCombinedData(merged);
+			setNextId(merged.length + 1);
+			setEditingRowId(null);
+			setCurrentPage(1);
+
+			// 6) 전체저장 (F14020 업서트)
+			const saveRes = await fetch('/api/f14020', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					svdt: selectedDate,
+					rows: newRowsRaw.map((r) => ({
+						pnum: r.pnum,
+						mealLocation: r.mealLocation,
+						mealType: r.mealType,
+						gyn: r.gyn,
+						mealStatus: r.mealStatus,
+						snackStatus: r.snackStatus,
+						specialNotes: r.specialNotes
+					}))
+				})
+			});
+			const saveJson = await saveRes.json();
+			if (!saveJson?.success) {
+				alert(`전체저장 실패: ${saveJson?.error || '알 수 없는 오류'}`);
+				return;
+			}
+
+			// 6-1) 활력증상(F30120) 공란 데이터 자동 생성 (해당 날짜, 신규 추가된 수급자들)
+			try {
+				const vsRes = await fetch('/api/f30120', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						rsdt: selectedDate,
+						pnums: newRowsRaw.map((r) => r.pnum).filter(Boolean)
+					})
+				});
+				const vsJson = await vsRes.json();
+				if (!vsJson?.success) {
+					console.warn('활력증상 공란 생성 실패:', vsJson);
+				}
+			} catch (e) {
+				console.warn('활력증상 공란 생성 오류:', e);
+			}
+
+			// 7) DB 기준으로 새로고침
+			await fetchPerformanceData(selectedDate);
+			alert(`전체추가 완료 (${newRowsRaw.length}명)`);
+		} catch (e) {
+			console.error('전체추가 오류:', e);
+			alert('전체추가 중 오류가 발생했습니다.');
+		} finally {
+			setBulkAdding(false);
+		}
 	};
 
 	// 수급자 검색 함수
@@ -994,6 +1131,14 @@ export default function DailyBeneficiaryPerformance() {
 					</div>
 					{/* 오른쪽 상단 버튼 */}
 					<div className="ml-auto flex items-center gap-2">
+						<button
+							type="button"
+							onClick={handleBulkAddAdmittedMembers}
+							disabled={bulkAdding}
+							className="px-4 py-1.5 text-sm border border-green-500 rounded bg-green-200 hover:bg-green-300 text-green-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{bulkAdding ? '전체추가 중...' : '전체추가'}
+						</button>
 						<button 
 							onClick={handlePrintDaily}
 							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"

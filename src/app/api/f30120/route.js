@@ -160,3 +160,88 @@ export async function GET(req) {
   }
 }
 
+export async function POST(req) {
+  try {
+    const searchParams = req.nextUrl.searchParams;
+    const ancd = searchParams.get('ancd'); // optional, 세션 검증용
+
+    const gate = assertAnCdMatchesSession(req, ancd || null);
+    if (!gate.ok) return gate.response;
+
+    const pool = await connPool;
+    if (!pool) {
+      return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const body = await req.json();
+    const { rsdt, pnums } = body || {};
+
+    if (!rsdt || !Array.isArray(pnums)) {
+      return new Response(JSON.stringify({ success: false, error: 'rsdt와 pnums 배열이 필요합니다' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const rsdtDigits = String(rsdt).includes('-') ? String(rsdt).replace(/-/g, '') : String(rsdt);
+    if (!/^\d{8}$/.test(rsdtDigits)) {
+      return new Response(JSON.stringify({ success: false, error: 'rsdt 형식이 올바르지 않습니다 (yyyy-mm-dd 또는 yyyymmdd)' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const now = new Date();
+    const nowStr = now.toISOString().slice(0, 19).replace('T', ' ');
+
+    const results = [];
+    for (let i = 0; i < pnums.length; i++) {
+      const pnum = pnums[i];
+      if (pnum == null || String(pnum).trim() === '') continue;
+
+      const request = pool.request();
+      request.input('ANCD', gate.sessionAncd);
+      request.input('PNUM', String(pnum).trim());
+      request.input('RSDT', rsdtDigits);
+      request.input('INDT', nowStr);
+
+      // 공란(빈값)으로 생성. MATCHED는 유지(스킵)하여 기존 입력값을 덮어쓰지 않음.
+      const query = `
+        MERGE [돌봄시설DB].[dbo].[F30120] AS T
+        USING (SELECT @ANCD AS ANCD, @PNUM AS PNUM, @RSDT AS RSDT) AS S
+          ON (T.[ANCD] = S.[ANCD] AND CAST(T.[PNUM] AS VARCHAR) = CAST(S.[PNUM] AS VARCHAR) AND T.[RSDT] = S.[RSDT])
+        WHEN NOT MATCHED THEN
+          INSERT (
+            [ANCD],[PNUM],[RSDT],
+            [SBDS],[EBDS],[SBDP],[EBDP],[TMPBD],[PUCNT],[BRCNT],[WEIGHT],[HEIGHT],
+            [BJYN],[BJDG],[BJPA],[NUDES],
+            [INDT]
+          )
+          VALUES (
+            @ANCD,@PNUM,@RSDT,
+            NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+            NULL,NULL,NULL,'',
+            @INDT
+          );
+      `;
+
+      const result = await request.query(query);
+      results.push({ index: i, pnum: String(pnum).trim(), ok: true, rowsAffected: result.rowsAffected || [] });
+    }
+
+    return new Response(JSON.stringify({ success: true, data: results, count: results.length }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (err) {
+    console.error('F30120 저장(공란 생성) 오류:', err);
+    return new Response(JSON.stringify({ success: false, error: err.message, details: err.toString() }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
