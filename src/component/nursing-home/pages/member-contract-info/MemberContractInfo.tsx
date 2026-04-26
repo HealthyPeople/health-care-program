@@ -1,6 +1,13 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import {
+	NO_ROOM_VALUE,
+	attachLatestRoomNoByPnum,
+	availableFloorsFromMembers,
+	extractFloorFromRoomNo,
+	normalizeRoomNo
+} from '../../utils/roomNoFloor';
 
 interface MemberData {
   [key: string]: any;
@@ -379,19 +386,21 @@ export default function MemberContractInfo() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMembers(result.data);
+				const list = Array.isArray(result.data) ? result.data : [];
+				const merged = await attachLatestRoomNoByPnum(list);
+				setMembers(merged);
 				if (resync) {
-					const updated = result.data.find(
+					const updated = merged.find(
 						(m: MemberData) =>
 							String(m.ANCD) === String(resync.ancd) && String(m.PNUM) === String(resync.pnum)
 					);
 					if (updated) setSelectedMember(updated);
-				} else if (result.data.length > 0 && !selectedMember) {
-					setSelectedMember(result.data[0]);
-				} else if (result.data.length === 0) {
+				} else if (merged.length > 0 && !selectedMember) {
+					setSelectedMember(merged[0]);
+				} else if (merged.length === 0) {
 					setSelectedMember(null);
 				}
-				return result.data;
+				return merged;
 			} else {
 				setError(result.error || '수급자 데이터 조회 실패');
 				return null;
@@ -570,10 +579,12 @@ export default function MemberContractInfo() {
 		
 		// 층수 필터링
 		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
+			if (selectedFloor === NO_ROOM_VALUE) {
+				if (normalizeRoomNo((member as any).ROOM_NO) !== '') return false;
+			} else {
+				const memberFloor = extractFloorFromRoomNo((member as any).ROOM_NO);
+				const selectedFloorNum = Number(String(selectedFloor).trim());
+				if (!Number.isFinite(selectedFloorNum) || memberFloor !== selectedFloorNum) return false;
 			}
 		}
 		
@@ -600,6 +611,8 @@ export default function MemberContractInfo() {
 		const nameB = (b.P_NM || '').trim();
 		return nameA.localeCompare(nameB, 'ko');
 	});
+
+	const availableFloors = availableFloorsFromMembers(members as any);
 
 	// 페이지네이션 계산
 	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
@@ -1163,17 +1176,12 @@ export default function MemberContractInfo() {
 									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
 								>
 									<option value="">층수 전체</option>
-									{Array.from(
-										new Set(
-											members.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== '')
-										)
-									)
-										.sort((a, b) => Number(a) - Number(b))
-										.map(floor => (
-											<option key={floor} value={String(floor)}>
-												{floor}층
-											</option>
-										))}
+									<option value={NO_ROOM_VALUE}>방번호 없음</option>
+									{availableFloors.map((floor) => (
+										<option key={floor} value={String(floor)}>
+											{floor}층
+										</option>
+									))}
 								</select>
 							</div>
 						</div>
@@ -1198,25 +1206,26 @@ export default function MemberContractInfo() {
 										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">수급자명</th>
 										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">성별</th>
 										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">등급</th>
+										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold border-r border-blue-200">방번호</th>
 										<th className="text-center px-1 py-1.5 text-blue-900 font-semibold">나이</th>
 									</tr>
 								</thead>
 								<tbody>
 									{loading ? (
 										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">
+											<td colSpan={7} className="text-center px-2 py-4 text-blue-900/60">
 												로딩 중...
 											</td>
 										</tr>
 									) : error ? (
 										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-red-600">
+											<td colSpan={7} className="text-center px-2 py-4 text-red-600">
 												{error}
 											</td>
 										</tr>
 									) : filteredMembers.length === 0 ? (
 										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">
+											<td colSpan={7} className="text-center px-2 py-4 text-blue-900/60">
 												수급자 데이터가 없습니다
 											</td>
 										</tr>
@@ -1245,6 +1254,9 @@ export default function MemberContractInfo() {
 												</td>
 												<td className="text-center px-1 py-1.5 border-r border-blue-100">
 													{formatCareGradeLabel(member.P_GRD)}
+												</td>
+												<td className="text-center px-1 py-1.5 border-r border-blue-100">
+													{normalizeRoomNo((member as any).ROOM_NO) !== '' ? String((member as any).ROOM_NO) : '방번호없음'}
 												</td>
 												<td className="text-center px-1 py-1.5">{calculateAge(member.P_BRDT)}</td>
 											</tr>

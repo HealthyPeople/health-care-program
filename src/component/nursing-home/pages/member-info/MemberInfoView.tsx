@@ -1170,10 +1170,6 @@ export default function MemberInfoView() {
 											</option>
 										))}
 									</select>
-									{/* <div className="text-[11px] text-blue-900/70">
-										<div>{availableFloors.length > 0 ? `현재 층수 옵션: ${availableFloors.join(', ')}` : '현재 층수 옵션: 없음'}</div>
-										<div>{`방번호 없음: ${noRoomCount}명`}</div>
-									</div> */}
 								</div>
 								{/* 이름 검색 */}
 								<div className="space-y-1">

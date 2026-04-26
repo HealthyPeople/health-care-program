@@ -1,6 +1,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import {
+	NO_ROOM_VALUE,
+	attachLatestRoomNoByPnum,
+	availableFloorsFromMembers,
+	countNoRoom,
+	extractFloorFromRoomNo,
+	normalizeRoomNo
+} from '../../utils/roomNoFloor';
 
 interface MemberData {
 	ANCD: string;
@@ -42,7 +50,9 @@ export default function BeneficiaryStatusInquiry() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMemberList(result.data || []);
+				const list = (Array.isArray(result.data) ? result.data : []) as MemberData[];
+				const merged = await attachLatestRoomNoByPnum(list);
+				setMemberList(merged as MemberData[]);
 			}
 		} catch (err) {
 			console.error('수급자 목록 조회 오류:', err);
@@ -142,10 +152,12 @@ export default function BeneficiaryStatusInquiry() {
 		}
 		
 		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
+			if (selectedFloor === NO_ROOM_VALUE) {
+				if (normalizeRoomNo((member as any).ROOM_NO) !== '') return false;
+			} else {
+				const memberFloor = extractFloorFromRoomNo((member as any).ROOM_NO);
+				const selectedFloorNum = Number(String(selectedFloor).trim());
+				if (!Number.isFinite(selectedFloorNum) || memberFloor !== selectedFloorNum) return false;
 			}
 		}
 		
@@ -162,6 +174,9 @@ export default function BeneficiaryStatusInquiry() {
 		const nameB = (b.P_NM || '').trim();
 		return nameA.localeCompare(nameB, 'ko');
 	});
+
+	const availableFloors = availableFloorsFromMembers(memberList as any);
+	const noRoomCount = countNoRoom(memberList as any);
 
 	// 페이지네이션 계산
 	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
@@ -500,8 +515,11 @@ export default function BeneficiaryStatusInquiry() {
 									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
 								>
 									<option value="">층수 전체</option>
-									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-										<option key={floor} value={String(floor)}>{floor}층</option>
+									<option value={NO_ROOM_VALUE}>방번호 없음</option>
+									{availableFloors.map((floor) => (
+										<option key={floor} value={String(floor)}>
+											{floor}층
+										</option>
 									))}
 								</select>
 							</div>
@@ -519,17 +537,18 @@ export default function BeneficiaryStatusInquiry() {
 										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">수급자명</th>
 										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">성별</th>
 										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">등급</th>
+										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">방번호</th>
 										<th className="px-2 py-1.5 font-semibold text-center text-blue-900">나이</th>
 									</tr>
 								</thead>
 								<tbody>
 									{loading ? (
 										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
+											<td colSpan={7} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
 										</tr>
 									) : filteredMembers.length === 0 ? (
 										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">수급자 데이터가 없습니다</td>
+											<td colSpan={7} className="px-2 py-4 text-center text-blue-900/60">수급자 데이터가 없습니다</td>
 										</tr>
 									) : (
 										currentMembers.map((member, index) => (
@@ -547,6 +566,9 @@ export default function BeneficiaryStatusInquiry() {
 												</td>
 												<td className="px-2 py-1.5 text-center border-r border-blue-100">
 													{formatCareGradeLabel(member.P_GRD)}
+												</td>
+												<td className="px-2 py-1.5 text-center border-r border-blue-100">
+													{normalizeRoomNo((member as any).ROOM_NO) !== '' ? String((member as any).ROOM_NO) : '방번호없음'}
 												</td>
 												<td className="px-2 py-1.5 text-center">{calculateAge(member.P_BRDT)}</td>
 											</tr>

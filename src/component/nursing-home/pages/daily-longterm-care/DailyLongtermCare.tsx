@@ -1,6 +1,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import {
+	NO_ROOM_VALUE,
+	attachLatestRoomNoByPnum,
+	availableFloorsFromMembers,
+	countNoRoom,
+	extractFloorFromRoomNo,
+	normalizeRoomNo
+} from '../../utils/roomNoFloor';
 
 interface MemberData {
   [key: string]: any;
@@ -81,10 +89,12 @@ export default function DailyLongtermCare() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMembers(result.data);
-				if (result.data.length > 0 && !selectedMember) {
-					setSelectedMember(result.data[0]);
-				} else if (result.data.length === 0) {
+				const list = Array.isArray(result.data) ? result.data : [];
+				const merged = await attachLatestRoomNoByPnum(list);
+				setMembers(merged);
+				if (merged.length > 0 && !selectedMember) {
+					setSelectedMember(merged[0]);
+				} else if (merged.length === 0) {
 					setSelectedMember(null);
 				}
 			} else {
@@ -181,10 +191,12 @@ export default function DailyLongtermCare() {
 		}
 		
 		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
+			if (selectedFloor === NO_ROOM_VALUE) {
+				if (normalizeRoomNo((member as any).ROOM_NO) !== '') return false;
+			} else {
+				const memberFloor = extractFloorFromRoomNo((member as any).ROOM_NO);
+				const selectedFloorNum = Number(String(selectedFloor).trim());
+				if (!Number.isFinite(selectedFloorNum) || memberFloor !== selectedFloorNum) return false;
 			}
 		}
 		
@@ -208,6 +220,9 @@ export default function DailyLongtermCare() {
 		const nameB = (b.P_NM || '').trim();
 		return nameA.localeCompare(nameB, 'ko');
 	});
+
+	const availableFloors = availableFloorsFromMembers(members as any);
+	const noRoomCount = countNoRoom(members as any);
 
 	// 페이지네이션 계산
 	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
@@ -289,8 +304,11 @@ export default function DailyLongtermCare() {
 										className="w-full px-2 py-1 text-sm text-blue-900 bg-white border border-blue-300 rounded"
 									>
 										<option value="">층수 전체</option>
-										{Array.from(new Set(members.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-											<option key={floor} value={String(floor)}>{floor}층</option>
+										<option value={NO_ROOM_VALUE}>방번호 없음</option>
+										{availableFloors.map((floor) => (
+											<option key={floor} value={String(floor)}>
+												{floor}층
+											</option>
 										))}
 									</select>
 								</div>
