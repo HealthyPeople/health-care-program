@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 
 interface ServicePerformanceData {
+	ANCD?: string;
+	YYYYMM?: string;
 	PNUM: string;
 	P_NM: string; // 수급자
 	P_BRDT: string; // 생일
@@ -14,31 +16,73 @@ interface ServicePerformanceData {
 	BP_DIASTOLIC: string; // 혈압-이완
 	TEMPERATURE: string; // 체온
 	BATH: string; // 목욕
+	// 요약 텍스트(선택 표시용)
+	PH_VIEW?: string;
+	NS_VIEW?: string;
+	FN_VIEW?: string;
+	RG_VIEW?: string;
 	[key: string]: any;
 }
 
 export default function MonthlyLongtermSummary() {
 	const [performanceList, setPerformanceList] = useState<ServicePerformanceData[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [selectedYear, setSelectedYear] = useState<string>('2025');
-	const [selectedMonth, setSelectedMonth] = useState<string>('12');
+	const now = new Date();
+	const [selectedYear, setSelectedYear] = useState<string>(String(now.getFullYear()));
+	const [selectedMonth, setSelectedMonth] = useState<string>(String(now.getMonth() + 1));
 	const [selectedBeneficiary, setSelectedBeneficiary] = useState<string>('');
-	const [selectedBirthday, setSelectedBirthday] = useState<string>('2025-12-10');
+	const [selectedBirthday, setSelectedBirthday] = useState<string>('');
+	const [selectedPnum, setSelectedPnum] = useState<string>('');
+
+	const [showDetailsModal, setShowDetailsModal] = useState(false);
+	const [detailsLoading, setDetailsLoading] = useState(false);
+	const [detailsData, setDetailsData] = useState<any | null>(null);
+	const [detailsBaseRow, setDetailsBaseRow] = useState<ServicePerformanceData | null>(null);
 
 	// 급여년월 조회
 	const fetchPerformanceData = async () => {
 		setLoading(true);
 		try {
-			const yearMonth = `${selectedYear}-${selectedMonth.padStart(2, '0')}`;
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/monthly-longterm-summary?yearMonth=${encodeURIComponent(yearMonth)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setPerformanceList([]);
+			const yyyymm = `${selectedYear}${selectedMonth.padStart(2, '0')}`;
+			const url = `/api/f14090?yyyymm=${encodeURIComponent(yyyymm)}`;
+			const response = await fetch(url);
+			const result = await response.json();
+
+			if (result?.success && Array.isArray(result.data)) {
+				const transformed: ServicePerformanceData[] = result.data.map((row: any) => ({
+					...row,
+					ANCD: row.ANCD,
+					YYYYMM: row.YYYYMM,
+					PNUM: String(row.PNUM ?? ''),
+					P_NM: row.P_NM || '',
+					P_BRDT: row.P_BRDT || '',
+					P_SEX: row.P_SEX || '',
+					ROOM_NO: row.ROOM_NO || '',
+					P_GRD: row.P_GRD || '',
+					PROVIDED_DAYS: Number(row.SV_CNT ?? 0),
+					OUT_DAYS: Number(row.AB_CNT ?? 0),
+					BP_SYSTOLIC: row.NS_SBDP != null ? String(row.NS_SBDP) : '',
+					BP_DIASTOLIC: row.NS_EBDP != null ? String(row.NS_EBDP) : '',
+					TEMPERATURE: row.NS_TMPBD != null ? String(row.NS_TMPBD) : '',
+					BATH: row.PH_BATH_CNT != null ? String(row.PH_BATH_CNT) : ''
+				}));
+
+				setPerformanceList(transformed);
+				// 선택값 초기화(데이터가 바뀐 경우)
+				if (transformed.length === 0) {
+					setSelectedBeneficiary('');
+					setSelectedBirthday('');
+					setSelectedPnum('');
+				}
+			} else {
+				setPerformanceList([]);
+				setSelectedBeneficiary('');
+				setSelectedBirthday('');
+				setSelectedPnum('');
+			}
 		} catch (err) {
 			console.error('서비스실적 조회 오류:', err);
+			setPerformanceList([]);
 		} finally {
 			setLoading(false);
 		}
@@ -360,14 +404,31 @@ export default function MonthlyLongtermSummary() {
 	};
 
 	// 상세내역
-	const handleViewDetails = () => {
-		if (!selectedBeneficiary) {
+	const handleViewDetails = async () => {
+		if (!selectedPnum) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
 
-		// TODO: 상세내역 페이지로 이동
-		alert('상세내역 기능은 준비 중입니다.');
+		const yyyymm = `${selectedYear}${selectedMonth.padStart(2, '0')}`;
+		setDetailsBaseRow(performanceList.find((r) => String(r.PNUM ?? '') === String(selectedPnum)) || null);
+		setShowDetailsModal(true);
+		setDetailsLoading(true);
+		setDetailsData(null);
+		try {
+			const res = await fetch(`/api/f14091?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(selectedPnum)}`);
+			const json = await res.json();
+			if (json?.success) {
+				setDetailsData(json.data || null);
+			} else {
+				setDetailsData(null);
+			}
+		} catch (e) {
+			console.error('상세내역 조회 오류:', e);
+			setDetailsData(null);
+		} finally {
+			setDetailsLoading(false);
+		}
 	};
 
 	// 성별 표시 변환
@@ -385,6 +446,24 @@ export default function MonthlyLongtermSummary() {
 			return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
 		}
 		return dateStr;
+	};
+
+	const toDateInput = (v: any): string => {
+		if (!v) return '';
+		const s = String(v);
+		if (s.includes('-')) return s.slice(0, 10);
+		if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+		return s.slice(0, 10);
+	};
+
+	const yesNoIcon = (v: any) => {
+		const s = String(v ?? '').trim();
+		const on = s === '1' || s.toUpperCase() === 'Y' || s.toUpperCase() === 'T' || s === 'true';
+		return (
+			<span className={`inline-flex items-center justify-center w-5 h-5 border border-gray-400 ${on ? 'bg-green-100' : 'bg-gray-200'}`}>
+				{on ? '✓' : ''}
+			</span>
+		);
 	};
 
 	return (
@@ -480,9 +559,10 @@ export default function MonthlyLongtermSummary() {
 										onClick={() => {
 											setSelectedBeneficiary(item.P_NM || '');
 											setSelectedBirthday(formatDate(item.P_BRDT || ''));
+											setSelectedPnum(String(item.PNUM ?? ''));
 										}}
 										className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-											selectedBeneficiary === item.P_NM ? 'bg-blue-100' : ''
+											selectedPnum === String(item.PNUM ?? '') ? 'bg-blue-100' : ''
 										}`}
 									>
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{item.P_NM || '-'}</td>
@@ -556,6 +636,257 @@ export default function MonthlyLongtermSummary() {
 					</div>
 				</div>
 			</div>
+
+			{/* 상세내역 모달 */}
+			{showDetailsModal && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+					onClick={() => setShowDetailsModal(false)}
+				>
+					<div
+						className="w-[1050px] max-w-[98vw] max-h-[92vh] overflow-auto bg-white border border-blue-400 rounded-lg shadow-xl"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
+							<div className="flex-1 text-center text-xl font-semibold tracking-wide text-blue-900">월 서비스실적 조회</div>
+							<div className="flex items-center gap-2">
+								<button
+									className="px-4 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
+									onClick={handleRegisterCenterOpinion}
+								>
+									센터소견등록
+								</button>
+								<button
+									className="px-6 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
+									onClick={() => setShowDetailsModal(false)}
+								>
+									닫 기
+								</button>
+							</div>
+						</div>
+
+						<div className="p-2 space-y-1">
+							{detailsLoading ? (
+								<div className="py-10 text-center text-blue-900/60">조회 중...</div>
+							) : (
+								<>
+									{(() => {
+										const r = (detailsBaseRow ?? {}) as any;
+										const yyNo = (r as any).P_YYNO || '';
+										const yyEnd = (r as any).P_YYEDT || '';
+										const roomNo = (r as any).ROOM_NO || '';
+										const meals = {
+											breakfastGood: (r as any).MOST_BT_CNT ?? '',
+											breakfastBad: (r as any).MOST_BD_CNT ?? '',
+											lunchGood: (r as any).LCST_BT_CNT ?? '',
+											lunchBad: (r as any).LCST_BD_CNT ?? '',
+											dinnerGood: (r as any).DNST_BT_CNT ?? '',
+											dinnerBad: (r as any).DNST_BD_CNT ?? '',
+											mSnackGood: (r as any).MGST_BT_CNT ?? '',
+											mSnackBad: (r as any).MGST_BD_CNT ?? '',
+											aSnackGood: (r as any).AGST_BT_CNT ?? '',
+											aSnackBad: (r as any).AGST_BD_CNT ?? ''
+										};
+
+										const executeItems1 = [
+											{ label: '세면,구강,머리감기,몸단장,옷갈아입기', key: 'PH_HEAD_HELP' },
+											{ label: '이동도움 및 신체기능 유지, 증진', key: 'PH_MOVE_HELP' },
+											{ label: '체위변경(2시간마다)', key: 'PH_CHANG_HELP' },
+											{ label: '산책동행', key: 'PH_WORK_HELP' },
+											{ label: '외출동행', key: 'PH_OUT_HELP' }
+										];
+										const executeItems2 = [
+											{ label: '인지관리 지원', key: 'FN_COGN_HELP' },
+											{ label: '의사소통도움 및 신체 기능유지 증진', key: 'FN_MOVE_HELP' }
+										];
+										const executeItems3 = [
+											{ label: '신체·인지기능 향상 프로그램', key: 'FN_MIND_HELP' },
+											{ label: '신체기능·기본동작 일상생활활동작훈련', key: 'FN_MOVE_HELP' },
+											{ label: '인지기능 향상훈련', key: 'FN_MIND_TRAIN' },
+											{ label: '물리(작업)치료', key: 'FN_PHY_HELP' }
+										];
+
+										return (
+											<div className="border border-blue-300 rounded-lg overflow-hidden">
+												{/* 상단 기본정보 */}
+												<div className="grid grid-cols-12 gap-1 p-2">
+													<div className="col-span-6 grid grid-cols-12 gap-1">
+														<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">수 급 자</div>
+														<div className="col-span-10 border border-blue-300 px-2 py-1 text-sm bg-white">{selectedBeneficiary}</div>
+
+														<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">생 일</div>
+														<div className="col-span-4 border border-blue-300 px-2 py-1 text-sm bg-white">{selectedBirthday || toDateInput((r as any).P_BRDT)}</div>
+														<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">성 별</div>
+														<div className="col-span-4 border border-blue-300 px-2 py-1 text-sm bg-white">{formatGender((r as any).P_SEX || '')}</div>
+													</div>
+
+													<div className="col-span-6 grid grid-cols-12 gap-1">
+														<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">요양등급</div>
+														<div className="col-span-8 border border-blue-300 px-2 py-1 text-sm bg-white">{(r as any).P_GRD || ''}</div>
+
+														<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">장기요양인정번호</div>
+														<div className="col-span-8 border border-blue-300 px-2 py-1 text-sm bg-white">{yyNo}</div>
+
+														<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">만료일자</div>
+														<div className="col-span-8 border border-blue-300 px-2 py-1 text-sm bg-white">{toDateInput(yyEnd)}</div>
+													</div>
+
+													<div className="col-span-12 grid grid-cols-12 gap-1">
+														<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">제공일수</div>
+														<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white">{String((r as any).SV_CNT ?? r.PROVIDED_DAYS ?? '')}</div>
+														<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">외박일수</div>
+														<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white">{String((r as any).AB_CNT ?? r.OUT_DAYS ?? '')}</div>
+														<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">방번호</div>
+														<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white">{roomNo}</div>
+													</div>
+												</div>
+
+												{/* 식사 집계 */}
+												<div className="border-t border-blue-200 p-2 bg-blue-50/20">
+													<div className="grid grid-cols-12 gap-1 text-sm">
+														{/* 아침 */}
+														<div className="col-span-4 grid grid-cols-12 gap-1 items-center">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-blue-900">아침식사</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">양호</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.breakfastGood}</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">이상</div>
+															<div className="hidden"></div>
+															<div className="hidden"></div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.breakfastBad}</div>
+														</div>
+														{/* 점심 */}
+														<div className="col-span-4 grid grid-cols-12 gap-1 items-center">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-blue-900">점심식사</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">양호</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.lunchGood}</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">이상</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.lunchBad}</div>
+														</div>
+														{/* 저녁 */}
+														<div className="col-span-4 grid grid-cols-12 gap-1 items-center">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-blue-900">저녁식사</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">양호</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.dinnerGood}</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">이상</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.dinnerBad}</div>
+														</div>
+
+														{/* 오전간식 */}
+														<div className="col-span-4 grid grid-cols-12 gap-1 items-center">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-blue-900">오전간식</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">양호</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.mSnackGood}</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">이상</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.mSnackBad}</div>
+														</div>
+														{/* 오후간식 */}
+														<div className="col-span-4 grid grid-cols-12 gap-1 items-center">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-blue-900">오후간식</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">양호</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.aSnackGood}</div>
+															<div className="col-span-3 bg-blue-100 border border-blue-300 px-2 py-1 text-center text-blue-900">이상</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 bg-white text-center">{meals.aSnackBad}</div>
+														</div>
+													</div>
+												</div>
+
+												{/* 중간 서비스 수행/관찰 */}
+												<div className="border-t border-blue-200 p-2 grid grid-cols-12 gap-2">
+													<div className="col-span-7 space-y-1">
+														<div className="space-y-1">
+															{executeItems1.map((it) => (
+																<div key={it.key} className="flex items-center gap-2">
+																	<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
+																	<div className="flex items-center gap-1 w-16 justify-center">
+																		{yesNoIcon((r as any)[it.key])}
+																		<span className="text-sm">실시</span>
+																	</div>
+																</div>
+															))}
+														</div>
+														<div className="space-y-1">
+															{executeItems2.map((it) => (
+																<div key={it.key} className="flex items-center gap-2">
+																	<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
+																	<div className="flex items-center gap-1 w-16 justify-center">
+																		{yesNoIcon((r as any)[it.key])}
+																		<span className="text-sm">실시</span>
+																	</div>
+																</div>
+															))}
+														</div>
+
+														<div className="grid grid-cols-12 gap-1 items-center pt-0.5">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">평균혈압-(수축)</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_SBDP ?? ''}</div>
+															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">(이완)</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_EBDP ?? ''}</div>
+															<div className="col-span-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">체온</div>
+															<div className="col-span-1 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_TMPBD ?? ''}</div>
+														</div>
+													</div>
+
+													<div className="col-span-5 space-y-1">
+														<div className="grid grid-cols-12 gap-1 items-center">
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">투약관리</div>
+															<div className="col-span-2 flex items-center gap-2">{yesNoIcon((r as any).NS_ETC)}</div>
+															<div className="col-span-6"></div>
+
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">목창관리</div>
+															<div className="col-span-2 flex items-center gap-2">{yesNoIcon((r as any).NS_SORE_CHK)}</div>
+															<div className="col-span-6"></div>
+
+															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">관찰</div>
+															<div className="col-span-2 flex items-center gap-2">{yesNoIcon((r as any).NS_MEDI_CHK)}</div>
+															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">이상있음</div>
+															<div className="col-span-4 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_SORE_MNG_NM ?? ''}</div>
+														</div>
+													</div>
+												</div>
+
+												{/* 소견(관찰내역) - 하단으로 내려서 가로폭 넓게 */}
+												<div className="border-t border-blue-200 p-2">
+													<div className="grid grid-cols-1 gap-1">
+														<div className="border border-blue-300 rounded overflow-hidden">
+															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">신체활동_소견</div>
+															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.PH_VIEW || ''}</div>
+														</div>
+														<div className="border border-blue-300 rounded overflow-hidden">
+															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">간호치료_소견</div>
+															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.NS_VIEW || ''}</div>
+														</div>
+														<div className="border border-blue-300 rounded overflow-hidden">
+															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">기능회복_소견</div>
+															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.FN_VIEW || ''}</div>
+														</div>
+														<div className="border border-blue-300 rounded overflow-hidden">
+															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">인지관리_소견</div>
+															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.RG_VIEW || ''}</div>
+														</div>
+													</div>
+												</div>
+
+												{/* 하단 프로그램 */}
+												<div className="border-t border-blue-200 p-2 space-y-1 bg-blue-50/20">
+													{executeItems3.map((it) => (
+														<div key={it.key} className="flex items-center gap-2">
+															<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
+															<div className="flex items-center gap-1 w-16 justify-center">
+																{yesNoIcon((r as any)[it.key])}
+																<span className="text-sm">실시</span>
+															</div>
+														</div>
+													))}
+												</div>
+											</div>
+										);
+									})()}
+								</>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
