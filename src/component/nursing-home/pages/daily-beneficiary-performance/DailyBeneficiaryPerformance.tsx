@@ -84,7 +84,7 @@ export default function DailyBeneficiaryPerformance() {
 			
 			if (result.success && Array.isArray(result.data)) {
 				// F14020 데이터를 combinedData 형식으로 변환
-				const transformedData: PerformanceData[] = result.data.map((item: any, index: number) => {
+				let transformedData: PerformanceData[] = result.data.map((item: any, index: number) => {
 					return {
 						id: index + 1,
 						serialNo: Number(item.MENUM) || index + 1,
@@ -107,6 +107,11 @@ export default function DailyBeneficiaryPerformance() {
 						}
 					};
 				});
+
+				// 수급자명 가나다순(오름차순) 정렬 후 연번 재부여
+				transformedData = transformedData
+					.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'))
+					.map((row, idx) => ({ ...row, serialNo: idx + 1 }));
 				
 				setCombinedData(transformedData);
 				setNextId(transformedData.length > 0 ? Math.max(...transformedData.map(d => d.id)) + 1 : 1);
@@ -715,7 +720,7 @@ export default function DailyBeneficiaryPerformance() {
 			
 			if (result.success && Array.isArray(result.data)) {
 				// 데이터 변환
-				const transformedData: PerformanceData[] = result.data.map((item: any, index: number) => ({
+				let transformedData: PerformanceData[] = result.data.map((item: any, index: number) => ({
 					id: index + 1,
 					serialNo: index + 1,
 					name: item.P_NM || '',
@@ -736,6 +741,9 @@ export default function DailyBeneficiaryPerformance() {
 						afternoon: item.AGST || '1'
 					}
 				}));
+
+				// 출력 데이터도 수급자명 가나다순 정렬
+				transformedData = transformedData.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
 				
 				setMemberPrintData(transformedData);
 			} else {
