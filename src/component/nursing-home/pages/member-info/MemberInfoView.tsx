@@ -35,6 +35,17 @@ function fmtSex(v: unknown): string {
 	return s || '';
 }
 
+function extractFloorFromRoomNo(roomNo: unknown): number | null {
+	const s = String(roomNo ?? '').trim();
+	if (!s) return null;
+	const digits = s.replace(/\D/g, '');
+	if (!digits) return null;
+	const n = Number(digits);
+	if (!Number.isFinite(n) || n < 0) return null;
+	// 104 => 1층, 1203 => 12층
+	return Math.floor(n / 100);
+}
+
 function todayYYYYMMDD(): string {
 	const d = new Date();
 	const y = d.getFullYear();
@@ -113,9 +124,36 @@ export default function MemberInfoView() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMembers(result.data);
-				if (result.data.length > 0) {
-					setSelectedMember(result.data[0]);
+				// F14090(월 집계)에서 ROOM_NO를 가져와 (ANCD, PNUM) 기준으로 병합
+				let mergedMembers: MemberData[] = Array.isArray(result.data) ? result.data : [];
+				try {
+					const f14090Res = await fetch(`/api/f14090`);
+					const f14090Json = await f14090Res.json();
+					if (f14090Json?.success && Array.isArray(f14090Json.data)) {
+						const roomByPnum = new Map<string, any>();
+						f14090Json.data.forEach((row: any) => {
+							const pnumKey = String(row?.PNUM ?? '').trim();
+							if (!pnumKey) return;
+							// ANCD는 세션 기준으로 이미 필터링되어 오지만, 혹시 몰라서 row.ANCD도 확인
+							roomByPnum.set(pnumKey, row?.ROOM_NO ?? null);
+						});
+
+						mergedMembers = mergedMembers.map((m) => {
+							const pnumKey = String(m?.PNUM ?? '').trim();
+							const roomNo = roomByPnum.get(pnumKey);
+							return {
+								...m,
+								ROOM_NO: roomNo ?? m.ROOM_NO ?? null
+							};
+						});
+					}
+				} catch (e) {
+					// ROOM_NO는 부가 정보이므로 실패해도 기본 목록은 유지
+				}
+
+				setMembers(mergedMembers);
+				if (mergedMembers.length > 0) {
+					setSelectedMember(mergedMembers[0]);
 				} else {
 					setSelectedMember(null);
 				}
@@ -553,6 +591,17 @@ export default function MemberInfoView() {
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
 
+	const NO_ROOM_VALUE = '__NO_ROOM__';
+
+	const availableFloors = Array.from(
+		new Set(members.map((m) => extractFloorFromRoomNo(m.ROOM_NO)).filter((f): f is number => f !== null))
+	).sort((a, b) => a - b);
+
+	const noRoomCount = members.filter((m) => {
+		const s = String(m?.ROOM_NO ?? '').trim();
+		return s === '';
+	}).length;
+
 	// 클라이언트 측 추가 필터링 (서버에서 이미 이름으로 필터링됨)
 	// 모든 필터 조건을 AND로 결합하여 적용
 	const filteredMembers = members.filter(member => {
@@ -578,10 +627,15 @@ export default function MemberInfoView() {
 		
 		// 층수 필터링
 		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
+			if (selectedFloor === NO_ROOM_VALUE) {
+				const roomNo = String(member?.ROOM_NO ?? '').trim();
+				if (roomNo !== '') return false;
+			} else {
+				const memberFloor = extractFloorFromRoomNo(member.ROOM_NO);
+				const selectedFloorNum = Number(String(selectedFloor).trim());
+				if (!Number.isFinite(selectedFloorNum) || memberFloor !== selectedFloorNum) {
+					return false;
+				}
 			}
 		}
 		
@@ -1108,11 +1162,18 @@ export default function MemberInfoView() {
 										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded text-blue-900"
 									>
 										<option value="">층수 전체</option>
-										{/* 동적으로 층수 목록 생성 */}
-										{Array.from(new Set(members.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-											<option key={floor} value={String(floor)}>{floor}층</option>
+										<option value={NO_ROOM_VALUE}>방번호 없음</option>
+										{/* 동적으로 층수 목록 생성 (F14090.ROOM_NO에서 추출) */}
+										{availableFloors.map((floor) => (
+											<option key={floor} value={String(floor)}>
+												{floor}층
+											</option>
 										))}
 									</select>
+									{/* <div className="text-[11px] text-blue-900/70">
+										<div>{availableFloors.length > 0 ? `현재 층수 옵션: ${availableFloors.join(', ')}` : '현재 층수 옵션: 없음'}</div>
+										<div>{`방번호 없음: ${noRoomCount}명`}</div>
+									</div> */}
 								</div>
 								{/* 이름 검색 */}
 								<div className="space-y-1">
@@ -1148,24 +1209,25 @@ export default function MemberInfoView() {
 											<th className="px-2 py-2 font-semibold text-left text-blue-900">이름</th>
 											<th className="px-2 py-2 font-semibold text-left text-blue-900">등급</th>
 											<th className="px-2 py-2 font-semibold text-left text-blue-900">상태</th>
+											<th className="px-2 py-2 font-semibold text-left text-blue-900">방번호</th>
 										</tr>
 									</thead>
 									<tbody>
 										{loading ? (
 											<tr>
-												<td colSpan={3} className="px-2 py-4 text-center text-blue-900/60">
+												<td colSpan={4} className="px-2 py-4 text-center text-blue-900/60">
 													로딩 중...
 												</td>
 											</tr>
 										) : error ? (
 											<tr>
-												<td colSpan={3} className="px-2 py-4 text-center text-red-600">
+												<td colSpan={4} className="px-2 py-4 text-center text-red-600">
 													{error}
 												</td>
 											</tr>
 										) : filteredMembers.length === 0 ? (
 											<tr>
-												<td colSpan={3} className="px-2 py-4 text-center text-blue-900/60">
+												<td colSpan={4} className="px-2 py-4 text-center text-blue-900/60">
 													수급자 데이터가 없습니다
 												</td>
 											</tr>
@@ -1188,6 +1250,9 @@ export default function MemberInfoView() {
 															: member.P_ST === '9' 
 																? '퇴소' 
 																: '-'}
+													</td>
+													<td className="px-2 py-2">
+														{String(member?.ROOM_NO ?? '').trim() !== '' ? String(member.ROOM_NO) : '없음'}
 													</td>
 												</tr>
 											))

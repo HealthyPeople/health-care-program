@@ -3,6 +3,7 @@ import { assertAnCdMatchesSession } from '../../../config/sessionServer';
 
 // F14090 (월 집계) 조회
 // GET /api/f14090?yyyymm=YYYYMM
+// - yyyymm이 없으면 해당 기관의 최신(최대) YYYYMM으로 조회
 export async function GET(req) {
   try {
     const searchParams = req.nextUrl.searchParams;
@@ -11,14 +12,6 @@ export async function GET(req) {
 
     const gate = assertAnCdMatchesSession(req, ancd || null);
     if (!gate.ok) return gate.response;
-
-    const yyyymm = String(yyyymmRaw || '').replace(/\D/g, '');
-    if (!yyyymm || !/^\d{6}$/.test(yyyymm)) {
-      return new Response(JSON.stringify({ success: false, error: 'yyyymm(YYYYMM) 파라미터가 필요합니다' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
 
     const pool = await connPool;
     if (!pool) {
@@ -30,6 +23,33 @@ export async function GET(req) {
 
     const request = pool.request();
     request.input('sessionAncd', gate.sessionAncd);
+
+    let yyyymm = String(yyyymmRaw || '').replace(/\D/g, '');
+    if (yyyymm) {
+      if (!/^\d{6}$/.test(yyyymm)) {
+        return new Response(JSON.stringify({ success: false, error: 'yyyymm(YYYYMM) 형식이 올바르지 않습니다' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    } else {
+      // 최신 YYYYMM 찾기
+      const latestResult = await request.query(`
+        SELECT MAX(CAST([YYYYMM] AS INT)) AS LATEST_YYYYMM
+        FROM [돌봄시설DB].[dbo].[F14090]
+        WHERE [ANCD] = @sessionAncd
+      `);
+
+      const latest = latestResult?.recordset?.[0]?.LATEST_YYYYMM;
+      if (latest == null) {
+        return new Response(JSON.stringify({ success: true, data: [], count: 0, yyyymm: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      yyyymm = String(latest);
+    }
+
     request.input('yyyymm', yyyymm);
 
     // 화면 표시용으로 F10010(수급자 기본정보)와 LEFT JOIN.
@@ -54,7 +74,7 @@ export async function GET(req) {
     const result = await request.query(query);
 
     return new Response(
-      JSON.stringify({ success: true, data: result.recordset || [], count: result.recordset ? result.recordset.length : 0 }),
+      JSON.stringify({ success: true, data: result.recordset || [], count: result.recordset ? result.recordset.length : 0, yyyymm }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
