@@ -38,9 +38,28 @@ export default function MonthlyLongtermSummary() {
 	const [detailsLoading, setDetailsLoading] = useState(false);
 	const [detailsData, setDetailsData] = useState<any | null>(null);
 	const [detailsBaseRow, setDetailsBaseRow] = useState<ServicePerformanceData | null>(null);
+	const [detailsEditing, setDetailsEditing] = useState(false);
+	const [detailsSaving, setDetailsSaving] = useState(false);
+	const [detailsDraft, setDetailsDraft] = useState<{ PH_VIEW: string; NS_VIEW: string; FN_VIEW: string; RG_VIEW: string }>({
+		PH_VIEW: '',
+		NS_VIEW: '',
+		FN_VIEW: '',
+		RG_VIEW: ''
+	});
+	const [detailsOriginal, setDetailsOriginal] = useState<{ PH_VIEW: string; NS_VIEW: string; FN_VIEW: string; RG_VIEW: string }>({
+		PH_VIEW: '',
+		NS_VIEW: '',
+		FN_VIEW: '',
+		RG_VIEW: ''
+	});
+
+	const [rowEditing, setRowEditing] = useState(false);
+	const [rowSaving, setRowSaving] = useState(false);
+	const [rowDraft, setRowDraft] = useState<any>({});
+	const [rowOriginal, setRowOriginal] = useState<any>({});
 
 	const [currentPage, setCurrentPage] = useState(1);
-	const itemsPerPage = 10;
+	const itemsPerPage = 13;
 
 	// 급여년월 조회
 	const fetchPerformanceData = async () => {
@@ -145,6 +164,163 @@ export default function MonthlyLongtermSummary() {
 
 		// TODO: 센터소견등록 모달 또는 페이지로 이동
 		alert('센터소견등록 기능은 준비 중입니다.');
+	};
+
+	const isDetailsDirty =
+		detailsDraft.PH_VIEW !== detailsOriginal.PH_VIEW ||
+		detailsDraft.NS_VIEW !== detailsOriginal.NS_VIEW ||
+		detailsDraft.FN_VIEW !== detailsOriginal.FN_VIEW ||
+		detailsDraft.RG_VIEW !== detailsOriginal.RG_VIEW;
+
+	const rowEditableKeys: string[] = [
+		// 제공/외박/방번호
+		'SV_CNT',
+		'AB_CNT',
+		'ROOM_NO',
+		// 식사
+		'MOST_BT_CNT',
+		'MOST_BD_CNT',
+		'LCST_BT_CNT',
+		'LCST_BD_CNT',
+		'DNST_BT_CNT',
+		'DNST_BD_CNT',
+		'MGST_BT_CNT',
+		'MGST_BD_CNT',
+		'AGST_BT_CNT',
+		'AGST_BD_CNT',
+		// 신체활동
+		'PH_HEAD_HELP',
+		'PH_MOVE_HELP',
+		'PH_CHANG_HELP',
+		'PH_WORK_HELP',
+		'PH_OUT_HELP',
+		'PH_BATH_CNT',
+		'PH_BATH_METH',
+		'PH_BATH_METH_NM',
+		'PH_MEAL_KIND',
+		'PH_MEAL_KIND_NM',
+		'PH_MEAL_VAL',
+		'PH_MEAL_VAL_NM',
+		'PH_MEAL_WT',
+		'PH_MEAL_WT_NM',
+		// 간호/건강
+		'NS_SBDP',
+		'NS_EBDP',
+		'NS_TMPBD',
+		'NS_ETC',
+		'NS_SORE_CHK',
+		'NS_MEDI_CHK',
+		'NS_SORE_MNG_NM',
+		'NS_HEALTH_HELP_NM',
+		'NS_NURSE_HELP_NM',
+		'NS_ETC_NM',
+		'NS_ETC_DESC',
+		// 인지/기능
+		'FN_COGN_HELP',
+		'FN_MOVE_HELP',
+		'FN_MIND_HELP',
+		'FN_MIND_TRAIN',
+		'FN_PHY_HELP'
+	];
+
+	const isRowDirty = rowEditableKeys.some((k) => String(rowDraft?.[k] ?? '') !== String(rowOriginal?.[k] ?? ''));
+
+	const requestCloseDetailsModal = () => {
+		if ((detailsEditing && isDetailsDirty) || (rowEditing && isRowDirty)) {
+			const ok = confirm('수정한 내용을 저장하지 않으면 삭제됩니다. 닫으시겠습니까?');
+			if (!ok) return;
+		}
+		setShowDetailsModal(false);
+		setDetailsEditing(false);
+		setDetailsSaving(false);
+		setRowEditing(false);
+		setRowSaving(false);
+	};
+
+	const handleEnterEditMode = () => {
+		setDetailsEditing(true);
+		setRowEditing(true);
+		const cur = {
+			PH_VIEW: String(detailsData?.PH_VIEW ?? ''),
+			NS_VIEW: String(detailsData?.NS_VIEW ?? ''),
+			FN_VIEW: String(detailsData?.FN_VIEW ?? ''),
+			RG_VIEW: String(detailsData?.RG_VIEW ?? '')
+		};
+		setDetailsOriginal(cur);
+		setDetailsDraft(cur);
+
+		const base = { ...(detailsBaseRow ?? {}) };
+		const picked: any = {};
+		rowEditableKeys.forEach((k) => {
+			picked[k] = base[k] ?? '';
+		});
+		setRowOriginal(picked);
+		setRowDraft(picked);
+	};
+
+	const handleCancelEdit = () => {
+		if (isDetailsDirty || isRowDirty) {
+			const ok = confirm('수정한 내용을 저장하지 않으면 삭제됩니다. 취소하시겠습니까?');
+			if (!ok) return;
+		}
+		setDetailsEditing(false);
+		setDetailsDraft(detailsOriginal);
+		setRowEditing(false);
+		setRowDraft(rowOriginal);
+	};
+
+	const handleSaveDetails = async () => {
+		if (!selectedPnum) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		const yyyymm = `${selectedYear}${selectedMonth.padStart(2, '0')}`;
+		setDetailsSaving(true);
+		setRowSaving(true);
+		try {
+			// 1) F14090 저장 (체크/수치/텍스트 등)
+			const res90 = await fetch(`/api/f14090?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(selectedPnum)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(rowDraft)
+			});
+			const json90 = await res90.json().catch(() => ({}));
+			if (!json90?.success) {
+				alert(json90?.error || '저장 중 오류가 발생했습니다.');
+				return;
+			}
+
+			// 2) F14091 저장 (소견)
+			const res = await fetch(`/api/f14091?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(selectedPnum)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(detailsDraft)
+			});
+			const json = await res.json();
+			if (!json?.success) {
+				alert(json?.error || '저장 중 오류가 발생했습니다.');
+				return;
+			}
+			setDetailsData(json.data || null);
+			const cur = {
+				PH_VIEW: String(json.data?.PH_VIEW ?? ''),
+				NS_VIEW: String(json.data?.NS_VIEW ?? ''),
+				FN_VIEW: String(json.data?.FN_VIEW ?? ''),
+				RG_VIEW: String(json.data?.RG_VIEW ?? '')
+			};
+			setDetailsOriginal(cur);
+			setDetailsDraft(cur);
+			setDetailsEditing(false);
+			setRowEditing(false);
+			setRowOriginal({ ...rowDraft });
+			alert('저장되었습니다.');
+		} catch (e) {
+			console.error('상세내역 저장 오류:', e);
+			alert('저장 중 오류가 발생했습니다.');
+		} finally {
+			setDetailsSaving(false);
+			setRowSaving(false);
+		}
 	};
 
 	const escapeHtml = (v: any) =>
@@ -660,14 +836,38 @@ export default function MonthlyLongtermSummary() {
 		setShowDetailsModal(true);
 		setDetailsLoading(true);
 		setDetailsData(null);
+		setDetailsEditing(false);
+		setDetailsSaving(false);
+		setRowEditing(false);
+		setRowSaving(false);
+		setDetailsDraft({ PH_VIEW: '', NS_VIEW: '', FN_VIEW: '', RG_VIEW: '' });
+		setDetailsOriginal({ PH_VIEW: '', NS_VIEW: '', FN_VIEW: '', RG_VIEW: '' });
+		setRowDraft({});
+		setRowOriginal({});
 		try {
 			const res = await fetch(`/api/f14091?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(p)}`);
 			const json = await res.json();
 			if (json?.success) {
 				setDetailsData(json.data || null);
+				const cur = {
+					PH_VIEW: String(json.data?.PH_VIEW ?? ''),
+					NS_VIEW: String(json.data?.NS_VIEW ?? ''),
+					FN_VIEW: String(json.data?.FN_VIEW ?? ''),
+					RG_VIEW: String(json.data?.RG_VIEW ?? '')
+				};
+				setDetailsOriginal(cur);
+				setDetailsDraft(cur);
 			} else {
 				setDetailsData(null);
 			}
+
+			const base = { ...(baseRowOverride ?? fallbackRow ?? {}) };
+			const picked: any = {};
+			rowEditableKeys.forEach((k) => {
+				picked[k] = base[k] ?? '';
+			});
+			setRowOriginal(picked);
+			setRowDraft(picked);
 		} catch (e) {
 			console.error('상세내역 조회 오류:', e);
 			setDetailsData(null);
@@ -710,6 +910,20 @@ export default function MonthlyLongtermSummary() {
 			</span>
 		);
 	};
+
+	const isOn = (v: any) => {
+		const s = String(v ?? '').trim();
+		return s === '1' || s.toUpperCase() === 'Y' || s.toUpperCase() === 'T' || s === 'true';
+	};
+
+	const toggle01 = (k: string) => {
+		setRowDraft((prev: any) => {
+			const cur = prev?.[k];
+			return { ...(prev ?? {}), [k]: isOn(cur) ? '0' : '1' };
+		});
+	};
+
+	const setRowValue = (k: string, v: any) => setRowDraft((prev: any) => ({ ...(prev ?? {}), [k]: v }));
 
 	// 페이지네이션
 	const totalPages = Math.ceil(performanceList.length / itemsPerPage);
@@ -781,6 +995,7 @@ export default function MonthlyLongtermSummary() {
 					<table className="w-full text-sm border-collapse">
 						<thead className="sticky top-0 border-b-2 border-blue-200 bg-blue-50">
 							<tr>
+								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">연번</th>
 								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">수급자</th>
 								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">생일</th>
 								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">성별</th>
@@ -798,11 +1013,11 @@ export default function MonthlyLongtermSummary() {
 						<tbody>
 							{loading ? (
 								<tr>
-									<td colSpan={12} className="px-3 py-4 text-center text-blue-900/60">로딩 중...</td>
+									<td colSpan={13} className="px-3 py-4 text-center text-blue-900/60">로딩 중...</td>
 								</tr>
 							) : performanceList.length === 0 ? (
 								<tr>
-									<td colSpan={12} className="px-3 py-4 text-center text-blue-900/60">데이터가 없습니다</td>
+									<td colSpan={13} className="px-3 py-4 text-center text-blue-900/60">데이터가 없습니다</td>
 								</tr>
 							) : (
 								currentItems.map((item, index) => (
@@ -819,6 +1034,7 @@ export default function MonthlyLongtermSummary() {
 											selectedPnum === String(item.PNUM ?? '') ? 'bg-blue-100' : ''
 										}`}
 									>
+										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{startIndex + index + 1}</td>
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{item.P_NM || '-'}</td>
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatDate(item.P_BRDT || '')}</td>
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatGender(item.P_SEX || '')}</td>
@@ -909,8 +1125,7 @@ export default function MonthlyLongtermSummary() {
 				</div>
 			)}
 
-			{/* 하단 푸터 */}
-			<div className="p-4 border-t border-blue-200 bg-blue-50">
+			{/* <div className="p-4 border-t border-blue-200 bg-blue-50">
 				<div className="flex items-center justify-between">
 					<div className="flex items-center gap-4">
 						<div className="flex items-center gap-2">
@@ -946,16 +1161,15 @@ export default function MonthlyLongtermSummary() {
 						>
 							개별출력
 						</button>
-						{/* 상세내역 버튼 제거: 목록에서 수급자 클릭 시 모달 오픈 */}
 					</div>
 				</div>
-			</div>
+			</div> */}
 
 			{/* 상세내역 모달 */}
 			{showDetailsModal && (
 				<div
 					className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-					onClick={() => setShowDetailsModal(false)}
+					onClick={requestCloseDetailsModal}
 				>
 					<div
 						className="w-[1050px] max-w-[98vw] max-h-[92vh] overflow-auto bg-white border border-blue-400 rounded-lg shadow-xl"
@@ -964,15 +1178,34 @@ export default function MonthlyLongtermSummary() {
 						<div className="flex items-center justify-between px-4 py-3 border-b border-blue-200 bg-blue-100">
 							<div className="flex-1 text-center text-xl font-semibold tracking-wide text-blue-900">월 서비스실적 조회</div>
 							<div className="flex items-center gap-2">
-								<button
-									className="px-4 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
-									onClick={handleRegisterCenterOpinion}
-								>
-									센터소견등록
-								</button>
+								{detailsEditing ? (
+									<>
+										<button
+											disabled={detailsSaving}
+											className="px-4 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-60"
+											onClick={handleSaveDetails}
+										>
+											저장
+										</button>
+										<button
+											disabled={detailsSaving}
+											className="px-4 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-60"
+											onClick={handleCancelEdit}
+										>
+											취소
+										</button>
+									</>
+								) : (
+									<button
+										className="px-4 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
+										onClick={handleEnterEditMode}
+									>
+										수정
+									</button>
+								)}
 								<button
 									className="px-6 py-1 text-sm text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
-									onClick={() => setShowDetailsModal(false)}
+									onClick={requestCloseDetailsModal}
 								>
 									닫 기
 								</button>
@@ -985,21 +1218,22 @@ export default function MonthlyLongtermSummary() {
 							) : (
 								<>
 									{(() => {
-										const r = (detailsBaseRow ?? {}) as any;
+										const r = (rowEditing ? rowDraft : detailsBaseRow) ?? {};
+										const rr = r as any;
 										const yyNo = (r as any).P_YYNO || '';
 										const yyEnd = (r as any).P_YYEDT || '';
-										const roomNo = (r as any).ROOM_NO || '';
+										const roomNo = (rr as any).ROOM_NO || '';
 										const meals = {
-											breakfastGood: (r as any).MOST_BT_CNT ?? '',
-											breakfastBad: (r as any).MOST_BD_CNT ?? '',
-											lunchGood: (r as any).LCST_BT_CNT ?? '',
-											lunchBad: (r as any).LCST_BD_CNT ?? '',
-											dinnerGood: (r as any).DNST_BT_CNT ?? '',
-											dinnerBad: (r as any).DNST_BD_CNT ?? '',
-											mSnackGood: (r as any).MGST_BT_CNT ?? '',
-											mSnackBad: (r as any).MGST_BD_CNT ?? '',
-											aSnackGood: (r as any).AGST_BT_CNT ?? '',
-											aSnackBad: (r as any).AGST_BD_CNT ?? ''
+											breakfastGood: (rr as any).MOST_BT_CNT ?? '',
+											breakfastBad: (rr as any).MOST_BD_CNT ?? '',
+											lunchGood: (rr as any).LCST_BT_CNT ?? '',
+											lunchBad: (rr as any).LCST_BD_CNT ?? '',
+											dinnerGood: (rr as any).DNST_BT_CNT ?? '',
+											dinnerBad: (rr as any).DNST_BD_CNT ?? '',
+											mSnackGood: (rr as any).MGST_BT_CNT ?? '',
+											mSnackBad: (rr as any).MGST_BD_CNT ?? '',
+											aSnackGood: (rr as any).AGST_BT_CNT ?? '',
+											aSnackBad: (rr as any).AGST_BD_CNT ?? ''
 										};
 
 										const executeItems1 = [
@@ -1112,7 +1346,13 @@ export default function MonthlyLongtermSummary() {
 																<div key={it.key} className="flex items-center gap-2">
 																	<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
 																	<div className="flex items-center gap-1 w-16 justify-center">
-																		{yesNoIcon((r as any)[it.key])}
+																		{rowEditing ? (
+																			<button type="button" onClick={() => toggle01(it.key)} className="p-0.5">
+																				{yesNoIcon((r as any)[it.key])}
+																			</button>
+																		) : (
+																			yesNoIcon((r as any)[it.key])
+																		)}
 																		<span className="text-sm">실시</span>
 																	</div>
 																</div>
@@ -1123,7 +1363,13 @@ export default function MonthlyLongtermSummary() {
 																<div key={it.key} className="flex items-center gap-2">
 																	<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
 																	<div className="flex items-center gap-1 w-16 justify-center">
-																		{yesNoIcon((r as any)[it.key])}
+																		{rowEditing ? (
+																			<button type="button" onClick={() => toggle01(it.key)} className="p-0.5">
+																				{yesNoIcon((r as any)[it.key])}
+																			</button>
+																		) : (
+																			yesNoIcon((r as any)[it.key])
+																		)}
 																		<span className="text-sm">실시</span>
 																	</div>
 																</div>
@@ -1132,30 +1378,165 @@ export default function MonthlyLongtermSummary() {
 
 														<div className="grid grid-cols-12 gap-1 items-center pt-0.5">
 															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">평균혈압-(수축)</div>
-															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_SBDP ?? ''}</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).NS_SBDP ?? ''}
+																		onChange={(e) => setRowValue('NS_SBDP', e.target.value)}
+																		className="w-full text-center outline-none"
+																	/>
+																) : (
+																	(r as any).NS_SBDP ?? ''
+																)}
+															</div>
 															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">(이완)</div>
-															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_EBDP ?? ''}</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).NS_EBDP ?? ''}
+																		onChange={(e) => setRowValue('NS_EBDP', e.target.value)}
+																		className="w-full text-center outline-none"
+																	/>
+																) : (
+																	(r as any).NS_EBDP ?? ''
+																)}
+															</div>
 															<div className="col-span-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">체온</div>
-															<div className="col-span-1 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_TMPBD ?? ''}</div>
+															<div className="col-span-1 border border-blue-300 px-2 py-1 text-sm bg-white text-center">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).NS_TMPBD ?? ''}
+																		onChange={(e) => setRowValue('NS_TMPBD', e.target.value)}
+																		className="w-full text-center outline-none"
+																	/>
+																) : (
+																	(r as any).NS_TMPBD ?? ''
+																)}
+															</div>
+														</div>
+														<div className="grid grid-cols-12 gap-1 items-center pt-0.5">
+															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">목욕횟수</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white text-center">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).PH_BATH_CNT ?? ''}
+																		onChange={(e) => setRowValue('PH_BATH_CNT', e.target.value)}
+																		className="w-full text-center outline-none"
+																	/>
+																) : (
+																	(r as any).PH_BATH_CNT ?? ''
+																)}
+															</div>
+															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">목욕방법</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).PH_BATH_METH_NM ?? (r as any).PH_BATH_METH ?? ''}
+																		onChange={(e) => setRowValue('PH_BATH_METH_NM', e.target.value)}
+																		className="w-full outline-none"
+																	/>
+																) : (
+																	(r as any).PH_BATH_METH_NM ?? (r as any).PH_BATH_METH ?? ''
+																)}
+															</div>
+															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">식사종류</div>
+															<div className="col-span-2 border border-blue-300 px-2 py-1 text-sm bg-white">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).PH_MEAL_KIND_NM ?? (r as any).PH_MEAL_VAL_NM ?? ''}
+																		onChange={(e) => setRowValue('PH_MEAL_KIND_NM', e.target.value)}
+																		className="w-full outline-none"
+																	/>
+																) : (
+																	(r as any).PH_MEAL_KIND_NM ?? (r as any).PH_MEAL_VAL_NM ?? ''
+																)}
+															</div>
+														</div>
+														<div className="grid grid-cols-12 gap-1 items-center pt-0.5">
+															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">섭취량</div>
+															<div className="col-span-10 border border-blue-300 px-2 py-1 text-sm bg-white">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).PH_MEAL_WT ?? (r as any).PH_MEAL_WT_NM ?? ''}
+																		onChange={(e) => setRowValue('PH_MEAL_WT', e.target.value)}
+																		className="w-full outline-none"
+																	/>
+																) : (
+																	(r as any).PH_MEAL_WT ?? (r as any).PH_MEAL_WT_NM ?? ''
+																)}
+															</div>
 														</div>
 													</div>
 
 													<div className="col-span-5 space-y-1">
 														<div className="grid grid-cols-12 gap-1 items-center">
 															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">투약관리</div>
-															<div className="col-span-2 flex items-center gap-2">{yesNoIcon((r as any).NS_ETC)}</div>
+															<div className="col-span-2 flex items-center gap-2">
+																{rowEditing ? (
+																	<button type="button" onClick={() => toggle01('NS_ETC')} className="p-0.5">
+																		{yesNoIcon((r as any).NS_ETC)}
+																	</button>
+																) : (
+																	yesNoIcon((r as any).NS_ETC)
+																)}
+															</div>
 															<div className="col-span-6"></div>
 
 															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">목창관리</div>
-															<div className="col-span-2 flex items-center gap-2">{yesNoIcon((r as any).NS_SORE_CHK)}</div>
+															<div className="col-span-2 flex items-center gap-2">
+																{rowEditing ? (
+																	<button type="button" onClick={() => toggle01('NS_SORE_CHK')} className="p-0.5">
+																		{yesNoIcon((r as any).NS_SORE_CHK)}
+																	</button>
+																) : (
+																	yesNoIcon((r as any).NS_SORE_CHK)
+																)}
+															</div>
 															<div className="col-span-6"></div>
 
 															<div className="col-span-4 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">관찰</div>
-															<div className="col-span-2 flex items-center gap-2">{yesNoIcon((r as any).NS_MEDI_CHK)}</div>
+															<div className="col-span-2 flex items-center gap-2">
+																{rowEditing ? (
+																	<button type="button" onClick={() => toggle01('NS_MEDI_CHK')} className="p-0.5">
+																		{yesNoIcon((r as any).NS_MEDI_CHK)}
+																	</button>
+																) : (
+																	yesNoIcon((r as any).NS_MEDI_CHK)
+																)}
+															</div>
 															<div className="col-span-2 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-center text-blue-900">이상있음</div>
-															<div className="col-span-4 border border-blue-300 px-2 py-1 text-sm bg-white text-center">{(r as any).NS_SORE_MNG_NM ?? ''}</div>
+															<div className="col-span-4 border border-blue-300 px-2 py-1 text-sm bg-white text-center">
+																{rowEditing ? (
+																	<input
+																		value={(r as any).NS_SORE_MNG_NM ?? ''}
+																		onChange={(e) => setRowValue('NS_SORE_MNG_NM', e.target.value)}
+																		className="w-full text-center outline-none"
+																	/>
+																) : (
+																	(r as any).NS_SORE_MNG_NM ?? ''
+																)}
+															</div>
 														</div>
 													</div>
+												</div>
+
+												{/* 하단 프로그램 - 소견 위로 이동 */}
+												<div className="border-t border-blue-200 p-2 space-y-1 bg-blue-50/20">
+													{executeItems3.map((it) => (
+														<div key={it.key} className="flex items-center gap-2">
+															<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
+															<div className="flex items-center gap-1 w-16 justify-center">
+																{rowEditing ? (
+																	<button type="button" onClick={() => toggle01(it.key)} className="p-0.5">
+																		{yesNoIcon((r as any)[it.key])}
+																	</button>
+																) : (
+																	yesNoIcon((r as any)[it.key])
+																)}
+																<span className="text-sm">실시</span>
+															</div>
+														</div>
+													))}
 												</div>
 
 												{/* 소견(관찰내역) - 하단으로 내려서 가로폭 넓게 */}
@@ -1163,34 +1544,53 @@ export default function MonthlyLongtermSummary() {
 													<div className="grid grid-cols-1 gap-1">
 														<div className="border border-blue-300 rounded overflow-hidden">
 															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">신체활동_소견</div>
-															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.PH_VIEW || ''}</div>
+															{detailsEditing ? (
+																<textarea
+																	value={detailsDraft.PH_VIEW}
+																	onChange={(e) => setDetailsDraft((d) => ({ ...d, PH_VIEW: e.target.value }))}
+																	className="w-full p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto outline-none"
+																/>
+															) : (
+																<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.PH_VIEW || ''}</div>
+															)}
 														</div>
 														<div className="border border-blue-300 rounded overflow-hidden">
 															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">간호치료_소견</div>
-															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.NS_VIEW || ''}</div>
+															{detailsEditing ? (
+																<textarea
+																	value={detailsDraft.NS_VIEW}
+																	onChange={(e) => setDetailsDraft((d) => ({ ...d, NS_VIEW: e.target.value }))}
+																	className="w-full p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto outline-none"
+																/>
+															) : (
+																<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.NS_VIEW || ''}</div>
+															)}
 														</div>
 														<div className="border border-blue-300 rounded overflow-hidden">
 															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">기능회복_소견</div>
-															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.FN_VIEW || ''}</div>
+															{detailsEditing ? (
+																<textarea
+																	value={detailsDraft.FN_VIEW}
+																	onChange={(e) => setDetailsDraft((d) => ({ ...d, FN_VIEW: e.target.value }))}
+																	className="w-full p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto outline-none"
+																/>
+															) : (
+																<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.FN_VIEW || ''}</div>
+															)}
 														</div>
 														<div className="border border-blue-300 rounded overflow-hidden">
 															<div className="px-2 py-1 text-sm font-semibold text-blue-900 bg-blue-100 border-b border-blue-200">인지관리_소견</div>
-															<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.RG_VIEW || ''}</div>
+															{detailsEditing ? (
+																<textarea
+																	value={detailsDraft.RG_VIEW}
+																	onChange={(e) => setDetailsDraft((d) => ({ ...d, RG_VIEW: e.target.value }))}
+																	className="w-full p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto outline-none"
+																/>
+															) : (
+																<div className="p-2 text-sm whitespace-pre-wrap bg-white h-[130px] overflow-auto">{detailsData?.RG_VIEW || ''}</div>
+															)}
 														</div>
 													</div>
-												</div>
-
-												{/* 하단 프로그램 */}
-												<div className="border-t border-blue-200 p-2 space-y-1 bg-blue-50/20">
-													{executeItems3.map((it) => (
-														<div key={it.key} className="flex items-center gap-2">
-															<div className="flex-1 bg-blue-100 border border-blue-300 px-2 py-1 text-sm text-blue-900">{it.label}</div>
-															<div className="flex items-center gap-1 w-16 justify-center">
-																{yesNoIcon((r as any)[it.key])}
-																<span className="text-sm">실시</span>
-															</div>
-														</div>
-													))}
 												</div>
 											</div>
 										);
