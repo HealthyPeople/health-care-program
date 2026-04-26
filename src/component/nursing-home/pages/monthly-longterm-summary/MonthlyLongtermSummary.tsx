@@ -39,6 +39,9 @@ export default function MonthlyLongtermSummary() {
 	const [detailsData, setDetailsData] = useState<any | null>(null);
 	const [detailsBaseRow, setDetailsBaseRow] = useState<ServicePerformanceData | null>(null);
 
+	const [currentPage, setCurrentPage] = useState(1);
+	const itemsPerPage = 10;
+
 	// 급여년월 조회
 	const fetchPerformanceData = async () => {
 		setLoading(true);
@@ -92,6 +95,11 @@ export default function MonthlyLongtermSummary() {
 		fetchPerformanceData();
 	}, [selectedYear, selectedMonth]);
 
+	// 월 변경 시 페이지 초기화
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [selectedYear, selectedMonth]);
+
 	// 검색
 	const handleSearch = () => {
 		fetchPerformanceData();
@@ -139,16 +147,317 @@ export default function MonthlyLongtermSummary() {
 		alert('센터소견등록 기능은 준비 중입니다.');
 	};
 
-	// 개별출력
-	const handlePrintIndividual = async () => {
-		if (!selectedBeneficiary) {
-			alert('수급자를 선택해주세요.');
-			return;
-		}
+	const escapeHtml = (v: any) =>
+		String(v ?? '')
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#039;');
 
-		const selectedData = performanceList.find(item => item.P_NM === selectedBeneficiary);
+	const toYyyymm = () => `${selectedYear}${selectedMonth.padStart(2, '0')}`;
+
+	const fmtDate10 = (digits: any) => {
+		const s = String(digits ?? '').replace(/\D/g, '');
+		if (s.length < 8) return '';
+		const d = s.slice(0, 8); // ISO/Datetime 포함돼도 YYYYMMDD만 사용
+		return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+	};
+
+	const ynMark = (v: any) => {
+		const s = String(v ?? '').trim();
+		const yes = s === '1' || s.toUpperCase() === 'Y' || s === 'true';
+		return yes ? 'V' : '';
+	};
+
+	const fetchDetailsForPrint = async (pnum: string, yyyymm: string) => {
+		try {
+			const res = await fetch(`/api/f14091?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(pnum)}`);
+			const json = await res.json();
+			if (json?.success) return json.data || null;
+			return null;
+		} catch (e) {
+			console.error('출력용 상세내역 조회 오류:', e);
+			return null;
+		}
+	};
+
+	const fetchOrgForPrint = async () => {
+		try {
+			const res = await fetch('/api/f00110');
+			const json = await res.json();
+			if (json?.success && Array.isArray(json.data)) return json.data[0] || null;
+			return null;
+		} catch (e) {
+			console.error('출력용 기관정보 조회 오류:', e);
+			return null;
+		}
+	};
+
+	const renderPrintPage = (row: ServicePerformanceData, details: any | null, org: any | null) => {
+		const r = (row ?? {}) as any;
+		const yyyymm = toYyyymm();
+		const o = (org ?? {}) as any;
+
+		const orgNo = o.ANGH ?? '';
+		const orgName = o.ANNM ?? '';
+		const orgOwner = o.TAXOWN ?? '';
+		const orgAddr = o.TAXADD ?? o.ANADD ?? '';
+		const orgBizNo = o.TAXNUM ?? '';
+		const orgTel = o.ANTEL ?? '';
+		const orgZip = o.ANZIP ?? '';
+		const periodStart = r.SVDT ?? r.ANSDT ?? '';
+		const periodEnd = r.EVDT ?? r.EDVT ?? r.ANEDT ?? '';
+
+		const mealKind = r.PH_MEAL_KIND_NM ?? r.PH_MEAL_VAL_NM ?? r.PH_MEAL_KIND ?? '';
+		const meals = {
+			breakfastGood: r.MOST_BT_CNT ?? '',
+			breakfastBad: r.MOST_BD_CNT ?? '',
+			lunchGood: r.LCST_BT_CNT ?? '',
+			lunchBad: r.LCST_BD_CNT ?? '',
+			dinnerGood: r.DNST_BT_CNT ?? '',
+			dinnerBad: r.DNST_BD_CNT ?? '',
+			mSnackGood: r.MGST_BT_CNT ?? '',
+			mSnackBad: r.MGST_BD_CNT ?? '',
+			aSnackGood: r.AGST_BT_CNT ?? '',
+			aSnackBad: r.AGST_BD_CNT ?? ''
+		};
+
+		const exec1 = [
+			{ label: '세면, 구강, 머리감기, 몸단장, 옷갈아입기', key: 'PH_HEAD_HELP' },
+			{ label: '이동도움 및 신체기능 유지, 증진', key: 'PH_MOVE_HELP' },
+			{ label: '체위변경(2시간마다)', key: 'PH_CHANG_HELP' },
+			{ label: '산책(외출) 동행', key: 'PH_WORK_HELP' }
+		];
+		const exec2 = [
+			{ label: '인지관리 지원', key: 'FN_COGN_HELP' },
+			{ label: '의사소통 도움 및 신체기능 유지', key: 'FN_MOVE_HELP' }
+		];
+		const exec3 = [
+			{ label: '신체·인지기능 향상 프로그램', key: 'FN_MIND_HELP' },
+			{ label: '기본동작 등 일상생활 동작훈련', key: 'FN_MOVE_HELP' },
+			{ label: '인지기능 향상훈련', key: 'FN_MIND_TRAIN' },
+			{ label: '물리(작업)치료', key: 'FN_PHY_HELP' }
+		];
+
+		const svCnt = String(r.SV_CNT ?? row.PROVIDED_DAYS ?? '');
+		const abCnt = String(r.AB_CNT ?? row.OUT_DAYS ?? '');
+
+		const bathCnt = r.PH_BATH_CNT ?? '';
+		const bathMeth = r.PH_BATH_METH_NM ?? r.PH_BATH_METH ?? '';
+
+		const execRow = (label: string, key: string) =>
+			`<div class="exec"><span class="execLabel">${escapeHtml(label)}</span><span class="execBox">${ynMark(
+				r[key]
+			)}</span><span class="execText">실시</span></div>`;
+
+		const memo = (v: any) => escapeHtml(v || '');
+
+		return `
+<section class="page">
+	<table class="sheet sheet6">
+		<colgroup>
+			<col style="width:12%">
+			<col style="width:26%">
+			<col style="width:12%">
+			<col style="width:26%">
+			<col style="width:12%">
+			<col style="width:12%">
+		</colgroup>
+		<tr>
+			<th class="title" colspan="6">장기요양 제공기록(${escapeHtml(yyyymm)})</th>
+		</tr>
+		<tr>
+			<th class="headLabel">장기요양<br/>기관번호</th>
+			<td>${escapeHtml(orgNo)}</td>
+			<th class="headLabel">장기요양<br/>기관명</th>
+			<td>${escapeHtml(orgName)}</td>
+			<th class="headLabel">대표자</th>
+			<td class="center">${escapeHtml(orgOwner)}</td>
+		</tr>
+		<tr>
+			<th class="headLabel">주소</th>
+			<td colspan="3">${escapeHtml(orgZip ? `(${orgZip}) ${orgAddr}` : orgAddr)}</td>
+			<th class="headLabel">사업자<br/>등록번호</th>
+			<td class="center">${escapeHtml(orgBizNo)}</td>
+		</tr>
+		<tr>
+			<th class="headLabel">성명</th>
+			<td>${escapeHtml(row.P_NM || '')}</td>
+			<th class="headLabel">장기요양<br/>인정번호</th>
+			<td>${escapeHtml(r.P_YYNO || '')}</td>
+			<th class="headLabel">급여년월</th>
+			<td class="center">${escapeHtml(`${selectedYear}-${selectedMonth.padStart(2, '0')}`)}</td>
+		</tr>
+		<tr>
+			<th class="headLabel">가입번호</th>
+			<td>${escapeHtml(r.P_NO ?? '')}</td>
+			<th class="headLabel">급여제공기간</th>
+			<td>${escapeHtml(`${fmtDate10(periodStart)} ${fmtDate10(periodEnd)}`)}</td>
+			<th class="headLabel">서비스<br/>일일수</th>
+			<td class="center">${escapeHtml(svCnt)}</td>
+		</tr>
+		<tr>
+			<th class="headLabel">연락처</th>
+			<td>${escapeHtml(r.P_TEL ?? '')}</td>
+			<th class="headLabel">외박일수</th>
+			<td class="center">${escapeHtml(abCnt)}</td>
+			<th class="headLabel"></th>
+			<td></td>
+		</tr>
+
+		<tr>
+			<th class="secLabel">식사<br/>현황</th>
+			<td colspan="5" class="noPad">
+				<table class="inner">
+					<tr>
+						<th class="headLabel innerLabel" style="width:18%">식사종류</th>
+						<td colspan="9">${escapeHtml(mealKind)}</td>
+					</tr>
+					<tr>
+						<th class="subHead" colspan="2">아침식사</th>
+						<th class="subHead" colspan="2">점심식사</th>
+						<th class="subHead" colspan="2">저녁식사</th>
+						<th class="subHead" colspan="2">오전간식</th>
+						<th class="subHead" colspan="2">오후간식</th>
+					</tr>
+					<tr>
+						<th class="sub2 center">양호</th><th class="sub2 center">이상</th>
+						<th class="sub2 center">양호</th><th class="sub2 center">이상</th>
+						<th class="sub2 center">양호</th><th class="sub2 center">이상</th>
+						<th class="sub2 center">양호</th><th class="sub2 center">이상</th>
+						<th class="sub2 center">양호</th><th class="sub2 center">이상</th>
+					</tr>
+					<tr>
+						<td class="center">${escapeHtml(meals.breakfastGood)}</td><td class="center">${escapeHtml(meals.breakfastBad)}</td>
+						<td class="center">${escapeHtml(meals.lunchGood)}</td><td class="center">${escapeHtml(meals.lunchBad)}</td>
+						<td class="center">${escapeHtml(meals.dinnerGood)}</td><td class="center">${escapeHtml(meals.dinnerBad)}</td>
+						<td class="center">${escapeHtml(meals.mSnackGood)}</td><td class="center">${escapeHtml(meals.mSnackBad)}</td>
+						<td class="center">${escapeHtml(meals.aSnackGood)}</td><td class="center">${escapeHtml(meals.aSnackBad)}</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+
+		<tr>
+			<th class="secLabel">신체<br/>활동</th>
+			<td colspan="5" class="noPad">
+				<table class="inner phys">
+					<colgroup>
+						<col style="width:82%"><col style="width:18%">
+					</colgroup>
+					<tr><td>${escapeHtml('세면, 구강, 머리감기, 몸단장, 옷 갈아입기')}</td><td class="center">실시</td></tr>
+					<tr><td>${escapeHtml('이동도움 및 신체기능 유지 · 증진')}</td><td class="center">실시</td></tr>
+					<tr><td>${escapeHtml('체위변경(2시간마다)')}</td><td class="center">실시</td></tr>
+					<tr><td>${escapeHtml('산책(외출)동행')}</td><td class="center">실시</td></tr>
+					<tr>
+						<td colspan="2" class="noPad">
+							<table class="inner">
+								<colgroup>
+									<col style="width:18%"><col style="width:32%"><col style="width:18%"><col style="width:32%">
+								</colgroup>
+								<tr>
+									<th class="headLabel">목욕횟수</th>
+									<td class="center">${escapeHtml(bathCnt)}</td>
+									<th class="headLabel">목욕방법</th>
+									<td>${escapeHtml(bathMeth)}</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+		<tr>
+			<th class="secLabel">신체<br/>활동<br/>소견</th>
+			<td colspan="5" class="memoTall">${memo(details?.PH_VIEW)}</td>
+		</tr>
+
+		<tr>
+			<th class="secLabel" rowspan="2">인지<br/>관리<br/>및<br/>소견</th>
+			<td colspan="5" class="noPad">
+				<table class="inner cog">
+					<colgroup>
+						<col style="width:41%"><col style="width:9%"><col style="width:41%"><col style="width:9%">
+					</colgroup>
+					<tr>
+						<td>${escapeHtml('인지관리 지원')}</td>
+						<td class="chk">${ynMark(r.FN_COGN_HELP)}</td>
+						<td>${escapeHtml('의사소통도움 등 말벗, 격려')}</td>
+						<td class="chk">${ynMark((r as any).RG_TALK_HELP ?? (r as any).RG_AID_HELP ?? '')}</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+		<tr>
+			<td colspan="5" class="memoTall">${memo(details?.RG_VIEW)}</td>
+		</tr>
+
+		<tr>
+			<th class="secLabel">간호<br/>및<br/>건강</th>
+			<td colspan="5" class="noPad">
+				<table class="inner nurse">
+					<colgroup>
+						<col style="width:20%">
+						<col style="width:50%">
+						<col style="width:15%">
+						<col style="width:15%">
+					</colgroup>
+					<tr>
+						<th class="headLabel">혈압 현황</th>
+						<td class="center">${escapeHtml(r.NS_SBDP ?? '')} ~ ${escapeHtml(r.NS_EBDP ?? '')}</td>
+						<th class="headLabel">체온</th>
+						<td class="center">${escapeHtml(r.NS_TMPBD ?? '')}</td>
+					</tr>
+					<tr>
+						<th class="headLabel">건강관리</th>
+						<td colspan="3">${escapeHtml((r as any).NS_HEALTH_HELP_NM ?? '')}</td>
+					</tr>
+					<tr>
+						<th class="headLabel">간호관리</th>
+						<td colspan="3">${escapeHtml((r as any).NS_NURSE_HELP_NM ?? '')}</td>
+					</tr>
+					<tr>
+						<th class="headLabel">기타(응급)</th>
+						<td colspan="3">${escapeHtml((r as any).NS_ETC_NM ?? (r as any).NS_ETC_DESC ?? '')}</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+		<tr>
+			<th class="secLabel">간호<br/>소견</th>
+			<td colspan="5" class="memoTall">${memo(details?.NS_VIEW)}</td>
+		</tr>
+
+		<tr>
+			<th class="secLabel">기능<br/>회복</th>
+			<td colspan="5" class="noPad">
+				<table class="inner func">
+					<colgroup>
+						<col style="width:82%"><col style="width:18%">
+					</colgroup>
+					<tr><td>${escapeHtml('신체 · 인지기능 향상 프로그램')}</td><td class="center">실시</td></tr>
+					<tr><td>${escapeHtml('신체기능 · 기본동작 일상생활 동작훈련')}</td><td class="center">실시</td></tr>
+					<tr><td>${escapeHtml('인지기능 향상훈련')}</td><td class="center">실시</td></tr>
+					<tr><td>${escapeHtml('물리(작업)치료')}</td><td class="center">실시</td></tr>
+				</table>
+			</td>
+		</tr>
+		<tr>
+			<th class="secLabel">기능<br/>회복<br/>소견</th>
+			<td colspan="5" class="memoTall">${memo(details?.FN_VIEW)}</td>
+		</tr>
+	</table>
+</section>
+		`;
+	};
+
+	// 개별출력
+	const handlePrintIndividual = async (rowOverride?: ServicePerformanceData) => {
+		const selectedData =
+			rowOverride ?? performanceList.find((item) => String(item.PNUM ?? '') === String(selectedPnum ?? '')) ?? null;
 		if (!selectedData) {
-			alert('선택한 수급자의 데이터를 찾을 수 없습니다.');
+			alert('출력할 수급자를 선택해주세요.');
 			return;
 		}
 
@@ -158,18 +467,19 @@ export default function MonthlyLongtermSummary() {
 			return;
 		}
 
+		const yyyymm = toYyyymm();
+		const org = await fetchOrgForPrint();
+		const details = await fetchDetailsForPrint(String(selectedData.PNUM ?? ''), yyyymm);
+		const pageHtml = renderPrintPage(selectedData, details, org);
+
 		const printHTML = `
 <!DOCTYPE html>
 <html lang="ko">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>월 서비스실적 관리 - 개별출력</title>
+	<title>장기요양 제공기록 - 개별출력</title>
 	<style>
-		@page {
-			size: A4 landscape;
-			margin: 10mm;
-		}
 		* {
 			margin: 0;
 			padding: 0;
@@ -182,94 +492,61 @@ export default function MonthlyLongtermSummary() {
 			color: #000;
 			background: #fff;
 		}
-		.print-container {
-			width: 100%;
-			margin: 0 auto;
-			padding: 0;
-		}
-		.header {
-			text-align: center;
-			margin-bottom: 20px;
-		}
-		.header h1 {
-			font-size: 18pt;
-			font-weight: bold;
-		}
-		.info-table {
-			width: 100%;
-			border-collapse: collapse;
-			margin-bottom: 20px;
-			border: 1px solid #000;
-		}
-		.info-table th,
-		.info-table td {
-			border: 1px solid #000;
-			padding: 8px;
-			text-align: center;
-			font-size: 9pt;
-		}
-		.info-table th {
-			background-color: #f0f0f0;
-			font-weight: bold;
-		}
+		@page { size: A4 portrait; margin: 8mm; }
+		.page { page-break-after: always; }
+		.page:last-child { page-break-after: auto; }
+		.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
+		.sheet th, .sheet td { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; font-size: 9pt; word-break: break-word; overflow-wrap: anywhere; }
+		.title { font-size: 13.5pt; font-weight: 700; text-align: center; padding: 8px 0; }
+		.headLabel { background: #f3f3f3; font-weight: 700; text-align: center; }
+		.secLabel { background: #f3f3f3; font-weight: 700; text-align: center; }
+		.subHead { background: #f3f3f3; font-weight: 700; text-align: center; }
+		.sub2 { background: #fafafa; font-weight: 700; }
+		.center { text-align: center; }
+		.pad { padding: 6px 8px; }
+		.memoTall { padding: 8px; height: 95px; vertical-align: top; white-space: pre-wrap; }
+		.spacer { height: 6px; }
+		.exec { display: flex; align-items: center; gap: 10px; width: 100%; flex-wrap: wrap; }
+		.execLabel { flex: 1; min-width: 0; white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+		.execBox { width: 22px; height: 18px; line-height: 18px; border: 1px solid #000; text-align: center; }
+		.execText { width: 34px; }
+		.sheet6 td, .sheet6 th { line-height: 1.25; }
+		.noPad { padding: 0 !important; }
+		.inner { width: 100%; border-collapse: collapse; table-layout: fixed; }
+		.inner th, .inner td { border: 1px solid #000; padding: 3px 4px; font-size: 9pt; vertical-align: middle; }
+		.inner3 td { padding: 3px 6px; }
+		.chk { text-align: center; font-weight: 700; }
+		.phys td { padding: 4px 8px; }
+		.cog td { padding: 4px 8px; }
+		.nurse td { padding: 4px 8px; }
+		.func td { padding: 4px 8px; }
+		.func td { padding: 4px 8px; }
+		.nurse td { padding: 4px 8px; }
+		.cog td { padding: 4px 8px; }
+		.phys td { padding: 4px 8px; }
 		@media print {
 			body {
 				-webkit-print-color-adjust: exact;
 				print-color-adjust: exact;
 			}
+			html, body { height: auto !important; }
 		}
 	</style>
 </head>
 <body>
-	<div class="print-container">
-		<div class="header">
-			<h1>월 서비스실적 관리</h1>
-			<p>급여년월: ${selectedYear}년 ${selectedMonth}월</p>
-		</div>
-		<table class="info-table">
-			<thead>
-				<tr>
-					<th>수급자</th>
-					<th>생일</th>
-					<th>성별</th>
-					<th>방번호</th>
-					<th>요양등급</th>
-					<th>제공일수</th>
-					<th>외박일수</th>
-					<th>혈압-수축</th>
-					<th>혈압-이완</th>
-					<th>체온</th>
-					<th>목욕</th>
-				</tr>
-			</thead>
-			<tbody>
-				<tr>
-					<td>${selectedData.P_NM || '-'}</td>
-					<td>${selectedData.P_BRDT || '-'}</td>
-					<td>${selectedData.P_SEX === '1' ? '남' : selectedData.P_SEX === '2' ? '여' : '-'}</td>
-					<td>${selectedData.ROOM_NO || '-'}</td>
-					<td>${selectedData.P_GRD || '-'}</td>
-					<td>${selectedData.PROVIDED_DAYS || 0}</td>
-					<td>${selectedData.OUT_DAYS || 0}</td>
-					<td>${selectedData.BP_SYSTOLIC || '-'}</td>
-					<td>${selectedData.BP_DIASTOLIC || '-'}</td>
-					<td>${selectedData.TEMPERATURE || '-'}</td>
-					<td>${selectedData.BATH || '-'}</td>
-				</tr>
-			</tbody>
-		</table>
-	</div>
-	<script>
-		window.onload = function() {
-			window.print();
-		};
-	</script>
+	${pageHtml}
 </body>
 </html>
 		`;
 
 		printWindow.document.write(printHTML);
 		printWindow.document.close();
+		setTimeout(() => {
+			try {
+				printWindow.focus();
+				printWindow.print();
+			} catch {}
+		}, 250);
 	};
 
 	// 전체출력
@@ -285,21 +562,20 @@ export default function MonthlyLongtermSummary() {
 			return;
 		}
 
-		const rowsHTML = performanceList.map(item => `
-			<tr>
-				<td>${item.P_NM || '-'}</td>
-				<td>${item.P_BRDT || '-'}</td>
-				<td>${item.P_SEX === '1' ? '남' : item.P_SEX === '2' ? '여' : '-'}</td>
-				<td>${item.ROOM_NO || '-'}</td>
-				<td>${item.P_GRD || '-'}</td>
-				<td>${item.PROVIDED_DAYS || 0}</td>
-				<td>${item.OUT_DAYS || 0}</td>
-				<td>${item.BP_SYSTOLIC || '-'}</td>
-				<td>${item.BP_DIASTOLIC || '-'}</td>
-				<td>${item.TEMPERATURE || '-'}</td>
-				<td>${item.BATH || '-'}</td>
-			</tr>
-		`).join('');
+		const yyyymm = toYyyymm();
+		const rows = performanceList.slice();
+		const org = await fetchOrgForPrint();
+
+		const detailsList = await Promise.allSettled(
+			rows.map((it) => fetchDetailsForPrint(String(it.PNUM ?? ''), yyyymm))
+		);
+
+		const pagesHtml = rows
+			.map((row, idx) => {
+				const details = detailsList[idx].status === 'fulfilled' ? (detailsList[idx] as any).value : null;
+				return renderPrintPage(row, details, org);
+			})
+			.join('');
 
 		const printHTML = `
 <!DOCTYPE html>
@@ -307,12 +583,8 @@ export default function MonthlyLongtermSummary() {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>월 서비스실적 관리 - 전체출력</title>
+	<title>장기요양 제공기록 - 전체출력</title>
 	<style>
-		@page {
-			size: A4 landscape;
-			margin: 10mm;
-		}
 		* {
 			margin: 0;
 			padding: 0;
@@ -320,103 +592,76 @@ export default function MonthlyLongtermSummary() {
 		}
 		body {
 			font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
-			font-size: 9pt;
+			font-size: 10pt;
 			line-height: 1.5;
 			color: #000;
 			background: #fff;
 		}
-		.print-container {
-			width: 100%;
-			margin: 0 auto;
-			padding: 0;
-		}
-		.header {
-			text-align: center;
-			margin-bottom: 20px;
-		}
-		.header h1 {
-			font-size: 18pt;
-			font-weight: bold;
-		}
-		.info-table {
-			width: 100%;
-			border-collapse: collapse;
-			margin-bottom: 20px;
-			border: 1px solid #000;
-		}
-		.info-table th,
-		.info-table td {
-			border: 1px solid #000;
-			padding: 6px;
-			text-align: center;
-			font-size: 8pt;
-		}
-		.info-table th {
-			background-color: #f0f0f0;
-			font-weight: bold;
-		}
+		@page { size: A4 portrait; margin: 8mm; }
+		.page { page-break-after: always; }
+		.page:last-child { page-break-after: auto; }
+		.sheet { width: 100%; border-collapse: collapse; table-layout: fixed; }
+		.sheet th, .sheet td { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; font-size: 9pt; word-break: break-word; overflow-wrap: anywhere; }
+		.title { font-size: 13.5pt; font-weight: 700; text-align: center; padding: 8px 0; }
+		.headLabel { background: #f3f3f3; font-weight: 700; text-align: center; }
+		.secLabel { background: #f3f3f3; font-weight: 700; text-align: center; }
+		.subHead { background: #f3f3f3; font-weight: 700; text-align: center; }
+		.sub2 { background: #fafafa; font-weight: 700; }
+		.center { text-align: center; }
+		.pad { padding: 6px 8px; }
+		.memoTall { padding: 8px; height: 95px; vertical-align: top; white-space: pre-wrap; }
+		.spacer { height: 6px; }
+		.exec { display: flex; align-items: center; gap: 10px; width: 100%; flex-wrap: wrap; }
+		.execLabel { flex: 1; min-width: 0; white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+		.execBox { width: 22px; height: 18px; line-height: 18px; border: 1px solid #000; text-align: center; }
+		.execText { width: 34px; }
+		.sheet6 td, .sheet6 th { line-height: 1.25; }
+		.noPad { padding: 0 !important; }
+		.inner { width: 100%; border-collapse: collapse; table-layout: fixed; }
+		.inner th, .inner td { border: 1px solid #000; padding: 3px 4px; font-size: 9pt; vertical-align: middle; }
+		.inner3 td { padding: 3px 6px; }
+		.chk { text-align: center; font-weight: 700; }
 		@media print {
 			body {
 				-webkit-print-color-adjust: exact;
 				print-color-adjust: exact;
 			}
+			html, body { height: auto !important; }
 		}
 	</style>
 </head>
 <body>
-	<div class="print-container">
-		<div class="header">
-			<h1>월 서비스실적 관리</h1>
-			<p>급여년월: ${selectedYear}년 ${selectedMonth}월</p>
-		</div>
-		<table class="info-table">
-			<thead>
-				<tr>
-					<th>수급자</th>
-					<th>생일</th>
-					<th>성별</th>
-					<th>방번호</th>
-					<th>요양등급</th>
-					<th>제공일수</th>
-					<th>외박일수</th>
-					<th>혈압-수축</th>
-					<th>혈압-이완</th>
-					<th>체온</th>
-					<th>목욕</th>
-				</tr>
-			</thead>
-			<tbody>
-				${rowsHTML}
-			</tbody>
-		</table>
-	</div>
-	<script>
-		window.onload = function() {
-			window.print();
-		};
-	</script>
+	${pagesHtml}
 </body>
 </html>
 		`;
 
 		printWindow.document.write(printHTML);
 		printWindow.document.close();
+		setTimeout(() => {
+			try {
+				printWindow.focus();
+				printWindow.print();
+			} catch {}
+		}, 250);
 	};
 
 	// 상세내역
-	const handleViewDetails = async () => {
-		if (!selectedPnum) {
+	const handleViewDetails = async (pnumOverride?: string, baseRowOverride?: ServicePerformanceData | null) => {
+		const p = (pnumOverride ?? selectedPnum ?? '').trim();
+		if (!p) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
 
 		const yyyymm = `${selectedYear}${selectedMonth.padStart(2, '0')}`;
-		setDetailsBaseRow(performanceList.find((r) => String(r.PNUM ?? '') === String(selectedPnum)) || null);
+		const fallbackRow = performanceList.find((r) => String(r.PNUM ?? '') === String(p)) || null;
+		setDetailsBaseRow(baseRowOverride ?? fallbackRow);
 		setShowDetailsModal(true);
 		setDetailsLoading(true);
 		setDetailsData(null);
 		try {
-			const res = await fetch(`/api/f14091?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(selectedPnum)}`);
+			const res = await fetch(`/api/f14091?yyyymm=${encodeURIComponent(yyyymm)}&pnum=${encodeURIComponent(p)}`);
 			const json = await res.json();
 			if (json?.success) {
 				setDetailsData(json.data || null);
@@ -466,6 +711,12 @@ export default function MonthlyLongtermSummary() {
 		);
 	};
 
+	// 페이지네이션
+	const totalPages = Math.ceil(performanceList.length / itemsPerPage);
+	const startIndex = (currentPage - 1) * itemsPerPage;
+	const endIndex = startIndex + itemsPerPage;
+	const currentItems = performanceList.slice(startIndex, endIndex);
+
 	return (
 		<div className="flex flex-col min-h-screen text-black bg-white">
 			{/* 상단 헤더 */}
@@ -502,16 +753,16 @@ export default function MonthlyLongtermSummary() {
 						</div>
 						<div className="flex items-center gap-2">
 							<button
-								onClick={handleSearch}
+								onClick={handlePrintAll}
 								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 							>
-								검색
+								전체출력
 							</button>
 							<button
 								onClick={handleAggregate}
 								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 							>
-								서비스실적집계
+								서비스실적집계(미개발)
 							</button>
 							<button
 								onClick={handleClose}
@@ -524,8 +775,8 @@ export default function MonthlyLongtermSummary() {
 				</div>
 			</div>
 
-			{/* 메인 테이블 영역 */}
-			<div className="flex-1 overflow-auto border-b border-blue-200">
+			{/* 메인 테이블 영역 (하단 공백 방지: 내용 높이만큼만) */}
+			<div className="overflow-auto border-b border-blue-200">
 				<div className="min-w-full">
 					<table className="w-full text-sm border-collapse">
 						<thead className="sticky top-0 border-b-2 border-blue-200 bg-blue-50">
@@ -540,26 +791,29 @@ export default function MonthlyLongtermSummary() {
 								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">혈압-수축</th>
 								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">혈압-이완</th>
 								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">체온</th>
-								<th className="px-3 py-2 font-semibold text-center text-blue-900 whitespace-nowrap">목욕</th>
+								<th className="px-3 py-2 font-semibold text-center text-blue-900 border-r border-blue-200 whitespace-nowrap">목욕</th>
+								<th className="px-3 py-2 font-semibold text-center text-blue-900 whitespace-nowrap">개별출력</th>
 							</tr>
 						</thead>
 						<tbody>
 							{loading ? (
 								<tr>
-									<td colSpan={11} className="px-3 py-4 text-center text-blue-900/60">로딩 중...</td>
+									<td colSpan={12} className="px-3 py-4 text-center text-blue-900/60">로딩 중...</td>
 								</tr>
 							) : performanceList.length === 0 ? (
 								<tr>
-									<td colSpan={11} className="px-3 py-4 text-center text-blue-900/60">데이터가 없습니다</td>
+									<td colSpan={12} className="px-3 py-4 text-center text-blue-900/60">데이터가 없습니다</td>
 								</tr>
 							) : (
-								performanceList.map((item, index) => (
+								currentItems.map((item, index) => (
 									<tr
 										key={index}
 										onClick={() => {
+											const p = String(item.PNUM ?? '');
 											setSelectedBeneficiary(item.P_NM || '');
 											setSelectedBirthday(formatDate(item.P_BRDT || ''));
-											setSelectedPnum(String(item.PNUM ?? ''));
+											setSelectedPnum(p);
+											handleViewDetails(p, item);
 										}}
 										className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
 											selectedPnum === String(item.PNUM ?? '') ? 'bg-blue-100' : ''
@@ -575,7 +829,19 @@ export default function MonthlyLongtermSummary() {
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{item.BP_SYSTOLIC || '-'}</td>
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{item.BP_DIASTOLIC || '-'}</td>
 										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{item.TEMPERATURE || '-'}</td>
-										<td className="px-3 py-2 text-center text-blue-900">{item.BATH || '-'}</td>
+										<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{item.BATH || '-'}</td>
+										<td className="px-3 py-2 text-center">
+											<button
+												type="button"
+												onClick={(e) => {
+													e.stopPropagation();
+													handlePrintIndividual(item);
+												}}
+												className="px-3 py-1 text-xs border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+											>
+												출력
+											</button>
+										</td>
 									</tr>
 								))
 							)}
@@ -583,6 +849,65 @@ export default function MonthlyLongtermSummary() {
 					</table>
 				</div>
 			</div>
+
+			{/* 페이지네이션 */}
+			{totalPages > 1 && (
+				<div className="p-3 border-b border-blue-200 bg-white">
+					<div className="flex items-center justify-center gap-1">
+						<button
+							onClick={() => setCurrentPage(1)}
+							disabled={currentPage === 1}
+							className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+						>
+							&lt;&lt;
+						</button>
+						<button
+							onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+							disabled={currentPage === 1}
+							className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+						>
+							&lt;
+						</button>
+
+						{Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+							const start = Math.max(1, Math.min(totalPages - 6, currentPage - 3));
+							const pageNum = start + i;
+							if (pageNum > totalPages) return null;
+							return (
+								<button
+									key={pageNum}
+									onClick={() => setCurrentPage(pageNum)}
+									className={`px-2 py-1 text-xs border rounded ${
+										currentPage === pageNum ? 'bg-blue-500 text-white border-blue-500' : 'border-blue-300 hover:bg-blue-50'
+									}`}
+								>
+									{pageNum}
+								</button>
+							);
+						})}
+
+						<button
+							onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+							disabled={currentPage === totalPages}
+							className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+						>
+							&gt;
+						</button>
+						<button
+							onClick={() => setCurrentPage(totalPages)}
+							disabled={currentPage === totalPages}
+							className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
+						>
+							&gt;&gt;
+						</button>
+						<span className="ml-4 text-xs text-blue-900/80">
+							{performanceList.length > 0
+								? `${startIndex + 1}-${Math.min(endIndex, performanceList.length)} / ${performanceList.length}`
+								: '0 / 0'}
+						</span>
+					</div>
+				</div>
+			)}
 
 			{/* 하단 푸터 */}
 			<div className="p-4 border-t border-blue-200 bg-blue-50">
@@ -616,23 +941,12 @@ export default function MonthlyLongtermSummary() {
 							센터소견등록
 						</button>
 						<button
-							onClick={handlePrintIndividual}
+							onClick={() => handlePrintIndividual()}
 							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 						>
 							개별출력
 						</button>
-						<button
-							onClick={handlePrintAll}
-							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-						>
-							전체출력
-						</button>
-						<button
-							onClick={handleViewDetails}
-							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-						>
-							상세내역
-						</button>
+						{/* 상세내역 버튼 제거: 목록에서 수급자 클릭 시 모달 오픈 */}
 					</div>
 				</div>
 			</div>
