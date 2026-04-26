@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import { MemberListPanel } from '../../components/MemberListPanel';
 import { formatCareGradeLabel } from '../../utils/careGrade';
 
 interface MemberData {
@@ -37,9 +38,6 @@ interface CounselingData {
 export default function CounselingRecord() {
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
-	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
-	const [selectedGrade, setSelectedGrade] = useState<string>('');
-	const [selectedFloor, setSelectedFloor] = useState<string>('');
 	const [consultationDates, setConsultationDates] = useState<string[]>([]);
 	const [consultationList, setConsultationList] = useState<CounselingData[]>([]);
 	const [loadingConsultations, setLoadingConsultations] = useState(false);
@@ -66,120 +64,6 @@ export default function CounselingRecord() {
 	const [consultantSuggestions, setConsultantSuggestions] = useState<Array<{EMPNO: string; EMPNM: string}>>([]);
 	const [showConsultantDropdown, setShowConsultantDropdown] = useState(false);
 
-	// 수급자 목록 데이터
-	const [memberList, setMemberList] = useState<MemberData[]>([]);
-	const [loading, setLoading] = useState(false);
-	const [searchTerm, setSearchTerm] = useState('');
-	const [currentPage, setCurrentPage] = useState(1);
-	const itemsPerPage = 10;
-
-	// 수급자 목록 조회
-	const fetchMembers = async (nameSearch?: string) => {
-		setLoading(true);
-		try {
-			// 이름 검색 파라미터 추가
-			const url = nameSearch && nameSearch.trim() !== '' 
-				? `/api/f10010?name=${encodeURIComponent(nameSearch.trim())}`
-				: '/api/f10010';
-			
-			const response = await fetch(url);
-			const result = await response.json();
-			
-			if (result.success) {
-				setMemberList(result.data);
-			}
-		} catch (err) {
-			console.error('수급자 목록 조회 오류:', err);
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	// 나이 계산 함수
-	const calculateAge = (birthDate: string) => {
-		if (!birthDate) return '-';
-		try {
-			const year = parseInt(birthDate.substring(0, 4));
-			const currentYear = new Date().getFullYear();
-			return (currentYear - year).toString();
-		} catch {
-			return '-';
-		}
-	};
-
-	// 필터링된 수급자 목록
-	// 모든 필터 조건을 AND로 결합하여 적용
-	const filteredMembers = memberList.filter((member) => {
-		// 상태 필터링
-		if (selectedStatus) {
-			const memberStatus = String(member.P_ST || '').trim();
-			if (selectedStatus === '입소' && memberStatus !== '1') {
-				return false;
-			}
-			if (selectedStatus === '퇴소' && memberStatus !== '9') {
-				return false;
-			}
-		}
-		
-		// 등급 필터링
-		if (selectedGrade) {
-			const memberGrade = String(member.P_GRD || '').trim();
-			const selectedGradeTrimmed = String(selectedGrade).trim();
-			if (memberGrade !== selectedGradeTrimmed) {
-				return false;
-			}
-		}
-		
-		// 층수 필터링
-		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
-			}
-		}
-		
-		// 이름 검색 필터링 (검색어가 있을 때만 적용)
-		if (searchTerm && searchTerm.trim() !== '') {
-			const searchLower = searchTerm.toLowerCase().trim();
-			if (!member.P_NM?.toLowerCase().includes(searchLower)) {
-				return false;
-			}
-		}
-		
-		// 모든 필터 조건을 통과한 경우만 true 반환
-		return true;
-	}).sort((a, b) => {
-		// 이름 가나다순 정렬
-		const nameA = (a.P_NM || '').trim();
-		const nameB = (b.P_NM || '').trim();
-		return nameA.localeCompare(nameB, 'ko');
-	});
-
-	// 페이지네이션 계산
-	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
-	const startIndex = (currentPage - 1) * itemsPerPage;
-	const endIndex = startIndex + itemsPerPage;
-	const currentMembers = filteredMembers.slice(startIndex, endIndex);
-
-	const handlePageChange = (page: number) => {
-		setCurrentPage(page);
-	};
-
-	useEffect(() => {
-		fetchMembers();
-	}, []);
-
-	// 검색어 변경 시 실시간 검색 (디바운싱)
-	useEffect(() => {
-		const timer = setTimeout(() => {
-			setCurrentPage(1);
-			fetchMembers(searchTerm);
-		}, 300); // 300ms 후 검색 실행
-
-		return () => clearTimeout(timer);
-	}, [searchTerm]);
-
 	// 상담사 검색어 변경 시 검색 (디바운싱)
 	useEffect(() => {
 		const timer = setTimeout(() => {
@@ -205,11 +89,6 @@ export default function CounselingRecord() {
 			return () => document.removeEventListener('mousedown', handleClickOutside);
 		}
 	}, [showConsultantDropdown]);
-
-	// 필터 변경 시 페이지 초기화
-	useEffect(() => {
-		setCurrentPage(1);
-	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
 
 	// 상담 기록 조회 (수급자 선택 시)
 	const fetchConsultations = async (ancd: string, pnum: string, member: MemberData | null) => {
@@ -1062,172 +941,11 @@ export default function CounselingRecord() {
 			<div className="flex h-[calc(80vh-56px)]">
 				{/* 좌측 패널 (약 25%) */}
 				<div className="w-1/4 border-r border-blue-200 bg-white flex flex-col p-4">
-					{/* 필터 헤더 */}
-					<div className="mb-3">
-						<h3 className="text-sm font-semibold text-blue-900 mb-2">수급자 목록</h3>
-						<div className="space-y-2">
-							{/* 이름 검색 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">이름 검색</div>
-								<input 
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded" 
-									placeholder="예) 홍길동"
-									value={searchTerm}
-									onChange={(e) => setSearchTerm(e.target.value)}
-								/>
-							</div>
-							{/* 현황 필터 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">현황</div>
-								<select
-									value={selectedStatus}
-									onChange={(e) => setSelectedStatus(e.target.value)}
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
-								>
-									<option value="">현황 전체</option>
-									<option value="입소">입소</option>
-									<option value="퇴소">퇴소</option>
-								</select>
-							</div>
-							{/* 등급 필터 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">등급</div>
-								<select
-									value={selectedGrade}
-									onChange={(e) => setSelectedGrade(e.target.value)}
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
-								>
-									<option value="">등급 전체</option>
-									<option value="1">1등급</option>
-									<option value="2">2등급</option>
-									<option value="3">3등급</option>
-									<option value="4">4등급</option>
-									<option value="5">5등급</option>
-									<option value="9">인지지원</option>
-								</select>
-							</div>
-							{/* 층수 필터 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">층수</div>
-								<select
-									value={selectedFloor}
-									onChange={(e) => setSelectedFloor(e.target.value)}
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded text-blue-900"
-								>
-									<option value="">층수 전체</option>
-									{/* 동적으로 층수 목록 생성 */}
-									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-										<option key={floor} value={String(floor)}>{floor}층</option>
-									))}
-								</select>
-							</div>
-						</div>
-					</div>
-
-					{/* 수급자 목록 테이블 - 라운드 박스 */}
-					<div className="border border-blue-300 rounded-lg overflow-hidden bg-white flex flex-col">
-						<div className="overflow-y-auto">
-							<table className="w-full text-xs">
-								<thead className="bg-blue-50 border-b border-blue-200 sticky top-0">
-									<tr>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">연번</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">현황</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">수급자명</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">성별</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">등급</th>
-										<th className="text-center px-2 py-1.5 text-blue-900 font-semibold border-r border-blue-200">나이</th>
-									</tr>
-								</thead>
-								<tbody>
-									{loading ? (
-										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">로딩 중...</td>
-										</tr>
-									) : filteredMembers.length === 0 ? (
-										<tr>
-											<td colSpan={6} className="text-center px-2 py-4 text-blue-900/60">수급자 데이터가 없습니다</td>
-										</tr>
-									) : (
-										currentMembers.map((member, index) => (
-											<tr
-												key={`${member.ANCD}-${member.PNUM}-${index}`}
-												onClick={() => handleSelectMember(member)}
-												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
-												}`}
-											>
-												<td className="text-center px-2 py-1.5 border-r border-blue-100">{startIndex + index + 1}</td>
-												<td className="text-center px-2 py-1.5 border-r border-blue-100">
-													{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
-												</td>
-												<td className="text-center px-2 py-1.5 border-r border-blue-100">{member.P_NM || '-'}</td>
-												<td className="text-center px-2 py-1.5 border-r border-blue-100">
-													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
-												</td>
-												<td className="text-center px-2 py-1.5 border-r border-blue-100">
-													{formatCareGradeLabel(member.P_GRD)}
-												</td>
-												<td className="text-center px-2 py-1.5">{calculateAge(member.P_BRDT)}</td>
-											</tr>
-										))
-									)}
-								</tbody>
-							</table>
-						</div>
-						{/* 페이지네이션 */}
-						{totalPages > 1 && (
-							<div className="p-2 border-t border-blue-200 bg-white">
-								<div className="flex items-center justify-center gap-1">
-									<button
-										onClick={() => handlePageChange(1)}
-										disabled={currentPage === 1}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&lt;&lt;
-									</button>
-									<button
-										onClick={() => handlePageChange(currentPage - 1)}
-										disabled={currentPage === 1}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&lt;
-									</button>
-									
-									{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-										const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
-										return (
-											<button
-												key={pageNum}
-												onClick={() => handlePageChange(pageNum)}
-												className={`px-2 py-1 text-xs border rounded ${
-													currentPage === pageNum
-														? 'bg-blue-500 text-white border-blue-500'
-														: 'border-blue-300 hover:bg-blue-50'
-												}`}
-											>
-												{pageNum}
-											</button>
-										);
-									})}
-									
-									<button
-										onClick={() => handlePageChange(currentPage + 1)}
-										disabled={currentPage === totalPages}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&gt;
-									</button>
-									<button
-										onClick={() => handlePageChange(totalPages)}
-										disabled={currentPage === totalPages}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&gt;&gt;
-									</button>
-								</div>
-							</div>
-						)}
-					</div>
+					<MemberListPanel
+						title="수급자 목록"
+						className="w-full"
+						onSelectMember={(m) => handleSelectMember(m as any)}
+					/>
 				</div>
 
 				{/* 우측 패널 (약 75%) */}
