@@ -6,6 +6,43 @@ interface MemberData {
   [key: string]: any;
 }
 
+function escapeHtml(v: unknown): string {
+	const s = String(v ?? '');
+	return s
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#039;');
+}
+
+function fmtDate10(v: unknown): string {
+	const s = toDateInputString(v);
+	return s || '';
+}
+
+function fmtStatus(v: unknown): string {
+	const s = String(v ?? '').trim();
+	if (s === '1') return '입소';
+	if (s === '9') return '퇴소';
+	return s || '';
+}
+
+function fmtSex(v: unknown): string {
+	const s = String(v ?? '').trim();
+	if (s === '1') return '남';
+	if (s === '2') return '여';
+	return s || '';
+}
+
+function todayYYYYMMDD(): string {
+	const d = new Date();
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	const day = String(d.getDate()).padStart(2, '0');
+	return `${y}-${m}-${day}`;
+}
+
 /** DB/API에서 오는 날짜를 date input용 YYYY-MM-DD 문자열로 */
 function toDateInputString(v: unknown): string {
 	if (v == null || v === '') return '';
@@ -679,6 +716,340 @@ export default function MemberInfoView() {
 		setCurrentPage(1);
 	}, [selectedStatus, selectedGrade, selectedFloor]);
 
+	const handlePrintRecipientCard = () => {
+		if (!selectedMember) return;
+
+		const instName =
+			institutions.find((i) => String(i.ANCD) === String(selectedMember.ANCD))?.ANNM ||
+			String(selectedMember.ANCD ?? '');
+
+		const title = `${String(selectedMember.P_NM ?? '')} - 수급자카드`;
+		const baseFont = `"Malgun Gothic", "맑은 고딕", Arial, sans-serif`;
+
+		const guardianName = selectedMember.BHNM || '';
+		const guardianRelRaw = selectedMember.BHREL || selectedMember.BHETC || '';
+		const guardianRel = (() => {
+			const r = String(guardianRelRaw ?? '').trim();
+			if (r === '10') return '남편';
+			if (r === '11') return '부인';
+			if (r === '20') return '아들';
+			if (r === '21') return '딸';
+			if (r === '22') return '며느리';
+			if (r === '23') return '사위';
+			if (r === '31') return '손주';
+			return r;
+		})();
+
+		const guardianPhone = selectedMember.GUARDIAN_P_HP || selectedMember.GUARDIAN_P_TEL || '';
+		const guardianAddr = selectedMember.GUARDIAN_P_ADDR || '';
+
+		const memberNo = selectedMember.P_YYNO || selectedMember.PNUM || '';
+		const rrn = selectedMember.P_NO || '';
+		const birth = fmtDate10(selectedMember.P_BRDT);
+		const grade = formatCareGradeLabel(selectedMember.P_GRD, '');
+		const validFrom = fmtDate10(selectedMember.P_YYSDT);
+		const validTo = fmtDate10(selectedMember.P_YYEDT);
+		const contractDate = fmtDate10(selectedMember.P_CTDT);
+		const admitDate = fmtDate10(selectedMember.P_SDT);
+		const dischargeDate = fmtDate10(selectedMember.P_EDT);
+		const status = fmtStatus(selectedMember.P_ST);
+		const sex = fmtSex(selectedMember.P_SEX);
+		const hospital = selectedMember.HSPT || '';
+		const doctorName = selectedMember.DTNM || '';
+		const doctorTel = selectedMember.DTTEL || '';
+		const insPer = selectedMember.INSPER ?? '';
+		const usrPer = selectedMember.USRPER ?? '';
+
+		const html = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    /* 1페이지 고정을 위해 여백/높이 최적화 */
+    @page { size: A4 landscape; margin: 8mm; }
+    html, body { height: auto; }
+    body { font-family: ${baseFont}; color: #000; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
+
+    .page {
+      width: 100%;
+      min-height: auto;
+    }
+
+    .topRow {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8mm;
+    }
+
+    .title {
+      flex: 1;
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      padding-top: 1mm;
+    }
+
+    .approval {
+      width: 58mm;
+      border: 1px solid #000;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 11px;
+    }
+    .approval th, .approval td {
+      border: 1px solid #000;
+      padding: 4px 0;
+      text-align: center;
+      height: 9mm;
+    }
+
+    .sectionTitle {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 6mm 0 2mm;
+    }
+
+    .metaLine {
+      display: flex;
+      justify-content: flex-start;
+      gap: 6mm;
+      font-size: 12px;
+      margin: 4mm 0 2mm;
+    }
+
+    .gridTable {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 12px;
+    }
+    .gridTable th, .gridTable td {
+      border: 1px solid #000;
+      padding: 3px 5px;
+      vertical-align: middle;
+    }
+    .gridTable th {
+      width: 18mm;
+      background: #fff;
+      font-weight: 700;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .gridTable td {
+      height: 7.5mm;
+    }
+
+    .guardTable, .contractTable {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 12px;
+    }
+    .guardTable th, .guardTable td,
+    .contractTable th, .contractTable td {
+      border-top: 1px solid #000;
+      border-bottom: 1px solid #000;
+      padding: 3px 5px;
+      vertical-align: middle;
+    }
+
+    .guardTable thead th,
+    .contractTable thead th {
+      border-top: 2px solid #000;
+      border-bottom: 1px solid #000;
+      font-weight: 700;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .guardTable tbody td,
+    .contractTable tbody td {
+      border-top: 0;
+      border-bottom: 1px solid #000;
+    }
+
+    .muted { color: #000; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .nowrap { white-space: nowrap; }
+
+    /* 표/섹션이 중간에서 페이지 분할되지 않도록 */
+    table, tr, td, th { break-inside: avoid; page-break-inside: avoid; }
+    .sectionTitle { break-after: avoid; page-break-after: avoid; }
+
+    @media print {
+      .noPrint { display: none !important; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* 빈 2페이지 방지: 인쇄 시 100% 높이/여백으로 인한 미세 오버플로 제거 */
+      html, body { height: auto !important; }
+      .page { min-height: auto !important; height: auto !important; overflow: visible !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topRow">
+      <div style="width: 58mm;"></div>
+      <div class="title">${escapeHtml(title)}</div>
+      <table class="approval" aria-label="결재">
+        <thead>
+          <tr>
+            <th>담당</th>
+            <th>검토</th>
+            <th>결재</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="metaLine">
+      <div class="nowrap"><b>기준일</b> <span class="muted">${escapeHtml(todayYYYYMMDD())}</span></div>
+      <div class="nowrap"><b>기관</b> <span class="muted">${escapeHtml(instName)}</span></div>
+    </div>
+
+    <table class="gridTable" aria-label="수급자카드">
+      <colgroup>
+        <col style="width:18mm" />
+        <col style="width:54mm" />
+        <col style="width:18mm" />
+        <col style="width:30mm" />
+        <col style="width:22mm" />
+        <col style="width:34mm" />
+        <col style="width:18mm" />
+        <col style="width:auto" />
+      </colgroup>
+      <tbody>
+        <tr>
+          <th>인정번호</th>
+          <td>${escapeHtml(memberNo)}</td>
+          <th>생일</th>
+          <td>${escapeHtml(birth)}</td>
+          <th>수급자상태</th>
+          <td>${escapeHtml(status)}</td>
+          <th>퇴소사유</th>
+          <td>${escapeHtml(selectedMember.P_CINFO || '')}</td>
+        </tr>
+        <tr>
+          <th>요양등급</th>
+          <td>${escapeHtml(grade || '')}</td>
+          <th>성별</th>
+          <td>${escapeHtml(sex)}</td>
+          <th>계약일자</th>
+          <td>${escapeHtml(contractDate)}</td>
+          <th>입소일자</th>
+          <td>${escapeHtml(admitDate)}</td>
+        </tr>
+        <tr>
+          <th>유효기간</th>
+          <td>${escapeHtml(validFrom && validTo ? `${validFrom} ~ ${validTo}` : (validFrom || validTo ? `${validFrom}${validTo ? ` ~ ${validTo}` : ''}` : ''))}</td>
+          <th>주민번호</th>
+          <td>${escapeHtml(rrn)}</td>
+          <th>퇴소일자</th>
+          <td>${escapeHtml(dischargeDate)}</td>
+          <th>이용병원</th>
+          <td>${escapeHtml(hospital)}</td>
+        </tr>
+        <tr>
+          <th>담당주치의</th>
+          <td>${escapeHtml(doctorName)}</td>
+          <th>주치의연락처</th>
+          <td>${escapeHtml(doctorTel)}</td>
+          <th>보험자부담율</th>
+          <td>${escapeHtml(insPer)}${insPer !== '' ? '%' : ''}</td>
+          <th>수급자부담율</th>
+          <td>${escapeHtml(usrPer)}${usrPer !== '' ? '%' : ''}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sectionTitle">보호자 정보</div>
+    <table class="guardTable" aria-label="보호자 정보">
+      <thead>
+        <tr>
+          <th style="width:24mm;">보호자명</th>
+          <th style="width:20mm;">관계</th>
+          <th style="width:24mm;">관계기타</th>
+          <th style="width:24mm;">계약자구분</th>
+          <th style="width:30mm;">핸드폰</th>
+          <th style="width:30mm;">질적평가번호</th>
+          <th>주소</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${escapeHtml(guardianName)}</td>
+          <td>${escapeHtml(guardianRel)}</td>
+          <td>${escapeHtml(selectedMember.BHETC || '')}</td>
+          <td>${escapeHtml(selectedMember.GUARDIAN_TYPE || '')}</td>
+          <td>${escapeHtml(guardianPhone)}</td>
+          <td>${escapeHtml(selectedMember.GUARDIAN_QA_NO || '')}</td>
+          <td>${escapeHtml(guardianAddr)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="sectionTitle">계약 정보</div>
+    <table class="contractTable" aria-label="계약 정보">
+      <thead>
+        <tr>
+          <th style="width:24mm;">계약일자</th>
+          <th style="width:54mm;">계약기간</th>
+          <th style="width:24mm;">공단부담금</th>
+          <th style="width:24mm;">수급자부담금</th>
+          <th style="width:24mm;">급여종류</th>
+          <th style="width:24mm;">비급여식대</th>
+          <th style="width:24mm;">비급여간식</th>
+          <th style="width:26mm;">상급병실료</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${escapeHtml(contractDate)}</td>
+          <td>${escapeHtml(validFrom && validTo ? `${validFrom} ~ ${validTo}` : '')}</td>
+          <td class="right">${escapeHtml(selectedMember.INSPER_AMT || '')}</td>
+          <td class="right">${escapeHtml(selectedMember.USRPER_AMT || '')}</td>
+          <td>${escapeHtml(selectedMember.BEN_TYPE || '')}</td>
+          <td class="right">${escapeHtml(selectedMember.EAMT || '')}</td>
+          <td class="right">${escapeHtml(selectedMember.ETAMT || '')}</td>
+          <td class="right">${escapeHtml(selectedMember.ESAMT || '')}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+
+		// DailyBeneficiaryPerformance.tsx와 동일 패턴(부모창에서 print 호출)로 출력 안정화
+		const w = window.open('', '_blank');
+		if (!w) {
+			alert('팝업이 차단되어 출력창을 열 수 없습니다. 팝업 허용 후 다시 시도해주세요.');
+			return;
+		}
+		w.document.open();
+		w.document.write(html);
+		w.document.close();
+
+		setTimeout(() => {
+			try {
+				w.focus();
+				w.print();
+			} catch (e) {
+				// ignore
+			}
+		}, 250);
+	};
+
 	return (
 		<div className="min-h-screen text-black bg-white">
 			<div className="mx-auto max-w-[1200px] p-4">
@@ -1245,6 +1616,13 @@ export default function MemberInfoView() {
 									<div className="flex items-center justify-between px-4 py-3 bg-blue-100 border-b border-blue-200">
 										<h2 className="text-xl font-semibold text-blue-900">개인정보</h2>
 										<div className="flex items-center gap-2">
+											<button
+												onClick={handlePrintRecipientCard}
+												disabled={!selectedMember}
+												className="px-3 py-1 text-sm text-blue-900 bg-white border border-blue-400 rounded hover:bg-blue-50 disabled:opacity-50"
+											>
+												수급자카드출력
+											</button>
 											{isEditing ? (
 												<>
 													<button 
