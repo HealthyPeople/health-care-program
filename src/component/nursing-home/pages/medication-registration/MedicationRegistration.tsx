@@ -1,6 +1,9 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import { attachLatestRoomNoByPnum } from '../../utils/roomNoFloor';
+import { RoomNoFloorSelect } from '../../components/RoomNoFloorSelect';
+import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
 import {
 	ymdToYm,
 	openPrintWindowNow,
@@ -18,6 +21,8 @@ interface MemberData {
 	P_GRD: string;
 	P_BRDT: string;
 	P_ST: string;
+	P_FLOOR?: string | number | null;
+	ROOM_NO?: string | null;
 	[key: string]: any;
 }
 
@@ -201,7 +206,9 @@ export default function MedicationRegistration() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMemberList(result.data || []);
+				const list = Array.isArray(result.data) ? (result.data as MemberData[]) : [];
+				const merged = await attachLatestRoomNoByPnum(list);
+				setMemberList(merged);
 			}
 		} catch (err) {
 			console.error('수급자 목록 조회 오류:', err);
@@ -243,9 +250,7 @@ export default function MedicationRegistration() {
 		}
 		
 		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
+			if (!matchesSelectedFloorByRoomNo(member.ROOM_NO, selectedFloor)) {
 				return false;
 			}
 		}
@@ -984,19 +989,15 @@ export default function MedicationRegistration() {
 									<option value="9">인지지원</option>
 								</select>
 							</div>
-							{/* 층수 필터 */}
+							{/* 층수 필터 (방번호 기준 층, F14090 병합 · 목욕서비스 등과 동일) */}
 							<div className="space-y-1">
 								<div className="text-xs text-blue-900/80">층수</div>
-								<select
+								<RoomNoFloorSelect
+									members={memberList}
 									value={selectedFloor}
-									onChange={(e) => setSelectedFloor(e.target.value)}
+									onChange={setSelectedFloor}
 									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">층수 전체</option>
-									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-										<option key={floor} value={String(floor)}>{floor}층</option>
-									))}
-								</select>
+								/>
 							</div>
 						</div>
 					</div>
