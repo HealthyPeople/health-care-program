@@ -1,6 +1,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import {
+	ymdToYm,
+	openPrintWindowNow,
+	writeAndPrint,
+	buildIndividualPrintHtml,
+	buildMonthlyPrintHtml,
+	buildDrugsPrintHtml,
+} from '../../utils/medicationPrintBuilders';
 
 interface MemberData {
 	ANCD: string;
@@ -13,9 +21,134 @@ interface MemberData {
 	[key: string]: any;
 }
 
-interface MedicationData {
-	MEDDT: string; // 복용일자
-	[key: string]: any;
+type MedicationTypeKey =
+	| '아침식전'
+	| '아침식후'
+	| '점심식전'
+	| '점심식후'
+	| '저녁식전'
+	| '저녁식후'
+	| '취침복용';
+
+interface FormDataState {
+	beneficiary: string;
+	medicationDate: string;
+	morningBeforeMeal: string;
+	morningBeforeMealNote: string;
+	morningBeforeMealTime: string;
+	morningAfterMeal: string;
+	morningAfterMealNote: string;
+	morningAfterMealTime: string;
+	lunchBeforeMeal: string;
+	lunchBeforeMealNote: string;
+	lunchBeforeMealTime: string;
+	lunchAfterMeal: string;
+	lunchAfterMealNote: string;
+	lunchAfterMealTime: string;
+	dinnerBeforeMeal: string;
+	dinnerBeforeMealNote: string;
+	dinnerBeforeMealTime: string;
+	dinnerAfterMeal: string;
+	dinnerAfterMealNote: string;
+	dinnerAfterMealTime: string;
+	bedtime: string;
+	bedtimeNote: string;
+	bedtimeTime: string;
+	medicationStatus: string;
+	medicationConfirmer: string;
+}
+
+const todayYmd = () => {
+	const d = new Date();
+	const yyyy = String(d.getFullYear()).padStart(4, '0');
+	const mm = String(d.getMonth() + 1).padStart(2, '0');
+	const dd = String(d.getDate()).padStart(2, '0');
+	return `${yyyy}-${mm}-${dd}`;
+};
+
+function createEmptyFormData(beneficiary: string, medicationDate: string): FormDataState {
+	return {
+		beneficiary,
+		medicationDate,
+		morningBeforeMeal: 'none',
+		morningBeforeMealNote: '',
+		morningBeforeMealTime: '',
+		morningAfterMeal: 'none',
+		morningAfterMealNote: '',
+		morningAfterMealTime: '',
+		lunchBeforeMeal: 'none',
+		lunchBeforeMealNote: '',
+		lunchBeforeMealTime: '',
+		lunchAfterMeal: 'none',
+		lunchAfterMealNote: '',
+		lunchAfterMealTime: '',
+		dinnerBeforeMeal: 'none',
+		dinnerBeforeMealNote: '',
+		dinnerBeforeMealTime: '',
+		dinnerAfterMeal: 'none',
+		dinnerAfterMealNote: '',
+		dinnerAfterMealTime: '',
+		bedtime: 'none',
+		bedtimeNote: '',
+		bedtimeTime: '',
+		medicationStatus: '',
+		medicationConfirmer: '',
+	};
+}
+
+function apiStatusToForm(status: string): string {
+	if (status === '복용') return 'taken';
+	if (status === '미복용') return 'not_taken';
+	return 'none';
+}
+
+function formStatusToApi(v: string): '약없음' | '복용' | '미복용' {
+	if (v === 'taken') return '복용';
+	if (v === 'not_taken') return '미복용';
+	return '약없음';
+}
+
+function buildTimesPayload(fd: FormDataState): Record<
+	MedicationTypeKey,
+	{ status: '약없음' | '복용' | '미복용'; time: string; helper: string }
+> {
+	return {
+		아침식전: {
+			status: formStatusToApi(fd.morningBeforeMeal),
+			time: fd.morningBeforeMealTime || '',
+			helper: fd.morningBeforeMealNote || '',
+		},
+		아침식후: {
+			status: formStatusToApi(fd.morningAfterMeal),
+			time: fd.morningAfterMealTime || '',
+			helper: fd.morningAfterMealNote || '',
+		},
+		점심식전: {
+			status: formStatusToApi(fd.lunchBeforeMeal),
+			time: fd.lunchBeforeMealTime || '',
+			helper: fd.lunchBeforeMealNote || '',
+		},
+		점심식후: {
+			status: formStatusToApi(fd.lunchAfterMeal),
+			time: fd.lunchAfterMealTime || '',
+			helper: fd.lunchAfterMealNote || '',
+		},
+		저녁식전: {
+			status: formStatusToApi(fd.dinnerBeforeMeal),
+			time: fd.dinnerBeforeMealTime || '',
+			helper: fd.dinnerBeforeMealNote || '',
+		},
+		저녁식후: {
+			status: formStatusToApi(fd.dinnerAfterMeal),
+			time: fd.dinnerAfterMealTime || '',
+			helper: fd.dinnerAfterMealNote || '',
+		},
+		취침복용: {
+			status: formStatusToApi(fd.bedtime),
+			time: fd.bedtimeTime || '',
+			helper: fd.bedtimeNote || '',
+		},
+	};
 }
 
 export default function MedicationRegistration() {
@@ -23,32 +156,28 @@ export default function MedicationRegistration() {
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [medicationDates, setMedicationDates] = useState<string[]>([]);
 	const [loadingMedications, setLoadingMedications] = useState(false);
+	const [detailLoading, setDetailLoading] = useState(false);
 	const [isEditMode, setIsEditMode] = useState(false);
+	const [isNewRecord, setIsNewRecord] = useState(false);
 	const [datePage, setDatePage] = useState(1);
 	const dateItemsPerPage = 10;
 
-	// 폼 데이터
-	const [formData, setFormData] = useState({
-		beneficiary: '', // 수급자
-		medicationDate: '2025-12-11', // 복용일자
-		// 시간대별 복용 상태 (약없음: 'none', 복용: 'taken', 미복용: 'not_taken')
-		morningBeforeMeal: 'none', // 아침식전
-		morningBeforeMealNote: '', // 아침식전 비고
-		morningAfterMeal: 'none', // 아침식후
-		morningAfterMealNote: '', // 아침식후 비고
-		lunchBeforeMeal: 'none', // 점심식전
-		lunchBeforeMealNote: '', // 점심식전 비고
-		lunchAfterMeal: 'none', // 점심식후
-		lunchAfterMealNote: '', // 점심식후 비고
-		dinnerBeforeMeal: 'none', // 저녁식전
-		dinnerBeforeMealNote: '', // 저녁식전 비고
-		dinnerAfterMeal: 'none', // 저녁식후
-		dinnerAfterMealNote: '', // 저녁식후 비고
-		bedtime: 'none', // 취침복용
-		bedtimeNote: '', // 취침복용 비고
-		medicationStatus: '', // 복용실태
-		medicationConfirmer: '', // 복용확인자
-	});
+	const [formData, setFormData] = useState<FormDataState>(createEmptyFormData('', todayYmd()));
+
+	const [confirmDate, setConfirmDate] = useState<string>(todayYmd());
+	const [etc, setEtc] = useState('');
+	const [originalFormData, setOriginalFormData] = useState<FormDataState | null>(null);
+	const [originalConfirmDate, setOriginalConfirmDate] = useState('');
+	const [originalEtc, setOriginalEtc] = useState('');
+
+	const [helperSearchTerms, setHelperSearchTerms] = useState<Record<string, string>>({});
+	const [helperSuggestions, setHelperSuggestions] = useState<Record<string, Array<{ EMPNO: string; EMPNM: string }>>>({});
+	const [showHelperDropdowns, setShowHelperDropdowns] = useState<Record<string, boolean>>({});
+	const [activeHelperType, setActiveHelperType] = useState<MedicationTypeKey | null>(null);
+
+	const [confirmerSearchTerm, setConfirmerSearchTerm] = useState('');
+	const [confirmerSuggestions, setConfirmerSuggestions] = useState<Array<{ EMPNO: string; EMPNM: string }>>([]);
+	const [showConfirmerDropdown, setShowConfirmerDropdown] = useState(false);
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -164,43 +293,191 @@ export default function MedicationRegistration() {
 		setCurrentPage(1);
 	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
 
-	// 복용일자 목록 조회
-	const fetchMedicationDates = async (ancd: string, pnum: string) => {
-		if (!ancd || !pnum) {
-			setMedicationDates([]);
+	const searchHelpers = async (type: MedicationTypeKey, term: string) => {
+		if (!term || term.trim() === '') {
+			setHelperSuggestions((prev) => ({ ...prev, [type]: [] }));
+			setShowHelperDropdowns((prev) => ({ ...prev, [type]: false }));
 			return;
 		}
+		try {
+			const url = `/api/f01010?name=${encodeURIComponent(term.trim())}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			if (result.success && Array.isArray(result.data)) {
+				setHelperSuggestions((prev) => ({ ...prev, [type]: result.data }));
+				setShowHelperDropdowns((prev) => ({ ...prev, [type]: result.data.length > 0 }));
+			} else {
+				setHelperSuggestions((prev) => ({ ...prev, [type]: [] }));
+				setShowHelperDropdowns((prev) => ({ ...prev, [type]: false }));
+			}
+		} catch (err) {
+			console.error('복용도우미 검색 오류:', err);
+			setHelperSuggestions((prev) => ({ ...prev, [type]: [] }));
+			setShowHelperDropdowns((prev) => ({ ...prev, [type]: false }));
+		}
+	};
 
+	const searchConfirmer = async (term: string) => {
+		if (!term || term.trim() === '') {
+			setConfirmerSuggestions([]);
+			setShowConfirmerDropdown(false);
+			return;
+		}
+		try {
+			const url = `/api/f01010?name=${encodeURIComponent(term.trim())}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			if (result.success && Array.isArray(result.data)) {
+				setConfirmerSuggestions(result.data);
+				setShowConfirmerDropdown(result.data.length > 0);
+			} else {
+				setConfirmerSuggestions([]);
+				setShowConfirmerDropdown(false);
+			}
+		} catch (err) {
+			console.error('복용 확인자 검색 오류:', err);
+			setConfirmerSuggestions([]);
+			setShowConfirmerDropdown(false);
+		}
+	};
+
+	const handleSelectConfirmer = (item: { EMPNO: string; EMPNM: string }) => {
+		setFormData((prev) => ({ ...prev, medicationConfirmer: item.EMPNM }));
+		setConfirmerSearchTerm(item.EMPNM);
+		setShowConfirmerDropdown(false);
+	};
+
+	const handleSelectHelper = (type: MedicationTypeKey, noteKey: keyof FormDataState, helper: { EMPNO: string; EMPNM: string }) => {
+		setFormData((prev) => ({ ...prev, [noteKey]: helper.EMPNM }));
+		setHelperSearchTerms((prev) => ({ ...prev, [type]: helper.EMPNM }));
+		setShowHelperDropdowns((prev) => ({ ...prev, [type]: false }));
+		setActiveHelperType(null);
+	};
+
+	const fetchMedicationDates = async (_ancd: string, pnum: string) => {
 		setLoadingMedications(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/medication-registration/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setMedicationDates([]);
+			const pn = String(pnum || '').trim();
+			if (!pn) {
+				setMedicationDates([]);
+				return;
+			}
+			const res = await fetch(`/api/f30111?mode=dates&pnum=${encodeURIComponent(pn)}`);
+			const json = await res.json();
+			const list = Array.isArray(json?.data)
+				? json.data.map((r: { EADT?: string }) => String(r.EADT || '').trim()).filter(Boolean)
+				: [];
+			setMedicationDates(list);
+			setDatePage(1);
 		} catch (err) {
 			console.error('복용일자 조회 오류:', err);
+			setMedicationDates([]);
 		} finally {
 			setLoadingMedications(false);
 		}
 	};
 
-	// 수급자 선택 함수
+	const applyDetailToForm = (data: any, beneficiaryName: string): FormDataState => {
+		const t = data?.times || {};
+		const slot = (k: MedicationTypeKey) => t[k] || {};
+		return {
+			beneficiary: beneficiaryName,
+			medicationDate: String(data?.EADT || '').slice(0, 10) || todayYmd(),
+			morningBeforeMeal: apiStatusToForm(String(slot('아침식전').status || '')),
+			morningBeforeMealNote: String(slot('아침식전').helper ?? ''),
+			morningBeforeMealTime: String(slot('아침식전').time ?? ''),
+			morningAfterMeal: apiStatusToForm(String(slot('아침식후').status || '')),
+			morningAfterMealNote: String(slot('아침식후').helper ?? ''),
+			morningAfterMealTime: String(slot('아침식후').time ?? ''),
+			lunchBeforeMeal: apiStatusToForm(String(slot('점심식전').status || '')),
+			lunchBeforeMealNote: String(slot('점심식전').helper ?? ''),
+			lunchBeforeMealTime: String(slot('점심식전').time ?? ''),
+			lunchAfterMeal: apiStatusToForm(String(slot('점심식후').status || '')),
+			lunchAfterMealNote: String(slot('점심식후').helper ?? ''),
+			lunchAfterMealTime: String(slot('점심식후').time ?? ''),
+			dinnerBeforeMeal: apiStatusToForm(String(slot('저녁식전').status || '')),
+			dinnerBeforeMealNote: String(slot('저녁식전').helper ?? ''),
+			dinnerBeforeMealTime: String(slot('저녁식전').time ?? ''),
+			dinnerAfterMeal: apiStatusToForm(String(slot('저녁식후').status || '')),
+			dinnerAfterMealNote: String(slot('저녁식후').helper ?? ''),
+			dinnerAfterMealTime: String(slot('저녁식후').time ?? ''),
+			bedtime: apiStatusToForm(String(slot('취침복용').status || '')),
+			bedtimeNote: String(slot('취침복용').helper ?? ''),
+			bedtimeTime: String(slot('취침복용').time ?? ''),
+			medicationStatus: String(data?.EADES ?? ''),
+			medicationConfirmer: String(data?.CONF_NAME ?? ''),
+		};
+	};
+
+	const loadMedicationDetail = async (member: MemberData, eadt: string) => {
+		setDetailLoading(true);
+		try {
+			const pnum = String(member?.PNUM ?? '').trim();
+			if (!pnum || !eadt) return;
+			const res = await fetch(`/api/f30111?mode=detail&pnum=${encodeURIComponent(pnum)}&eadt=${encodeURIComponent(eadt)}`);
+			const json = await res.json();
+			const data = json?.data;
+			const name = member.P_NM || '';
+			if (!data) {
+				const empty = createEmptyFormData(name, eadt);
+				setFormData(empty);
+				setHelperSearchTerms({});
+				setConfirmDate(todayYmd());
+				setEtc('');
+				setConfirmerSearchTerm('');
+				setIsEditMode(true);
+				setIsNewRecord(true);
+				setOriginalFormData(null);
+				return;
+			}
+			const fd = applyDetailToForm(data, name);
+			setFormData(fd);
+			setHelperSearchTerms({
+				아침식전: fd.morningBeforeMealNote,
+				아침식후: fd.morningAfterMealNote,
+				점심식전: fd.lunchBeforeMealNote,
+				점심식후: fd.lunchAfterMealNote,
+				저녁식전: fd.dinnerBeforeMealNote,
+				저녁식후: fd.dinnerAfterMealNote,
+				취침복용: fd.bedtimeNote,
+			});
+			setConfirmDate(String(data.CONF_DATE || todayYmd()));
+			setEtc(String(data.ETC ?? ''));
+			setConfirmerSearchTerm(String(data.CONF_NAME ?? ''));
+			setIsEditMode(false);
+			setIsNewRecord(false);
+			setOriginalFormData(JSON.parse(JSON.stringify(fd)));
+			setOriginalConfirmDate(String(data.CONF_DATE || todayYmd()));
+			setOriginalEtc(String(data.ETC ?? ''));
+		} catch (e) {
+			console.error('복용 상세 조회 오류:', e);
+		} finally {
+			setDetailLoading(false);
+		}
+	};
+
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
+		setSelectedDateIndex(null);
+		setIsNewRecord(false);
+		setIsEditMode(false);
+		setFormData(createEmptyFormData(member.P_NM || '', todayYmd()));
+		setConfirmDate(todayYmd());
+		setEtc('');
+		setConfirmerSearchTerm('');
+		setOriginalFormData(null);
 		fetchMedicationDates(member.ANCD, member.PNUM);
 	};
 
-	// 복용일자 선택 함수
-	const handleSelectDate = (index: number) => {
+	const handleSelectDate = async (index: number) => {
 		setSelectedDateIndex(index);
 		const selectedDate = medicationDates[index];
-		setFormData(prev => ({ ...prev, medicationDate: selectedDate || '' }));
+		setFormData((prev) => ({ ...prev, medicationDate: selectedDate || '' }));
 		setIsEditMode(false);
-		// TODO: 선택한 날짜의 복용 데이터 조회
+		setIsNewRecord(false);
+		if (selectedMember && selectedDate) {
+			await loadMedicationDetail(selectedMember, selectedDate);
+		}
 	};
 
 	// 날짜 형식 변환 함수
@@ -218,83 +495,108 @@ export default function MedicationRegistration() {
 		return dateStr;
 	};
 
-	// 추가 함수
 	const handleAdd = () => {
 		if (!selectedMember) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
-		const today = new Date();
-		const year = today.getFullYear();
-		const month = String(today.getMonth() + 1).padStart(2, '0');
-		const day = String(today.getDate()).padStart(2, '0');
-		const formattedDate = `${year}-${month}-${day}`;
-		
-		setFormData(prev => ({
-			...prev,
-			medicationDate: formattedDate,
-			morningBeforeMeal: 'none',
-			morningBeforeMealNote: '',
-			morningAfterMeal: 'none',
-			morningAfterMealNote: '',
-			lunchBeforeMeal: 'none',
-			lunchBeforeMealNote: '',
-			lunchAfterMeal: 'none',
-			lunchAfterMealNote: '',
-			dinnerBeforeMeal: 'none',
-			dinnerBeforeMealNote: '',
-			dinnerAfterMeal: 'none',
-			dinnerAfterMealNote: '',
-			bedtime: 'none',
-			bedtimeNote: '',
-			medicationStatus: '',
-			medicationConfirmer: ''
-		}));
+		const td = todayYmd();
+		setFormData(createEmptyFormData(selectedMember.P_NM || '', td));
+		setConfirmDate(td);
+		setEtc('');
+		setConfirmerSearchTerm('');
+		setSelectedDateIndex(null);
+		setIsNewRecord(true);
 		setIsEditMode(true);
+		setOriginalFormData(null);
+		setHelperSearchTerms({});
+		setShowHelperDropdowns({});
 	};
 
-	// 수정 함수
 	const handleModify = () => {
 		if (!selectedMember || !formData.medicationDate) {
 			alert('수정할 복용일자를 선택해주세요.');
 			return;
 		}
+		setOriginalFormData(JSON.parse(JSON.stringify(formData)));
+		setOriginalConfirmDate(confirmDate);
+		setOriginalEtc(etc);
 		setIsEditMode(true);
 	};
 
-	// 저장 함수
+	const handleCancel = () => {
+		if (originalFormData) {
+			const restored = JSON.parse(JSON.stringify(originalFormData)) as FormDataState;
+			setFormData(restored);
+			setHelperSearchTerms({
+				아침식전: restored.morningBeforeMealNote,
+				아침식후: restored.morningAfterMealNote,
+				점심식전: restored.lunchBeforeMealNote,
+				점심식후: restored.lunchAfterMealNote,
+				저녁식전: restored.dinnerBeforeMealNote,
+				저녁식후: restored.dinnerAfterMealNote,
+				취침복용: restored.bedtimeNote,
+			});
+			setConfirmDate(originalConfirmDate);
+			setEtc(originalEtc);
+			setConfirmerSearchTerm(restored.medicationConfirmer);
+		} else if (selectedMember) {
+			setFormData(createEmptyFormData(selectedMember.P_NM || '', todayYmd()));
+			setHelperSearchTerms({});
+			setConfirmDate(todayYmd());
+			setEtc('');
+			setConfirmerSearchTerm('');
+		}
+		setIsEditMode(false);
+		setShowHelperDropdowns({});
+		setShowConfirmerDropdown(false);
+		setActiveHelperType(null);
+	};
+
 	const handleSave = async () => {
 		if (!selectedMember) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
-
 		if (!formData.medicationDate) {
 			alert('복용일자를 입력해주세요.');
 			return;
 		}
-
 		setLoadingMedications(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedDateIndex !== null ? '/api/medication-registration/update' : '/api/medication-registration/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
-
-			alert(selectedDateIndex !== null ? '복용약물이 수정되었습니다.' : '복용약물이 저장되었습니다.');
-			setIsEditMode(false);
-			
-			// 데이터 다시 조회
-			if (selectedMember) {
-				await fetchMedicationDates(selectedMember.ANCD, selectedMember.PNUM);
+			const payload = {
+				ANCD: selectedMember.ANCD,
+				PNUM: selectedMember.PNUM,
+				EADT: formData.medicationDate,
+				EADES: formData.medicationStatus,
+				ETC: etc,
+				CONF_DATE: confirmDate,
+				CONF_NAME: formData.medicationConfirmer,
+				times: buildTimesPayload(formData),
+			};
+			const res = await fetch('/api/f30111', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const json = await res.json();
+			if (!json?.success) {
+				alert(json?.error || '저장 실패');
+				return;
 			}
+			alert('복용약물이 저장되었습니다.');
+			setIsEditMode(false);
+			setIsNewRecord(false);
+			const pn = encodeURIComponent(String(selectedMember.PNUM).trim());
+			const datesRes = await fetch(`/api/f30111?mode=dates&pnum=${pn}`);
+			const datesJson = await datesRes.json();
+			const list = Array.isArray(datesJson?.data)
+				? datesJson.data.map((r: { EADT?: string }) => String(r.EADT || '').trim()).filter(Boolean)
+				: [];
+			setMedicationDates(list);
+			const idx = list.findIndex((d: string) => d === formData.medicationDate);
+			setSelectedDateIndex(idx >= 0 ? idx : null);
+			await loadMedicationDetail(selectedMember, formData.medicationDate);
 		} catch (err) {
 			console.error('복용약물 저장 오류:', err);
 			alert('복용약물 저장 중 오류가 발생했습니다.');
@@ -303,58 +605,43 @@ export default function MedicationRegistration() {
 		}
 	};
 
-	// 삭제 함수
 	const handleDelete = async () => {
 		if (!selectedMember) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
-
-		if (selectedDateIndex === null) {
-			alert('삭제할 복용약물을 선택해주세요.');
+		if (!formData.medicationDate) {
+			alert('삭제할 복용일자가 없습니다.');
 			return;
 		}
-
+		if (isNewRecord) {
+			handleCancel();
+			return;
+		}
 		if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
 			return;
 		}
-
 		setLoadingMedications(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/medication-registration/${selectedDateIndex}`, {
-			// 	method: 'DELETE'
-			// });
-
+			const pnum = String(selectedMember.PNUM ?? '').trim();
+			const res = await fetch(
+				`/api/f30111?pnum=${encodeURIComponent(pnum)}&eadt=${encodeURIComponent(formData.medicationDate)}`,
+				{ method: 'DELETE' }
+			);
+			const json = await res.json();
+			if (!json?.success) {
+				alert(json?.error || '삭제 실패');
+				return;
+			}
 			alert('복용약물이 삭제되었습니다.');
 			setIsEditMode(false);
-			
-			// 데이터 다시 조회
-			if (selectedMember) {
-				await fetchMedicationDates(selectedMember.ANCD, selectedMember.PNUM);
-			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				morningBeforeMeal: 'none',
-				morningBeforeMealNote: '',
-				morningAfterMeal: 'none',
-				morningAfterMealNote: '',
-				lunchBeforeMeal: 'none',
-				lunchBeforeMealNote: '',
-				lunchAfterMeal: 'none',
-				lunchAfterMealNote: '',
-				dinnerBeforeMeal: 'none',
-				dinnerBeforeMealNote: '',
-				dinnerAfterMeal: 'none',
-				dinnerAfterMealNote: '',
-				bedtime: 'none',
-				bedtimeNote: '',
-				medicationStatus: '',
-				medicationConfirmer: ''
-			}));
 			setSelectedDateIndex(null);
+			setFormData(createEmptyFormData(selectedMember.P_NM || '', todayYmd()));
+			setConfirmDate(todayYmd());
+			setEtc('');
+			setConfirmerSearchTerm('');
+			setOriginalFormData(null);
+			await fetchMedicationDates(selectedMember.ANCD, selectedMember.PNUM);
 		} catch (err) {
 			console.error('복용약물 삭제 오류:', err);
 			alert('복용약물 삭제 중 오류가 발생했습니다.');
@@ -363,23 +650,63 @@ export default function MedicationRegistration() {
 		}
 	};
 
-	// 출력 함수들
 	const handlePrintIndividual = async () => {
 		if (!selectedMember || !formData.medicationDate) {
 			alert('출력할 복용약물을 선택해주세요.');
 			return;
 		}
-		// TODO: 개별복용출력 구현
-		alert('개별복용출력 기능은 준비 중입니다.');
+		const ym = ymdToYm(formData.medicationDate) || ymdToYm(todayYmd());
+		const pnum = String(selectedMember?.PNUM ?? '').trim();
+		const w = openPrintWindowNow('약물관리기록지(개별)');
+		if (!w) {
+			alert('팝업 차단을 해제해주세요.');
+			return;
+		}
+		try {
+			const res = await fetch(`/api/medication-print/individual?pnum=${encodeURIComponent(pnum)}&month=${encodeURIComponent(ym)}`);
+			const json = await res.json();
+			if (!json?.success) {
+				w.close();
+				alert(json?.error || '출력 데이터 조회 실패');
+				return;
+			}
+			writeAndPrint(w, '약물관리기록지(개별)', buildIndividualPrintHtml(json.data));
+		} catch (e) {
+			console.error(e);
+			try {
+				w.close();
+			} catch {
+				/* noop */
+			}
+			alert('출력 중 오류가 발생했습니다.');
+		}
 	};
 
 	const handlePrintAll = async () => {
-		if (!selectedMember) {
-			alert('수급자를 선택해주세요.');
+		const ym = ymdToYm(formData.medicationDate) || ymdToYm(todayYmd());
+		const w = openPrintWindowNow('약물관리기록지(전체)');
+		if (!w) {
+			alert('팝업 차단을 해제해주세요.');
 			return;
 		}
-		// TODO: 전체복용출력 구현
-		alert('전체복용출력 기능은 준비 중입니다.');
+		try {
+			const res = await fetch(`/api/medication-print/monthly?month=${encodeURIComponent(ym)}`);
+			const json = await res.json();
+			if (!json?.success) {
+				w.close();
+				alert(json?.error || '출력 데이터 조회 실패');
+				return;
+			}
+			writeAndPrint(w, '약물관리기록지(전체)', buildMonthlyPrintHtml(json.data));
+		} catch (e) {
+			console.error(e);
+			try {
+				w.close();
+			} catch {
+				/* noop */
+			}
+			alert('출력 중 오류가 발생했습니다.');
+		}
 	};
 
 	const handlePrintMedication = async () => {
@@ -387,32 +714,68 @@ export default function MedicationRegistration() {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
-		// TODO: 복용약물출력 구현
-		alert('복용약물출력 기능은 준비 중입니다.');
+		const ym = ymdToYm(formData.medicationDate) || ymdToYm(todayYmd());
+		const pnum = String(selectedMember?.PNUM ?? '').trim();
+		const w = openPrintWindowNow('질병 및 복용약물');
+		if (!w) {
+			alert('팝업 차단을 해제해주세요.');
+			return;
+		}
+		try {
+			const res = await fetch(`/api/medication-print/drugs?pnum=${encodeURIComponent(pnum)}&month=${encodeURIComponent(ym)}`);
+			const json = await res.json();
+			if (!json?.success) {
+				w.close();
+				alert(json?.error || '출력 데이터 조회 실패');
+				return;
+			}
+			writeAndPrint(w, '질병 및 복용약물', buildDrugsPrintHtml(json.data));
+		} catch (e) {
+			console.error(e);
+			try {
+				w.close();
+			} catch {
+				/* noop */
+			}
+			alert('출력 중 오류가 발생했습니다.');
+		}
 	};
 
-	// 복용확인자수정 함수
 	const handleModifyConfirmer = async () => {
 		if (!selectedMember || !formData.medicationDate) {
 			alert('복용확인자를 수정할 복용약물을 선택해주세요.');
 			return;
 		}
-
 		if (!formData.medicationConfirmer) {
 			alert('복용확인자를 입력해주세요.');
 			return;
 		}
-
 		setLoadingMedications(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/medication-registration/${selectedDateIndex}/confirmer`, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({ confirmer: formData.medicationConfirmer })
-			// });
-
-			alert('복용확인자가 수정되었습니다.');
+			const payload = {
+				ANCD: selectedMember.ANCD,
+				PNUM: selectedMember.PNUM,
+				EADT: formData.medicationDate,
+				EADES: formData.medicationStatus,
+				ETC: etc,
+				CONF_DATE: confirmDate,
+				CONF_NAME: formData.medicationConfirmer,
+				times: buildTimesPayload(formData),
+			};
+			const res = await fetch('/api/f30111', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const json = await res.json();
+			if (!json?.success) {
+				alert(json?.error || '저장 실패');
+				return;
+			}
+			alert('복용확인자가 반영되었습니다.');
+			if (selectedMember) {
+				await loadMedicationDetail(selectedMember, formData.medicationDate);
+			}
 		} catch (err) {
 			console.error('복용확인자 수정 오류:', err);
 			alert('복용확인자 수정 중 오류가 발생했습니다.');
@@ -421,20 +784,66 @@ export default function MedicationRegistration() {
 		}
 	};
 
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			if (activeHelperType && helperSearchTerms[activeHelperType]) {
+				const term = helperSearchTerms[activeHelperType];
+				if (term && term.trim() !== '') {
+					searchHelpers(activeHelperType, term);
+				}
+			}
+		}, 300);
+		return () => clearTimeout(timer);
+	}, [helperSearchTerms, activeHelperType]);
+
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			if (confirmerSearchTerm && confirmerSearchTerm.trim() !== '') {
+				searchConfirmer(confirmerSearchTerm);
+			}
+		}, 300);
+		return () => clearTimeout(timer);
+	}, [confirmerSearchTerm]);
+
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			const target = event.target as HTMLElement;
+			if (!target.closest('.helper-dropdown-container') && !target.closest('.confirmer-dropdown-container')) {
+				setShowHelperDropdowns({});
+				setActiveHelperType(null);
+				setShowConfirmerDropdown(false);
+			}
+		};
+		if (Object.values(showHelperDropdowns).some(Boolean) || showConfirmerDropdown) {
+			document.addEventListener('mousedown', handleClickOutside);
+			return () => document.removeEventListener('mousedown', handleClickOutside);
+		}
+	}, [showHelperDropdowns, showConfirmerDropdown]);
+
+	const noteKeyToMedicationType = (noteKey: string): MedicationTypeKey | null => {
+		const m: Record<string, MedicationTypeKey> = {
+			morningBeforeMealNote: '아침식전',
+			morningAfterMealNote: '아침식후',
+			lunchBeforeMealNote: '점심식전',
+			lunchAfterMealNote: '점심식후',
+			dinnerBeforeMealNote: '저녁식전',
+			dinnerAfterMealNote: '저녁식후',
+			bedtimeNote: '취침복용',
+		};
+		return m[noteKey] ?? null;
+	};
+
 	// 복용일자 목록 페이지네이션
 	const dateTotalPages = Math.ceil(medicationDates.length / dateItemsPerPage);
 	const dateStartIndex = (datePage - 1) * dateItemsPerPage;
 	const dateEndIndex = dateStartIndex + dateItemsPerPage;
 	const currentDateItems = medicationDates.slice(dateStartIndex, dateEndIndex);
 
-	// 시간대별 라디오 버튼 렌더링 함수
-	const renderTimeSlot = (
-		label: string,
-		valueKey: string,
-		noteKey: string
-	) => {
-		const value = formData[valueKey as keyof typeof formData] as string;
-		const note = formData[noteKey as keyof typeof formData] as string;
+	const renderTimeSlot = (label: string, valueKey: keyof FormDataState, noteKey: keyof FormDataState) => {
+		const value = formData[valueKey] as string;
+		const note = formData[noteKey] as string;
+		const medType = noteKeyToMedicationType(String(noteKey));
+		const helperInputValue = medType ? (helperSearchTerms[medType] ?? note) : note;
 
 		return (
 			<div className="flex items-center gap-4 py-2 border-b border-blue-100">
@@ -443,10 +852,10 @@ export default function MedicationRegistration() {
 					<div className="flex items-center gap-2">
 						<input
 							type="radio"
-							name={valueKey}
+							name={String(valueKey)}
 							value="none"
 							checked={value === 'none'}
-							onChange={(e) => setFormData(prev => ({ ...prev, [valueKey]: e.target.value }))}
+							onChange={(e) => setFormData((prev) => ({ ...prev, [valueKey]: e.target.value }))}
 							disabled={!isEditMode}
 							className="w-4 h-4 text-blue-500 border-blue-300 focus:ring-blue-500"
 						/>
@@ -455,10 +864,10 @@ export default function MedicationRegistration() {
 					<div className="flex items-center gap-2">
 						<input
 							type="radio"
-							name={valueKey}
+							name={String(valueKey)}
 							value="taken"
 							checked={value === 'taken'}
-							onChange={(e) => setFormData(prev => ({ ...prev, [valueKey]: e.target.value }))}
+							onChange={(e) => setFormData((prev) => ({ ...prev, [valueKey]: e.target.value }))}
 							disabled={!isEditMode}
 							className="w-4 h-4 text-blue-500 border-blue-300 focus:ring-blue-500"
 						/>
@@ -467,24 +876,61 @@ export default function MedicationRegistration() {
 					<div className="flex items-center gap-2">
 						<input
 							type="radio"
-							name={valueKey}
+							name={String(valueKey)}
 							value="not_taken"
 							checked={value === 'not_taken'}
-							onChange={(e) => setFormData(prev => ({ ...prev, [valueKey]: e.target.value }))}
+							onChange={(e) => setFormData((prev) => ({ ...prev, [valueKey]: e.target.value }))}
 							disabled={!isEditMode}
 							className="w-4 h-4 text-blue-500 border-blue-300 focus:ring-blue-500"
 						/>
 						<label className="text-sm text-blue-900">미복용</label>
 					</div>
 				</div>
-				<input
-					type="text"
-					value={note}
-					onChange={(e) => setFormData(prev => ({ ...prev, [noteKey]: e.target.value }))}
-					disabled={!isEditMode}
-					className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
-					placeholder="비고"
-				/>
+				<div className="relative flex-1 helper-dropdown-container">
+					<input
+						type="text"
+						value={helperInputValue}
+						onChange={(e) => {
+							const v = e.target.value;
+							setFormData((prev) => ({ ...prev, [noteKey]: v }));
+							if (medType) {
+								setHelperSearchTerms((prev) => ({ ...prev, [medType]: v }));
+								setActiveHelperType(medType);
+								if (!v.trim()) {
+									setHelperSuggestions((prev) => ({ ...prev, [medType]: [] }));
+									setShowHelperDropdowns((prev) => ({ ...prev, [medType]: false }));
+								}
+							}
+						}}
+						onFocus={() => {
+							if (!isEditMode || !medType) return;
+							setActiveHelperType(medType);
+							if (note && note.trim()) {
+								searchHelpers(medType, note);
+							}
+						}}
+						disabled={!isEditMode}
+						className="w-full px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+						placeholder="비고 · 복용도우미 검색"
+					/>
+					{isEditMode &&
+						medType &&
+						showHelperDropdowns[medType] &&
+						helperSuggestions[medType] &&
+						helperSuggestions[medType].length > 0 && (
+							<div className="absolute z-10 w-full mt-1 bg-white border border-blue-300 rounded shadow-lg max-h-40 overflow-y-auto">
+								{helperSuggestions[medType].map((h, index) => (
+									<div
+										key={`${h.EMPNO}-${index}`}
+										onClick={() => medType && handleSelectHelper(medType, noteKey, h)}
+										className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 border-b border-blue-100 last:border-b-0"
+									>
+										{h.EMPNM}
+									</div>
+								))}
+							</div>
+						)}
+				</div>
 			</div>
 		);
 	};
@@ -814,6 +1260,9 @@ export default function MedicationRegistration() {
 
 					{/* 중간: 시간대별 복용 상태 */}
 					<div className="mb-4 space-y-1">
+						{detailLoading && (
+							<div className="mb-2 text-sm text-blue-900/60">상세 조회 중...</div>
+						)}
 						{renderTimeSlot('아침식전', 'morningBeforeMeal', 'morningBeforeMealNote')}
 						{renderTimeSlot('아침식후', 'morningAfterMeal', 'morningAfterMealNote')}
 						{renderTimeSlot('점심식전', 'lunchBeforeMeal', 'lunchBeforeMealNote')}
@@ -839,14 +1288,43 @@ export default function MedicationRegistration() {
 						<div className="w-64">
 							<div className="mb-2">
 								<label className="block text-sm font-medium text-blue-900 bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">복용확인자</label>
-								<input
-									type="text"
-									value={formData.medicationConfirmer}
-									onChange={(e) => setFormData(prev => ({ ...prev, medicationConfirmer: e.target.value }))}
-									disabled={!isEditMode}
-									className="w-full px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 mt-2 disabled:bg-gray-50"
-									placeholder="복용확인자를 입력하세요"
-								/>
+								<div className="relative mt-2 confirmer-dropdown-container">
+									<input
+										type="text"
+										value={confirmerSearchTerm || formData.medicationConfirmer}
+										onChange={(e) => {
+											const val = e.target.value;
+											setFormData((prev) => ({ ...prev, medicationConfirmer: val }));
+											setConfirmerSearchTerm(val);
+											if (!val.trim()) {
+												setConfirmerSuggestions([]);
+												setShowConfirmerDropdown(false);
+											}
+										}}
+										onFocus={() => {
+											if (!isEditMode) return;
+											if (formData.medicationConfirmer) {
+												searchConfirmer(formData.medicationConfirmer);
+											}
+										}}
+										disabled={!isEditMode}
+										className="w-full px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+										placeholder="복용확인자 검색"
+									/>
+									{isEditMode && showConfirmerDropdown && confirmerSuggestions.length > 0 && (
+										<div className="absolute z-10 w-full mt-1 bg-white border border-blue-300 rounded shadow-lg max-h-40 overflow-y-auto">
+											{confirmerSuggestions.map((item, index) => (
+												<div
+													key={`${item.EMPNO}-${index}`}
+													onClick={() => handleSelectConfirmer(item)}
+													className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 border-b border-blue-100 last:border-b-0"
+												>
+													{item.EMPNM}
+												</div>
+											))}
+										</div>
+									)}
+								</div>
 							</div>
 							<button
 								onClick={handleModifyConfirmer}
@@ -861,10 +1339,8 @@ export default function MedicationRegistration() {
 					{isEditMode && (
 						<div className="flex justify-end gap-2 mt-4">
 							<button
-								onClick={() => {
-									setIsEditMode(false);
-									// TODO: 원래 데이터로 복원
-								}}
+								type="button"
+								onClick={handleCancel}
 								className="px-4 py-1.5 text-sm border border-gray-400 rounded bg-gray-200 hover:bg-gray-300 text-gray-900 font-medium"
 							>
 								취소
