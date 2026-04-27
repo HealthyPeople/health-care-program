@@ -8,6 +8,11 @@ interface MemberData {
 }
 
 export default function LongtermPhysicalActivity() {
+	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
+	const [loadingDefaults, setLoadingDefaults] = useState(false);
+	const [isEditing, setIsEditing] = useState(false);
+	const [originalDraft, setOriginalDraft] = useState<Record<string, any> | null>(null);
+
 	// 식사 정보 관련 state
 	const [mealType, setMealType] = useState('일반식(저염식)');
 	const [mealIntake, setMealIntake] = useState('1');
@@ -48,6 +53,171 @@ export default function LongtermPhysicalActivity() {
 	const [preparerSuggestions, setPreparerSuggestions] = useState<Array<{EMPNO: string; EMPNM: string}>>([]);
 	const [showPreparerDropdown, setShowPreparerDropdown] = useState(false);
 
+	const selectedPnum = String(selectedMember?.PNUM ?? '').trim();
+
+	const buildDraft = () => ({
+		// 식사
+		ST_KIND: mealType,
+		PH_MEAL_KIND_NM: mealType,
+		PH_MEAL_VAL_NM: mealIntake,
+		PH_MEAL_WT_NM: mealClassification,
+		ST_PLAC: mealLocation,
+		ST_CONF: mealConfirmer,
+		// 목욕
+		PH_BATH_METH_NM: bathMethod,
+		PH_BATH_TM: bathTimeRequired,
+		BATH_SPV_TM: bathTime,
+		PH_BATH_WK1: bathDay1,
+		BATH_EMPNM01: bathProvider1,
+		PH_BATH_WK2: bathDay2,
+		BATH_EMPNM02: bathProvider2,
+		// 신체활동
+		PH_HEAD_HELP: faceWashing || grooming,
+		PH_MOVE_HELP: movementAssistance,
+		PH_CHANG_HELP: positionChange,
+		PH_WORK_HELP: walkAccompany,
+		PH_OUT_HELP: outingAccompany,
+		PH_TOL_CNT: toiletUsage,
+		// 작성자
+		INEMPNM: preparerName
+	});
+
+	const isDirty = () => {
+		if (!originalDraft) return false;
+		const cur = buildDraft() as Record<string, any>;
+		const keys = Object.keys(cur);
+		for (const k of keys) {
+			if (String(cur[k] ?? '') !== String(originalDraft[k] ?? '')) return true;
+		}
+		return false;
+	};
+
+	const applyDraft = (d: any) => {
+		setMealType(String(d?.PH_MEAL_KIND_NM ?? d?.ST_KIND ?? mealType));
+		setMealIntake(String(d?.PH_MEAL_VAL_NM ?? mealIntake));
+		setMealClassification(String(d?.PH_MEAL_WT_NM ?? mealClassification));
+		setMealLocation(String(d?.ST_PLAC ?? mealLocation));
+		setMealConfirmer(String(d?.ST_CONF ?? mealConfirmer));
+
+		setBathMethod(String(d?.PH_BATH_METH_NM ?? d?.PH_BATH_METH ?? bathMethod));
+		setBathTimeRequired(String(d?.PH_BATH_TM ?? bathTimeRequired));
+		setBathTime(String(d?.BATH_SPV_TM ?? bathTime));
+		setBathDay1(String(d?.PH_BATH_WK1 ?? bathDay1));
+		setBathProvider1(String(d?.BATH_EMPNM01 ?? bathProvider1));
+		setBathDay2(String(d?.PH_BATH_WK2 ?? bathDay2));
+		setBathProvider2(String(d?.BATH_EMPNM02 ?? bathProvider2));
+
+		const yn = (v: any) => {
+			const s = String(v ?? '').trim().toLowerCase();
+			return s === '1' || s === 'y' || s === 'true';
+		};
+		const head = yn(d?.PH_HEAD_HELP);
+		setFaceWashing(head);
+		setGrooming(head);
+		setMovementAssistance(yn(d?.PH_MOVE_HELP));
+		setPositionChange(yn(d?.PH_CHANG_HELP));
+		setWalkAccompany(yn(d?.PH_WORK_HELP));
+		setOutingAccompany(yn(d?.PH_OUT_HELP));
+		setToiletUsage(String(d?.PH_TOL_CNT ?? ''));
+
+		setPreparerName(String(d?.INEMPNM ?? ''));
+	};
+
+	const fetchDefaults = async (pnum: string) => {
+		if (!pnum) return;
+		setLoadingDefaults(true);
+		try {
+			const res = await fetch(`/api/f30112?pnum=${encodeURIComponent(pnum)}`);
+			const json = await res.json();
+			const row = json?.success && Array.isArray(json.data) ? json.data[0] : null;
+			const draft = row ? {
+				ST_KIND: row.ST_KIND ?? '',
+				PH_MEAL_KIND_NM: row.PH_MEAL_KIND_NM ?? row.ST_KIND ?? '',
+				PH_MEAL_VAL_NM: row.PH_MEAL_VAL_NM ?? '',
+				PH_MEAL_WT_NM: row.PH_MEAL_WT_NM ?? '',
+				ST_PLAC: row.ST_PLAC ?? '',
+				ST_CONF: row.ST_CONF ?? '',
+				PH_BATH_METH_NM: row.PH_BATH_METH_NM ?? row.PH_BATH_METH ?? '',
+				PH_BATH_TM: row.PH_BATH_TM ?? '',
+				BATH_SPV_TM: row.BATH_SPV_TM ?? '',
+				PH_BATH_WK1: row.PH_BATH_WK1 ?? '',
+				BATH_EMPNM01: row.BATH_EMPNM01 ?? '',
+				PH_BATH_WK2: row.PH_BATH_WK2 ?? '',
+				BATH_EMPNM02: row.BATH_EMPNM02 ?? '',
+				PH_HEAD_HELP: row.PH_HEAD_HELP ?? '',
+				PH_MOVE_HELP: row.PH_MOVE_HELP ?? '',
+				PH_CHANG_HELP: row.PH_CHANG_HELP ?? '',
+				PH_WORK_HELP: row.PH_WORK_HELP ?? '',
+				PH_OUT_HELP: row.PH_OUT_HELP ?? '',
+				PH_TOL_CNT: row.PH_TOL_CNT ?? '',
+				INEMPNM: row.INEMPNM ?? '',
+			} : buildDraft();
+
+			applyDraft(draft);
+			setOriginalDraft({ ...draft });
+			setIsEditing(false);
+		} catch (e) {
+			console.error('F30112 조회 오류:', e);
+			alert('기준정보를 조회하는 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingDefaults(false);
+		}
+	};
+
+	const handleSelectMember = async (member: MemberData) => {
+		if (isEditing && isDirty()) {
+			const ok = confirm('수정한 내용을 저장하지 않으면 적용되지 않습니다. 수급자를 변경하시겠습니까?');
+			if (!ok) return;
+		}
+		setSelectedMember(member);
+		const pnum = String(member?.PNUM ?? '').trim();
+		await fetchDefaults(pnum);
+	};
+
+	const handleEnterEdit = () => {
+		if (!selectedPnum) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		setIsEditing(true);
+		if (!originalDraft) setOriginalDraft({ ...buildDraft() });
+	};
+
+	const handleCancelEdit = () => {
+		if (isDirty()) {
+			const ok = confirm('수정한 내용은 저장되지 않습니다. 취소하시겠습니까?');
+			if (!ok) return;
+		}
+		if (originalDraft) applyDraft(originalDraft);
+		setIsEditing(false);
+	};
+
+	const handleSaveEdit = async () => {
+		if (!selectedPnum) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		try {
+			const payload = { pnum: selectedPnum, ...buildDraft() };
+			const res = await fetch('/api/f30112', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!json?.success) {
+				alert(json?.error || '저장 중 오류가 발생했습니다.');
+				return;
+			}
+			const cur = buildDraft();
+			setOriginalDraft({ ...cur });
+			setIsEditing(false);
+			alert('성공적으로 수정되었습니다.');
+		} catch (e) {
+			console.error('F30112 저장 오류:', e);
+			alert('저장 중 오류가 발생했습니다.');
+		}
+	};
 
 	// 직원 검색 함수
 	const searchEmployee = async (searchTerm: string, setSuggestions: (data: Array<{EMPNO: string; EMPNM: string}>) => void, setShowDropdown: (show: boolean) => void) => {
@@ -74,33 +244,6 @@ export default function LongtermPhysicalActivity() {
 			setSuggestions([]);
 			setShowDropdown(false);
 		}
-	};
-
-	const handleSave = () => {
-		// TODO: API 호출 등 실제 저장 로직 구현
-		console.log({
-			mealType,
-			mealIntake,
-			mealClassification,
-			mealLocation,
-			mealConfirmer,
-			bathMethod,
-			bathTimeRequired,
-			bathTime,
-			bathDay1,
-			bathProvider1,
-			bathDay2,
-			bathProvider2,
-			faceWashing,
-			grooming,
-			movementAssistance,
-			positionChange,
-			walkAccompany,
-			toiletUsage,
-			outingAccompany,
-			preparerName
-		});
-		alert('신체활동이 저장되었습니다.');
 	};
 
 	// 직원 검색 debounce
@@ -169,11 +312,54 @@ export default function LongtermPhysicalActivity() {
 				<div className="flex gap-4">
 					{/* 좌측: 수급자 목록 */}
 					<aside className="w-1/3 shrink-0">
-						<MemberListPanel />
+						<MemberListPanel onSelectMember={handleSelectMember} />
 					</aside>
 
 					{/* 우측: 신체활동 입력 */}
 					<section className="flex-1">
+						<div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2">
+							<div className="text-sm text-blue-900">
+								{selectedMember ? (
+									<>
+										<span className="font-semibold">{String(selectedMember.P_NM ?? '').trim() || '선택됨'}</span>
+										<span className="ml-2 text-blue-900/70">PNUM: {selectedPnum || '-'}</span>
+										{loadingDefaults && <span className="ml-2 text-blue-900/70">불러오는 중...</span>}
+									</>
+								) : (
+									<span className="text-blue-900/70">왼쪽에서 수급자를 선택해주세요.</span>
+								)}
+							</div>
+							<div className="flex gap-2">
+								{isEditing ? (
+									<>
+										<button
+											type="button"
+											onClick={handleSaveEdit}
+											className="px-4 py-1.5 text-sm font-medium text-green-900 bg-green-200 border border-green-400 rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed"
+											disabled={!selectedPnum || loadingDefaults}
+										>
+											저장
+										</button>
+										<button
+											type="button"
+											onClick={handleCancelEdit}
+											className="px-4 py-1.5 text-sm font-medium text-red-900 bg-red-200 border border-red-400 rounded hover:bg-red-300"
+										>
+											취소
+										</button>
+									</>
+								) : (
+									<button
+										type="button"
+										onClick={handleEnterEdit}
+										className="px-4 py-1.5 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+										disabled={!selectedPnum || loadingDefaults}
+									>
+										수정
+									</button>
+								)}
+							</div>
+						</div>
 						<div className="grid grid-cols-2 gap-4">
 							{/* 좌측: 식사 정보, 목욕 정보 */}
 							<div className="space-y-4">
@@ -191,6 +377,7 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={mealType}
 												onChange={(e) => setMealType(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											>
 												<option value="일반식(저염식)">일반식(저염식)</option>
@@ -213,6 +400,7 @@ export default function LongtermPhysicalActivity() {
 														value="1"
 														checked={mealIntake === '1'}
 														onChange={(e) => setMealIntake(e.target.value)}
+														disabled={!isEditing}
 														className="w-4 h-4 border border-blue-300"
 													/>
 													<span className="text-sm text-blue-900">1</span>
@@ -224,6 +412,7 @@ export default function LongtermPhysicalActivity() {
 														value="1/2이상"
 														checked={mealIntake === '1/2이상'}
 														onChange={(e) => setMealIntake(e.target.value)}
+														disabled={!isEditing}
 														className="w-4 h-4 border border-blue-300"
 													/>
 													<span className="text-sm text-blue-900">1/2이상</span>
@@ -235,6 +424,7 @@ export default function LongtermPhysicalActivity() {
 														value="1/2미만"
 														checked={mealIntake === '1/2미만'}
 														onChange={(e) => setMealIntake(e.target.value)}
+														disabled={!isEditing}
 														className="w-4 h-4 border border-blue-300"
 													/>
 													<span className="text-sm text-blue-900">1/2미만</span>
@@ -249,6 +439,7 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={mealClassification}
 												onChange={(e) => setMealClassification(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											>
 												<option value="일반식(저염식)">일반식(저염식)</option>
@@ -267,6 +458,7 @@ export default function LongtermPhysicalActivity() {
 												type="text"
 												value={mealLocation}
 												onChange={(e) => setMealLocation(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											/>
 										</div>
@@ -281,6 +473,7 @@ export default function LongtermPhysicalActivity() {
 													value={mealConfirmerSearchTerm || mealConfirmer}
 													onChange={(e) => {
 														const value = e.target.value;
+														if (!isEditing) return;
 														setMealConfirmer(value);
 														setMealConfirmerSearchTerm(value);
 														if (!value || value.trim() === '') {
@@ -289,10 +482,12 @@ export default function LongtermPhysicalActivity() {
 														}
 													}}
 													onFocus={() => {
+														if (!isEditing) return;
 														if (mealConfirmer) {
 															setMealConfirmerSearchTerm(mealConfirmer);
 														}
 													}}
+													disabled={!isEditing}
 													className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 													placeholder="확인자 검색"
 												/>
@@ -302,6 +497,7 @@ export default function LongtermPhysicalActivity() {
 															<div
 																key={`${employee.EMPNO}-${index}`}
 																onClick={() => {
+																	if (!isEditing) return;
 																	setMealConfirmer(employee.EMPNM);
 																	setMealConfirmerSearchTerm(employee.EMPNM);
 																	setShowMealConfirmerDropdown(false);
@@ -332,6 +528,7 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={bathMethod}
 												onChange={(e) => setBathMethod(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											>
 												<option value="샤워식-목욕의자">샤워식-목욕의자</option>
@@ -349,6 +546,7 @@ export default function LongtermPhysicalActivity() {
 												type="number"
 												value={bathTimeRequired}
 												onChange={(e) => setBathTimeRequired(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											/>
 										</div>
@@ -361,6 +559,7 @@ export default function LongtermPhysicalActivity() {
 												type="time"
 												value={bathTime}
 												onChange={(e) => setBathTime(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											/>
 										</div>
@@ -372,6 +571,7 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={bathDay1}
 												onChange={(e) => setBathDay1(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											>
 												{weekDays.map(day => (
@@ -390,6 +590,7 @@ export default function LongtermPhysicalActivity() {
 													value={bathProvider1SearchTerm || bathProvider1}
 													onChange={(e) => {
 														const value = e.target.value;
+														if (!isEditing) return;
 														setBathProvider1(value);
 														setBathProvider1SearchTerm(value);
 														if (!value || value.trim() === '') {
@@ -398,10 +599,12 @@ export default function LongtermPhysicalActivity() {
 														}
 													}}
 													onFocus={() => {
+														if (!isEditing) return;
 														if (bathProvider1) {
 															setBathProvider1SearchTerm(bathProvider1);
 														}
 													}}
+													disabled={!isEditing}
 													className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 													placeholder="제공자 검색"
 												/>
@@ -411,6 +614,7 @@ export default function LongtermPhysicalActivity() {
 															<div
 																key={`${employee.EMPNO}-${index}`}
 																onClick={() => {
+																	if (!isEditing) return;
 																	setBathProvider1(employee.EMPNM);
 																	setBathProvider1SearchTerm(employee.EMPNM);
 																	setShowBathProvider1Dropdown(false);
@@ -432,6 +636,7 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={bathDay2}
 												onChange={(e) => setBathDay2(e.target.value)}
+												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											>
 												{weekDays.map(day => (
@@ -451,6 +656,7 @@ export default function LongtermPhysicalActivity() {
 														value={bathProvider2SearchTerm || bathProvider2}
 														onChange={(e) => {
 															const value = e.target.value;
+															if (!isEditing) return;
 															setBathProvider2(value);
 															setBathProvider2SearchTerm(value);
 															if (!value || value.trim() === '') {
@@ -459,15 +665,18 @@ export default function LongtermPhysicalActivity() {
 															}
 														}}
 														onFocus={() => {
+															if (!isEditing) return;
 															if (bathProvider2) {
 																setBathProvider2SearchTerm(bathProvider2);
 															}
 														}}
+														disabled={!isEditing}
 														className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 														placeholder="제공자 검색"
 													/>
 													<button
 														onClick={() => {
+															if (!isEditing) return;
 															setBathProvider2('');
 															setBathProvider2SearchTerm('');
 														}}
@@ -482,6 +691,7 @@ export default function LongtermPhysicalActivity() {
 															<div
 																key={`${employee.EMPNO}-${index}`}
 																onClick={() => {
+																	if (!isEditing) return;
 																	setBathProvider2(employee.EMPNM);
 																	setBathProvider2SearchTerm(employee.EMPNM);
 																	setShowBathProvider2Dropdown(false);
@@ -512,6 +722,7 @@ export default function LongtermPhysicalActivity() {
 												type="checkbox"
 												checked={faceWashing}
 												onChange={(e) => setFaceWashing(e.target.checked)}
+												disabled={!isEditing}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">세면, 구강, 머리감기</label>
@@ -522,6 +733,7 @@ export default function LongtermPhysicalActivity() {
 												type="checkbox"
 												checked={grooming}
 												onChange={(e) => setGrooming(e.target.checked)}
+												disabled={!isEditing}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">몸단장, 옷갈아입히기</label>
@@ -532,6 +744,7 @@ export default function LongtermPhysicalActivity() {
 												type="checkbox"
 												checked={movementAssistance}
 												onChange={(e) => setMovementAssistance(e.target.checked)}
+												disabled={!isEditing}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">이동도움 및 신체 기능유지. 증진</label>
@@ -542,6 +755,7 @@ export default function LongtermPhysicalActivity() {
 												type="checkbox"
 												checked={positionChange}
 												onChange={(e) => setPositionChange(e.target.checked)}
+												disabled={!isEditing}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">체위변경(2시간마다)</label>
@@ -552,6 +766,7 @@ export default function LongtermPhysicalActivity() {
 												type="checkbox"
 												checked={walkAccompany}
 												onChange={(e) => setWalkAccompany(e.target.checked)}
+												disabled={!isEditing}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">산책동행</label>
@@ -564,6 +779,7 @@ export default function LongtermPhysicalActivity() {
 												type="number"
 												value={toiletUsage}
 												onChange={(e) => setToiletUsage(e.target.value)}
+												disabled={!isEditing}
 												className="w-20 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											/>
 										</div>
@@ -572,6 +788,7 @@ export default function LongtermPhysicalActivity() {
 												type="checkbox"
 												checked={outingAccompany}
 												onChange={(e) => setOutingAccompany(e.target.checked)}
+												disabled={!isEditing}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">외출동행</label>
@@ -586,6 +803,7 @@ export default function LongtermPhysicalActivity() {
 													value={preparerSearchTerm || preparerName}
 													onChange={(e) => {
 														const value = e.target.value;
+														if (!isEditing) return;
 														setPreparerName(value);
 														setPreparerSearchTerm(value);
 														if (!value || value.trim() === '') {
@@ -594,10 +812,12 @@ export default function LongtermPhysicalActivity() {
 														}
 													}}
 													onFocus={() => {
+														if (!isEditing) return;
 														if (preparerName) {
 															setPreparerSearchTerm(preparerName);
 														}
 													}}
+													disabled={!isEditing}
 													className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 													placeholder="작성자 검색"
 												/>
@@ -607,6 +827,7 @@ export default function LongtermPhysicalActivity() {
 															<div
 																key={`${employee.EMPNO}-${index}`}
 																onClick={() => {
+																	if (!isEditing) return;
 																	setPreparerName(employee.EMPNM);
 																	setPreparerSearchTerm(employee.EMPNM);
 																	setShowPreparerDropdown(false);
@@ -619,15 +840,6 @@ export default function LongtermPhysicalActivity() {
 													</div>
 												)}
 											</div>
-										</div>
-										{/* 저장 버튼 */}
-										<div className="pt-4">
-											<button
-												onClick={handleSave}
-												className="w-full px-4 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
-											>
-												신체활동 저장
-											</button>
 										</div>
 									</div>
 								</div>
