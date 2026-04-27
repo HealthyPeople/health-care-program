@@ -2,35 +2,70 @@
 import React, { useState, useEffect } from 'react';
 
 interface CaseData {
-	CMDT: string; // 회의일자
-	CMST: string; // 회의시작시간
-	CMET: string; // 회의종료시간
-	CMLOC: string; // 회의장소
-	PNUM: string; // 수급자번호
-	P_NM: string; // 수급자명
-	P_GRD: string; // 수급자등급
-	P_AGE: string; // 수급자나이
-	SLREA: string; // 선정사유
-	CMCNT: string; // 회의내용
-	CMRSLT: string; // 회의결과
-	CMATT: string; // 회의참석자
-	RLDT: string; // 반영일자
-	RLCNT: string; // 반영내용
-	CMNUM: string; // 회의번호
+	ANCD: string | number;
+	MDT: string; // 회의일자 (PK)
+	STM?: string; // 시작시간
+	ETM?: string; // 종료시간
+	MPL?: string; // 장소
+	MPNM?: string; // 수급자명
+	MPGRD?: string; // 수급자등급
+	MPAGE?: string; // 수급자나이
+	MDOC?: string; // 선정사유
+	MDES?: string; // 회의내용
+	MRES?: string; // 회의결과
+	MNM?: string; // 참석자
+	MODT?: string; // 반영일자
+	MODES?: string; // 반영내용
+	INEMPNO?: string;
+	INEMPNM?: string;
 	[key: string]: any;
 }
 
+type UserInfo = {
+	ancd?: string | number;
+	uid?: string;
+	empno?: string | number;
+	empnm?: string;
+	[key: string]: any;
+};
+
 export default function CaseManagement() {
+	const formatDateYmd = (dateStr: string) => {
+		if (!dateStr) return '';
+		const s = String(dateStr).trim();
+		if (!s) return '';
+
+		// ISO or "YYYY-MM-DD..."
+		if (s.includes('T') && s.length >= 10) return s.split('T')[0];
+		if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+		// "YYYYMMDD"
+		if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+
+		// "Fri Mar 12 2021 09:00:00 GMT..."
+		const d = new Date(s);
+		if (!Number.isNaN(d.getTime())) {
+			const y = d.getFullYear();
+			const m = String(d.getMonth() + 1).padStart(2, '0');
+			const day = String(d.getDate()).padStart(2, '0');
+			return `${y}-${m}-${day}`;
+		}
+
+		return s.length >= 10 ? s.slice(0, 10) : s;
+	};
+
 	const [caseList, setCaseList] = useState<CaseData[]>([]);
 	const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
 	const [isEditMode, setIsEditMode] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
+	const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+	const [hasProgramAccess, setHasProgramAccess] = useState<boolean>(true);
 
 	// 기간 필터
-	const [startDate, setStartDate] = useState<string>('2024-01-01');
-	const [endDate, setEndDate] = useState<string>('2025-12-10');
+	const [startDate, setStartDate] = useState<string>('');
+	const [endDate, setEndDate] = useState<string>('');
 
 	// 폼 데이터
 	const [formData, setFormData] = useState({
@@ -49,27 +84,99 @@ export default function CaseManagement() {
 		reflectionContent: '' // 반영내용
 	});
 
+	const fetchUserAndPermission = async () => {
+		try {
+			const res = await fetch('/api/auth/user-info', { method: 'GET' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '사용자 정보 조회 실패');
+			}
+
+			const u = (result.data || {}) as UserInfo;
+			setUserInfo(u);
+
+			const ancd = u?.ancd;
+			const uid = u?.uid;
+			if (!ancd || !uid) {
+				setHasProgramAccess(true);
+				return;
+			}
+
+			const permRes = await fetch(
+				`/api/f00131?ancd=${encodeURIComponent(String(ancd))}&uid=${encodeURIComponent(
+					String(uid)
+				)}&pgmid=${encodeURIComponent('F60020')}`,
+				{ method: 'GET' }
+			);
+			const perm = await permRes.json().catch(() => ({}));
+			if (!permRes.ok || !perm?.success) {
+				setHasProgramAccess(true);
+				return;
+			}
+			// F00131은 "사용 가능 목록" 형태인 경우가 많아, 레코드가 없으면 기본 허용으로 처리
+			setHasProgramAccess(true);
+		} catch (e) {
+			console.error('사용자/권한 조회 오류:', e);
+			setHasProgramAccess(true);
+		}
+	};
+
 	// 사례 목록 조회
 	const fetchCases = async () => {
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/case-management?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setCaseList([]);
+			const ancd = userInfo?.ancd;
+			if (!ancd) {
+				setCaseList([]);
+				return;
+			}
+
+			const url = `/api/f60020?ancd=${encodeURIComponent(String(ancd))}&startDate=${encodeURIComponent(
+				startDate
+			)}&endDate=${encodeURIComponent(endDate)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '사례 목록 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			// 날짜 표시 통일(YYYY-MM-DD)
+			setCaseList(
+				list.map((r: any) => ({
+					...r,
+					MDT: formatDateYmd(r?.MDT),
+					MODT: formatDateYmd(r?.MODT),
+					URDT: formatDateYmd(r?.URDT),
+				}))
+			);
 		} catch (err) {
 			console.error('사례 목록 조회 오류:', err);
+			setCaseList([]);
 		} finally {
 			setLoading(false);
 		}
 	};
 
 	useEffect(() => {
+		// 최초 진입 시: 오늘 기준 최근 1년
+		const today = new Date();
+		const end = formatDateYmd(today.toISOString());
+		const oneYearAgo = new Date(today);
+		oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+		const start = formatDateYmd(oneYearAgo.toISOString());
+		setStartDate(start);
+		setEndDate(end);
+
+		fetchUserAndPermission();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	useEffect(() => {
+		if (!userInfo?.ancd) return;
+		if (!startDate || !endDate) return;
 		fetchCases();
-	}, [startDate, endDate]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [startDate, endDate, userInfo?.ancd]);
 
 	// 페이지네이션 계산
 	const totalPages = Math.ceil(caseList.length / itemsPerPage);
@@ -86,19 +193,19 @@ export default function CaseManagement() {
 		setSelectedCase(caseItem);
 		setIsEditMode(false);
 		setFormData({
-			meetingDate: caseItem.CMDT || '',
-			meetingStartTime: caseItem.CMST || '',
-			meetingEndTime: caseItem.CMET || '',
-			meetingLocation: caseItem.CMLOC || '',
-			beneficiary: caseItem.P_NM || '',
-			beneficiaryGrade: caseItem.P_GRD || '',
-			beneficiaryAge: caseItem.P_AGE || '',
-			selectionReason: caseItem.SLREA || '',
-			meetingContent: caseItem.CMCNT || '',
-			meetingResult: caseItem.CMRSLT || '',
-			meetingAttendees: caseItem.CMATT || '',
-			reflectionDate: caseItem.RLDT || '',
-			reflectionContent: caseItem.RLCNT || ''
+			meetingDate: formatDateYmd(caseItem.MDT || ''),
+			meetingStartTime: caseItem.STM || '',
+			meetingEndTime: caseItem.ETM || '',
+			meetingLocation: caseItem.MPL || '',
+			beneficiary: caseItem.MPNM || '',
+			beneficiaryGrade: caseItem.MPGRD || '',
+			beneficiaryAge: caseItem.MPAGE || '',
+			selectionReason: caseItem.MDOC || '',
+			meetingContent: caseItem.MDES || '',
+			meetingResult: caseItem.MRES || '',
+			meetingAttendees: caseItem.MNM || '',
+			reflectionDate: formatDateYmd(caseItem.MODT || ''),
+			reflectionContent: caseItem.MODES || ''
 		});
 	};
 
@@ -115,6 +222,10 @@ export default function CaseManagement() {
 
 	// 추가
 	const handleAdd = () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		setSelectedCase(null);
 		setIsEditMode(true);
 		setFormData({
@@ -136,6 +247,10 @@ export default function CaseManagement() {
 
 	// 수정
 	const handleModify = () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!selectedCase) {
 			alert('수정할 사례를 선택해주세요.');
 			return;
@@ -145,6 +260,10 @@ export default function CaseManagement() {
 
 	// 저장
 	const handleSave = async () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!formData.meetingDate) {
 			alert('회의일자를 입력해주세요.');
 			return;
@@ -152,9 +271,38 @@ export default function CaseManagement() {
 
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedCase ? '/api/case-management/update' : '/api/case-management/create';
-			// const response = await fetch(url, { method: 'POST', body: JSON.stringify(formData) });
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error('기관정보(ANCD)를 확인할 수 없습니다.');
+
+			const payload: any = {
+				ANCD: ancd,
+				MDT: formatDateYmd(formData.meetingDate),
+				STM: formData.meetingStartTime || null,
+				ETM: formData.meetingEndTime || null,
+				MPL: formData.meetingLocation || null,
+				MPNM: formData.beneficiary || null,
+				MPGRD: formData.beneficiaryGrade || null,
+				MPAGE: formData.beneficiaryAge || null,
+				MDOC: formData.selectionReason || null,
+				MDES: formData.meetingContent || null,
+				MRES: formData.meetingResult || null,
+				MNM: formData.meetingAttendees || null,
+				MODT: formData.reflectionDate ? formatDateYmd(formData.reflectionDate) : null,
+				MODES: formData.reflectionContent || null,
+				INEMPNO: userInfo?.empno != null ? String(userInfo.empno) : null,
+				INEMPNM: userInfo?.empnm != null ? String(userInfo.empnm) : null,
+				MIMG: null,
+			};
+
+			const res = await fetch(`/api/f60020?ancd=${encodeURIComponent(String(ancd))}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '사례 저장에 실패했습니다.');
+			}
 
 			alert(selectedCase ? '사례가 수정되었습니다.' : '사례가 생성되었습니다.');
 			setIsEditMode(false);
@@ -169,6 +317,10 @@ export default function CaseManagement() {
 
 	// 삭제
 	const handleDelete = async () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!selectedCase) {
 			alert('삭제할 사례를 선택해주세요.');
 			return;
@@ -180,8 +332,19 @@ export default function CaseManagement() {
 
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/case-management/${selectedCase.CMNUM}`, { method: 'DELETE' });
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error('기관정보(ANCD)를 확인할 수 없습니다.');
+			const mdt = formatDateYmd(selectedCase.MDT);
+			if (!mdt) throw new Error('회의일자(MDT)를 확인할 수 없습니다.');
+
+			const res = await fetch(
+				`/api/f60020?ancd=${encodeURIComponent(String(ancd))}&mdt=${encodeURIComponent(String(mdt))}`,
+				{ method: 'DELETE' }
+			);
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '사례 삭제에 실패했습니다.');
+			}
 
 			alert('사례가 삭제되었습니다.');
 			setSelectedCase(null);
@@ -211,6 +374,10 @@ export default function CaseManagement() {
 
 	// 반영내용등록
 	const handleRegisterReflection = async () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!selectedCase) {
 			alert('반영내용을 등록할 사례를 선택해주세요.');
 			return;
@@ -228,14 +395,26 @@ export default function CaseManagement() {
 
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/case-management/${selectedCase.CMNUM}/reflection`, {
-			// 	method: 'POST',
-			// 	body: JSON.stringify({
-			// 		reflectionDate: formData.reflectionDate,
-			// 		reflectionContent: formData.reflectionContent
-			// 	})
-			// });
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error('기관정보(ANCD)를 확인할 수 없습니다.');
+			const payload: any = {
+				ANCD: ancd,
+				MDT: formatDateYmd(selectedCase.MDT),
+				MODT: formatDateYmd(formData.reflectionDate),
+				MODES: formData.reflectionContent,
+				INEMPNO: userInfo?.empno != null ? String(userInfo.empno) : null,
+				INEMPNM: userInfo?.empnm != null ? String(userInfo.empnm) : null,
+			};
+
+			const res = await fetch(`/api/f60020?ancd=${encodeURIComponent(String(ancd))}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '반영내용 등록에 실패했습니다.');
+			}
 
 			alert('반영내용이 등록되었습니다.');
 			await fetchCases();
@@ -420,6 +599,29 @@ export default function CaseManagement() {
 					<h1 className="text-2xl font-bold text-blue-900">사례관리</h1>
 					<div className="flex items-center gap-4">
 						<div className="flex items-center gap-2">
+							<button
+								onClick={handleAdd}
+								disabled={!hasProgramAccess || isEditMode}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								생성
+							</button>
+							<button
+								onClick={handleModify}
+								disabled={!hasProgramAccess || isEditMode || !selectedCase}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								수정
+							</button>
+							<button
+								onClick={handleDelete}
+								disabled={!hasProgramAccess || isEditMode || !selectedCase}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								삭제
+							</button>
+						</div>
+						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900">기간</label>
 							<input
 								type="date"
@@ -442,12 +644,12 @@ export default function CaseManagement() {
 							>
 								검색
 							</button>
-							<button
+							{/* <button
 								onClick={handleClose}
 								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 							>
 								닫기
-							</button>
+							</button> */}
 						</div>
 					</div>
 				</div>
@@ -474,12 +676,12 @@ export default function CaseManagement() {
 									key={index}
 									onClick={() => handleSelectCase(caseItem)}
 									className={`p-2 border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-										selectedCase?.CMNUM === caseItem.CMNUM ? 'bg-blue-100' : ''
+										selectedCase?.MDT === caseItem.MDT ? 'bg-blue-100' : ''
 									}`}
 								>
 									<div className="grid grid-cols-2 gap-2 text-xs">
-										<div className="text-blue-900">{caseItem.CMDT || '-'}</div>
-										<div className="text-blue-900 truncate">{caseItem.SLREA || '-'}</div>
+										<div className="text-blue-900">{formatDateYmd(caseItem.MDT || '') || '-'}</div>
+										<div className="text-blue-900 truncate">{caseItem.MDOC || '-'}</div>
 									</div>
 								</div>
 							))
@@ -770,28 +972,32 @@ export default function CaseManagement() {
 							<>
 								<button
 									onClick={handleAdd}
+									disabled={!hasProgramAccess}
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 								>
 									추가
 								</button>
 								<button
 									onClick={handleModify}
+									disabled={!hasProgramAccess}
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 								>
 									수정
 								</button>
 								<button
 									onClick={handleDelete}
+									disabled={!hasProgramAccess}
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 								>
 									삭제
 								</button>
-								<button
+								{/* <button
 									onClick={handleRegisterReflection}
+									disabled={!hasProgramAccess}
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 								>
 									반영내용등록
-								</button>
+								</button> */}
 								<button
 									onClick={handlePrint}
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
@@ -814,6 +1020,7 @@ export default function CaseManagement() {
 								</button>
 								<button
 									onClick={handleSave}
+									disabled={!hasProgramAccess}
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 								>
 									저장

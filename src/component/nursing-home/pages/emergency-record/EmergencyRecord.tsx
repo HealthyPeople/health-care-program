@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { MemberListPanel } from '../../components/MemberListPanel';
 
 interface MemberData {
@@ -17,11 +17,16 @@ export default function EmergencyRecord() {
 	interface EmergencyData {
 		ANCD: string;
 		PNUM: string;
-		EMDT: string; // 응급일자
-		EMSIT: string; // 응급상황
-		EMACT: string; // 조치사항
-		EMHND: string; // 담당자
-		EMNUM: string;
+		EMDT: string; // 응급 발생일자 (PK)
+		EMDES1?: string; // 응급상황내용
+		EMDES2?: string; // 응급조치내용
+		EMEMP?: string; // 동행사원/담당자(화면 입력)
+		EMPL?: string; // 발생장소
+		EMTM?: string; // 발생시각
+		EMDES3?: string; // 사후조치
+		EMHOS?: string; // 방문의료기관
+		EMETC?: string; // 기타사항
+		EMRES?: string; // 진료결과
 		INDT: string;
 		ETC: string;
 		INEMPNO: string;
@@ -35,6 +40,7 @@ export default function EmergencyRecord() {
 	const [emergencyList, setEmergencyList] = useState<EmergencyData[]>([]);
 	const [loadingEmergencies, setLoadingEmergencies] = useState(false);
 	const [isEditMode, setIsEditMode] = useState(false);
+	const [draftDate, setDraftDate] = useState<string | null>(null); // 신규 생성(미저장) 날짜
 	const [emergencyDatePage, setEmergencyDatePage] = useState(1);
 	const emergencyDateItemsPerPage = 10;
 	const [formData, setFormData] = useState({
@@ -47,6 +53,10 @@ export default function EmergencyRecord() {
 
 	// 날짜 생성 함수
 	const handleCreateDate = () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
 		const today = new Date();
 		const year = today.getFullYear();
 		const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -66,6 +76,7 @@ export default function EmergencyRecord() {
 			handler: ''
 		});
 		
+		setDraftDate(formattedDate);
 		setIsEditMode(true);
 		const newIndex = emergencyDates.includes(formattedDate) 
 			? emergencyDates.indexOf(formattedDate)
@@ -83,15 +94,19 @@ export default function EmergencyRecord() {
 
 		setLoadingEmergencies(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/f11070?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setEmergencyList([]);
-			setEmergencyDates([]);
+			const url = `/api/f11080?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json();
+
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '응급 기록 조회에 실패했습니다.');
+			}
+
+			const list: EmergencyData[] = Array.isArray(result.data) ? result.data : [];
+			setEmergencyList(list);
+			setEmergencyDates(list.map((r) => formatDateDisplay(r.EMDT)).filter(Boolean));
 			setSelectedDateIndex(null);
+			setDraftDate(null);
 			resetForm(member);
 			setIsEditMode(false);
 		} catch (err) {
@@ -99,6 +114,7 @@ export default function EmergencyRecord() {
 			setEmergencyList([]);
 			setEmergencyDates([]);
 			setSelectedDateIndex(null);
+			setDraftDate(null);
 			resetForm(member);
 			setIsEditMode(false);
 		} finally {
@@ -136,7 +152,9 @@ export default function EmergencyRecord() {
 	const handleSelectDate = (index: number, emergency?: EmergencyData, member: MemberData | null = null) => {
 		setSelectedDateIndex(index);
 		setIsEditMode(false);
+		setDraftDate(null);
 		
+		const dateKey = emergencyDates[index];
 		const selectedEmergency = emergency || emergencyList[index];
 		const currentMember = member || selectedMember;
 		
@@ -171,9 +189,18 @@ export default function EmergencyRecord() {
 			setFormData({
 				beneficiary: currentMember?.P_NM || '',
 				emergencyDate: emergencyDate,
-				emergencySituation: selectedEmergency.EMSIT || '',
-				actionTaken: selectedEmergency.EMACT || '',
-				handler: selectedEmergency.EMHND || ''
+				emergencySituation: selectedEmergency.EMDES1 || '',
+				actionTaken: selectedEmergency.EMDES2 || '',
+				handler: selectedEmergency.EMEMP || ''
+			});
+		} else {
+			// 기록이 없는 날짜(드래프트 등) 선택 시
+			setFormData({
+				beneficiary: currentMember?.P_NM || '',
+				emergencyDate: formatDateDisplay(dateKey || ''),
+				emergencySituation: '',
+				actionTaken: '',
+				handler: ''
 			});
 		}
 	};
@@ -229,32 +256,32 @@ export default function EmergencyRecord() {
 
 		setLoadingEmergencies(true);
 		try {
-			const now = new Date();
-			const nowStr = now.toISOString().slice(0, 19).replace('T', ' ');
+			const existingEmergency =
+				formData.emergencyDate &&
+				emergencyList.find((e) => formatDateDisplay(e.EMDT) === formatDateDisplay(formData.emergencyDate));
 
-			const formatDateForDB = (dateStr: string): string | null => {
-				if (!dateStr || dateStr.trim() === '') return null;
-				try {
-					if (dateStr.includes('-')) {
-						return dateStr.replace(/-/g, '');
-					}
-					return dateStr;
-				} catch (err) {
-					return null;
-				}
+			const payload = {
+				ANCD: selectedMember.ANCD,
+				PNUM: selectedMember.PNUM,
+				EMDT: formData.emergencyDate, // 'YYYY-MM-DD'
+				EMDES1: formData.emergencySituation || null,
+				EMDES2: formData.actionTaken || null,
+				EMEMP: formData.handler || null,
 			};
 
-			const existingEmergency = selectedDateIndex !== null && emergencyList[selectedDateIndex] 
-				? emergencyList[selectedDateIndex] 
-				: null;
+			const res = await fetch(`/api/f11080?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '응급 기록 저장에 실패했습니다.');
+			}
 
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const query = existingEmergency && existingEmergency.EMNUM
-			// 	? `UPDATE [돌봄시설DB].[dbo].[F11070] SET ...`
-			// 	: `INSERT INTO [돌봄시설DB].[dbo].[F11070] ...`;
-
-			alert(existingEmergency ? '응급 기록이 수정되었습니다.' : '응급 기록이 생성되었습니다.');
+			alert(existingEmergency ? '응급 기록이 수정되었습니다.' : '응급 기록이 저장되었습니다.');
 			setIsEditMode(false);
+			setDraftDate(null);
 			if (selectedMember && selectedMember.ANCD && selectedMember.PNUM) {
 				await fetchEmergencies(selectedMember.ANCD, selectedMember.PNUM, selectedMember);
 			}
@@ -269,24 +296,23 @@ export default function EmergencyRecord() {
 	// 취소 함수
 	const handleCancel = () => {
 		setIsEditMode(false);
-		
-		const today = new Date();
-		const year = today.getFullYear();
-		const month = String(today.getMonth() + 1).padStart(2, '0');
-		const day = String(today.getDate()).padStart(2, '0');
-		const formattedToday = `${year}-${month}-${day}`;
-		
+
 		const currentDate = selectedDateIndex !== null ? emergencyDates[selectedDateIndex] : null;
-		
-		if (currentDate === formattedToday && selectedDateIndex !== null) {
-			setEmergencyDates(prev => prev.filter((_, index) => index !== selectedDateIndex));
+		if (draftDate && currentDate === draftDate && selectedDateIndex !== null) {
+			setEmergencyDates(prev => prev.filter((_, idx) => idx !== selectedDateIndex));
+			setDraftDate(null);
 			setSelectedDateIndex(null);
 			resetForm(selectedMember);
 			return;
 		}
 		
-		if (selectedDateIndex !== null && emergencyList[selectedDateIndex]) {
-			handleSelectDate(selectedDateIndex, emergencyList[selectedDateIndex], selectedMember);
+		if (selectedDateIndex !== null) {
+			const dateKey = emergencyDates[selectedDateIndex];
+			const existing = emergencyList.find((e) => formatDateDisplay(e.EMDT) === formatDateDisplay(dateKey));
+			if (existing) {
+				handleSelectDate(selectedDateIndex, existing, selectedMember);
+				return;
+			}
 		} else if (selectedDateIndex !== null && emergencyDates[selectedDateIndex]) {
 			resetForm(selectedMember);
 		}
@@ -463,11 +489,13 @@ export default function EmergencyRecord() {
 			return;
 		}
 
-		const currentEmergency = selectedDateIndex !== null && emergencyList[selectedDateIndex] 
-			? emergencyList[selectedDateIndex] 
-			: null;
+		const currentDate = selectedDateIndex !== null ? emergencyDates[selectedDateIndex] : null;
+		const currentEmergency =
+			currentDate != null
+				? emergencyList.find((e) => formatDateDisplay(e.EMDT) === formatDateDisplay(currentDate))
+				: null;
 
-		if (!currentEmergency || !currentEmergency.EMNUM) {
+		if (!currentEmergency || !currentEmergency.EMDT) {
 			alert('삭제할 응급 기록을 선택해주세요.');
 			return;
 		}
@@ -478,8 +506,15 @@ export default function EmergencyRecord() {
 
 		setLoadingEmergencies(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const deleteQuery = `DELETE FROM [돌봄시설DB].[dbo].[F11070] WHERE ...`;
+			const emdt = formatDateDisplay(currentEmergency.EMDT);
+			const url = `/api/f11080?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+				selectedMember.PNUM
+			)}&emdt=${encodeURIComponent(emdt)}`;
+			const res = await fetch(url, { method: 'DELETE' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '응급 기록 삭제에 실패했습니다.');
+			}
 
 			alert('응급 기록이 삭제되었습니다.');
 			setIsEditMode(false);
