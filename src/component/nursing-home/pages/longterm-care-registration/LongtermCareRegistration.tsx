@@ -25,25 +25,38 @@ interface ServiceWriterData {
 }
 
 export default function LongtermCareRegistration() {
+	const formatDateYmd = (v: unknown) => {
+		if (v == null) return '';
+		const s = String(v).trim();
+		if (!s) return '';
+		if (s.includes('T')) return s.split('T')[0];
+		if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+		if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+		return s.length >= 10 ? s.slice(0, 10) : s;
+	};
+
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [serviceDates, setServiceDates] = useState<string[]>([]);
 	const [loadingServiceDates, setLoadingServiceDates] = useState(false);
 	const [serviceDatePage, setServiceDatePage] = useState(1);
 	const serviceDateItemsPerPage = 10;
+	const [loadingDetail, setLoadingDetail] = useState(false);
+	const [isEditMode, setIsEditMode] = useState(false);
+	const [selectedDate, setSelectedDate] = useState<string>('');
 
 	// 폼 데이터
 	const [formData, setFormData] = useState({
 		beneficiary: '', // 수급자
-		provisionDate: '', // 제공일자
-		registeredWriterName: '', // 등록된작성자성명
-		modifiedWriterName: '', // 수정작성자성명
-		serviceWriters: [
-			{ category: '신체활동', writerName: '', additionalField: '' },
-			{ category: '인지관리', writerName: '', additionalField: '' },
-			{ category: '건강및간호', writerName: '', additionalField: '' },
-			{ category: '기능회복', writerName: '', additionalField: '' }
-		]
+		provisionDate: '', // 제공일자(SVDT)
+		mealLocation: '식장', // ST_PLAC
+		mealType: '1', // ST_KIND (1=일반식,2=죽,3=유동식)
+		gyn: '0', // GYN (0=외출,1=입원(외박))
+		mealStatus: { breakfast: '1', lunch: '1', dinner: '1' }, // MOST/LCST/DNST (1=양호,2=이상)
+		snackStatus: { morning: '1', afternoon: '1' }, // MGST/AGST (1=양호,2=이상)
+		specialNotes: '', // ST_ETC
+		registeredWriterName: '', // INEMPNM(참고 표시)
+		modifiedWriterName: '' // INEMPNM(참고 표시)
 	});
 
 	// 수급자 목록 데이터
@@ -169,24 +182,100 @@ export default function LongtermCareRegistration() {
 
 		setLoadingServiceDates(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/service-dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setServiceDates([]);
+			// 최근 1년 치 조회 후 SVDT만 뽑아 서비스제공일자 리스트 구성
+			const today = new Date();
+			const end = formatDateYmd(today.toISOString());
+			const oneYearAgo = new Date(today);
+			oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+			const start = formatDateYmd(oneYearAgo.toISOString());
+
+			const url = `/api/f14020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
+				pnum
+			)}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '서비스제공일자 조회 실패');
+			}
+
+			const list = Array.isArray(result.data) ? result.data : [];
+			const dates: string[] = Array.from(
+				new Set(
+					list
+						.map((r: any) => formatDateYmd(r?.SVDT))
+						.filter((d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d))
+				)
+			) as string[];
+			dates.sort((a: string, b: string) => (a > b ? -1 : a < b ? 1 : 0));
+
+			setServiceDates(dates);
+			setSelectedDateIndex(null);
+			setSelectedDate('');
+			setIsEditMode(false);
 		} catch (err) {
 			console.error('서비스제공일자 조회 오류:', err);
+			setServiceDates([]);
+			setSelectedDateIndex(null);
+			setSelectedDate('');
+			setIsEditMode(false);
 		} finally {
 			setLoadingServiceDates(false);
+		}
+	};
+
+	const fetchDetail = async (ancd: string, pnum: string, svdt: string) => {
+		if (!ancd || !pnum || !svdt) return;
+		setLoadingDetail(true);
+		try {
+			const url = `/api/f14020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
+				pnum
+			)}&svdt=${encodeURIComponent(svdt)}`;
+			const res = await fetch(url, { method: 'GET' });
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || '상세 조회 실패');
+			}
+
+			const row = Array.isArray(json.data) ? json.data?.[0] : null;
+			setFormData(prev => ({
+				...prev,
+				beneficiary: selectedMember?.P_NM || prev.beneficiary,
+				provisionDate: formatDateYmd(row?.SVDT) || svdt,
+				mealLocation: row?.ST_PLAC || '식장',
+				mealType: String(row?.ST_KIND ?? '1'),
+				gyn: String(row?.GYN ?? '0'),
+				mealStatus: {
+					breakfast: String(row?.MOST ?? '1'),
+					lunch: String(row?.LCST ?? '1'),
+					dinner: String(row?.DNST ?? '1')
+				},
+				snackStatus: {
+					morning: String(row?.MGST ?? '1'),
+					afternoon: String(row?.AGST ?? '1')
+				},
+				specialNotes: row?.ST_ETC || '',
+				registeredWriterName: row?.INEMPNM || '',
+				modifiedWriterName: row?.INEMPNM || ''
+			}));
+		} catch (e) {
+			console.error('상세 조회 오류:', e);
+			// 기록이 없을 수도 있으니 기본값 세팅
+			setFormData(prev => ({
+				...prev,
+				beneficiary: selectedMember?.P_NM || prev.beneficiary,
+				provisionDate: svdt,
+				registeredWriterName: '',
+				modifiedWriterName: ''
+			}));
+		} finally {
+			setLoadingDetail(false);
 		}
 	};
 
 	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
+		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '', provisionDate: '' }));
 		fetchServiceDates(member.ANCD, member.PNUM);
 	};
 
@@ -194,10 +283,13 @@ export default function LongtermCareRegistration() {
 	const handleSelectDate = (index: number) => {
 		setSelectedDateIndex(index);
 		const selectedDate = serviceDates[index];
+		setSelectedDate(selectedDate || '');
+		setIsEditMode(false);
 		setFormData(prev => ({ ...prev, provisionDate: selectedDate || '' }));
 		
-		// TODO: 선택한 날짜의 작성자 정보 조회
-		// fetchServiceWriters(selectedMember?.ANCD, selectedMember?.PNUM, selectedDate);
+		if (selectedMember?.ANCD && selectedMember?.PNUM && selectedDate) {
+			fetchDetail(selectedMember.ANCD, selectedMember.PNUM, selectedDate);
+		}
 	};
 
 	// 날짜 형식 변환 함수
@@ -215,19 +307,20 @@ export default function LongtermCareRegistration() {
 		return dateStr;
 	};
 
-	// 서비스 작성자 정보 변경
-	const handleServiceWriterChange = (index: number, field: string, value: string) => {
-		setFormData(prev => {
-			const newWriters = [...prev.serviceWriters];
-			newWriters[index] = { ...newWriters[index], [field]: value };
-			return { ...prev, serviceWriters: newWriters };
-		});
+	const updateField = (field: string, value: any) => {
+		setFormData(prev => ({ ...prev, [field]: value }));
 	};
 
-	// 서비스항목 수정
-	const handleModifyServiceItems = () => {
-		// TODO: 서비스항목 수정 로직
-		alert('서비스항목 수정 기능은 준비 중입니다.');
+	const handleModify = () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		if (!formData.provisionDate) {
+			alert('서비스제공일자를 선택해주세요.');
+			return;
+		}
+		setIsEditMode(true);
 	};
 
 	// 일별작성자 저장
@@ -242,8 +335,45 @@ export default function LongtermCareRegistration() {
 			return;
 		}
 
-		// TODO: 실제 API 엔드포인트로 변경 필요
-		alert('일별작성자가 저장되었습니다.');
+		setLoadingDetail(true);
+		try {
+			const payload = {
+				svdt: formData.provisionDate,
+				rows: [
+					{
+						pnum: selectedMember.PNUM,
+						mealLocation: formData.mealLocation,
+						mealType: formData.mealType,
+						gyn: formData.gyn,
+						mealStatus: formData.mealStatus,
+						snackStatus: formData.snackStatus,
+						specialNotes: formData.specialNotes
+					}
+				]
+			};
+
+			const res = await fetch(`/api/f14020?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || '저장 실패');
+			}
+
+			alert('저장되었습니다.');
+			setIsEditMode(false);
+			await fetchServiceDates(selectedMember.ANCD, selectedMember.PNUM);
+			if (selectedMember.ANCD && selectedMember.PNUM && formData.provisionDate) {
+				await fetchDetail(selectedMember.ANCD, selectedMember.PNUM, formData.provisionDate);
+			}
+		} catch (e) {
+			console.error('저장 오류:', e);
+			alert('저장 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingDetail(false);
+		}
 	};
 
 	// 작성자 기간일괄 저장
@@ -253,12 +383,96 @@ export default function LongtermCareRegistration() {
 			return;
 		}
 
-		if (!confirm('기간 내 작성자 정보를 일괄 저장하시겠습니까?')) {
+		if (serviceDates.length === 0) {
+			alert('저장할 서비스제공일자가 없습니다.');
 			return;
 		}
 
-		// TODO: 실제 API 엔드포인트로 변경 필요
-		alert('작성자 기간일괄 저장이 완료되었습니다.');
+		if (!confirm('현재 입력값을 조회된 서비스제공일자 전체에 일괄 저장하시겠습니까?')) {
+			return;
+		}
+
+		setLoadingDetail(true);
+		try {
+			for (const d of serviceDates) {
+				const payload = {
+					svdt: d,
+					rows: [
+						{
+							pnum: selectedMember.PNUM,
+							mealLocation: formData.mealLocation,
+							mealType: formData.mealType,
+							gyn: formData.gyn,
+							mealStatus: formData.mealStatus,
+							snackStatus: formData.snackStatus,
+							specialNotes: formData.specialNotes
+						}
+					]
+				};
+				const res = await fetch(`/api/f14020?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload)
+				});
+				const json = await res.json().catch(() => ({}));
+				if (!res.ok || !json?.success) {
+					throw new Error(json?.error || `일괄 저장 실패 (${d})`);
+				}
+			}
+
+			alert('일괄 저장이 완료되었습니다.');
+			setIsEditMode(false);
+			await fetchServiceDates(selectedMember.ANCD, selectedMember.PNUM);
+			if (selectedMember.ANCD && selectedMember.PNUM && formData.provisionDate) {
+				await fetchDetail(selectedMember.ANCD, selectedMember.PNUM, formData.provisionDate);
+			}
+		} catch (e) {
+			console.error('일괄 저장 오류:', e);
+			alert('일괄 저장 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingDetail(false);
+		}
+	};
+
+	const handleDelete = async () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		if (!formData.provisionDate) {
+			alert('제공일자를 선택해주세요.');
+			return;
+		}
+		if (!confirm('정말 삭제하시겠습니까?')) return;
+
+		setLoadingDetail(true);
+		try {
+			const url = `/api/f14020?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+				selectedMember.PNUM
+			)}&svdt=${encodeURIComponent(formData.provisionDate)}`;
+			const res = await fetch(url, { method: 'DELETE' });
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || '삭제 실패');
+			}
+
+			alert('삭제되었습니다.');
+			setIsEditMode(false);
+			setSelectedDateIndex(null);
+			setSelectedDate('');
+			setFormData(prev => ({
+				...prev,
+				provisionDate: '',
+				registeredWriterName: '',
+				modifiedWriterName: ''
+			}));
+			await fetchServiceDates(selectedMember.ANCD, selectedMember.PNUM);
+		} catch (e) {
+			console.error('삭제 오류:', e);
+			alert('삭제 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingDetail(false);
+		}
 	};
 
 	// 서비스실적 출력
@@ -274,7 +488,7 @@ export default function LongtermCareRegistration() {
 			return;
 		}
 
-		const printHTML = `
+			const printHTML = `
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -370,17 +584,20 @@ export default function LongtermCareRegistration() {
 		<table class="service-table">
 			<thead>
 				<tr>
-					<th>서비스 카테고리</th>
-					<th>작성자성명</th>
+					<th>항목</th>
+					<th>값</th>
 				</tr>
 			</thead>
 			<tbody>
-				${formData.serviceWriters.map(sw => `
-					<tr>
-						<td>${sw.category}</td>
-						<td>${sw.writerName || '-'}</td>
-					</tr>
-				`).join('')}
+				<tr><td>식사장소</td><td>${formData.mealLocation || '-'}</td></tr>
+				<tr><td>식사종류</td><td>${formData.mealType === '1' ? '일반식' : formData.mealType === '2' ? '죽' : formData.mealType === '3' ? '유동식(미음)' : '-'}</td></tr>
+				<tr><td>입원/외출</td><td>${formData.gyn === '1' ? '입원(외박)' : formData.gyn === '0' ? '외출' : '-'}</td></tr>
+				<tr><td>식사상태(아침)</td><td>${formData.mealStatus.breakfast === '1' ? '양호' : '이상'}</td></tr>
+				<tr><td>식사상태(점심)</td><td>${formData.mealStatus.lunch === '1' ? '양호' : '이상'}</td></tr>
+				<tr><td>식사상태(저녁)</td><td>${formData.mealStatus.dinner === '1' ? '양호' : '이상'}</td></tr>
+				<tr><td>간식상태(오전)</td><td>${formData.snackStatus.morning === '1' ? '양호' : '이상'}</td></tr>
+				<tr><td>간식상태(오후)</td><td>${formData.snackStatus.afternoon === '1' ? '양호' : '이상'}</td></tr>
+				<tr><td>특이사항</td><td>${(formData.specialNotes || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>
 			</tbody>
 		</table>
 	</div>
@@ -694,6 +911,26 @@ export default function LongtermCareRegistration() {
 										{formData.provisionDate || '-'}
 									</span>
 								</div>
+								<div className="flex items-center gap-2 ml-auto">
+									{!isEditMode ? (
+										<>
+											<button
+												onClick={handleModify}
+												disabled={!selectedMember || !formData.provisionDate || loadingDetail}
+												className="px-4 py-1.5 text-sm border border-green-400 rounded bg-green-200 hover:bg-green-300 text-green-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+											>
+												수정
+											</button>
+											<button
+												onClick={handleDelete}
+												disabled={!selectedMember || !formData.provisionDate || loadingDetail}
+												className="px-4 py-1.5 text-sm border border-red-400 rounded bg-red-200 hover:bg-red-300 text-red-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+											>
+												삭제
+											</button>
+										</>
+									) : null}
+								</div>
 							</div>
 							<div className="flex flex-wrap items-center gap-4">
 								<div className="flex items-center gap-2">
@@ -701,9 +938,9 @@ export default function LongtermCareRegistration() {
 									<input
 										type="text"
 										value={formData.registeredWriterName}
-										onChange={(e) => setFormData(prev => ({ ...prev, registeredWriterName: e.target.value }))}
-										className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px]"
-										placeholder="등록된작성자성명"
+										readOnly
+										className="px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50 min-w-[150px]"
+										placeholder="-"
 									/>
 								</div>
 								<div className="flex items-center gap-2">
@@ -711,73 +948,182 @@ export default function LongtermCareRegistration() {
 									<input
 										type="text"
 										value={formData.modifiedWriterName}
-										onChange={(e) => setFormData(prev => ({ ...prev, modifiedWriterName: e.target.value }))}
-										className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px]"
-										placeholder="수정작성자성명"
+										readOnly
+										className="px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50 min-w-[150px]"
+										placeholder="-"
 									/>
 								</div>
 							</div>
 						</div>
 
-						{/* 서비스 카테고리별 작성자성명 테이블 */}
-						<div className="mb-4 overflow-hidden border border-blue-300 rounded-lg">
-							<table className="w-full text-sm border-collapse">
-								<thead className="bg-blue-50">
-									<tr>
-										<th className="px-4 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">서비스 카테고리</th>
-										<th className="px-4 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">작성자성명</th>
-										<th className="px-4 py-2 font-semibold text-center text-blue-900"></th>
-									</tr>
-								</thead>
-								<tbody>
-									{formData.serviceWriters.map((serviceWriter, index) => (
-										<tr key={index} className="border-b border-blue-50">
-											<td className="px-4 py-2 font-medium text-center text-blue-900 border-r border-blue-100 bg-blue-50">
-												{serviceWriter.category}
-											</td>
-											<td className="px-4 py-2 text-center border-r border-blue-100">
-												<input
-													type="text"
-													value={serviceWriter.writerName}
-													onChange={(e) => handleServiceWriterChange(index, 'writerName', e.target.value)}
-													className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
-													placeholder="작성자성명"
-												/>
-											</td>
-											<td className="px-4 py-2 text-center">
-												<input
-													type="text"
-													value={serviceWriter.additionalField}
-													onChange={(e) => handleServiceWriterChange(index, 'additionalField', e.target.value)}
-													className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
-													placeholder=""
-												/>
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
+						{/* F14020 입력 폼 */}
+						<div className="mb-4 space-y-4">
+							<div className="flex flex-wrap items-center gap-4">
+								<div className="flex items-center gap-2">
+									<label className="text-sm font-medium text-blue-900 whitespace-nowrap">식사장소</label>
+									<input
+										type="text"
+										value={formData.mealLocation}
+										onChange={(e) => updateField('mealLocation', e.target.value)}
+										disabled={!isEditMode}
+										className={`px-3 py-1.5 text-sm border rounded min-w-[180px] ${
+											isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+										}`}
+									/>
+								</div>
+								<div className="flex items-center gap-2">
+									<label className="text-sm font-medium text-blue-900 whitespace-nowrap">식사종류</label>
+									<select
+										value={formData.mealType}
+										onChange={(e) => updateField('mealType', e.target.value)}
+										disabled={!isEditMode}
+										className={`px-3 py-1.5 text-sm border rounded min-w-[160px] ${
+											isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+										}`}
+									>
+										<option value="1">일반식</option>
+										<option value="2">죽</option>
+										<option value="3">유동식(미음)</option>
+									</select>
+								</div>
+								<div className="flex items-center gap-2">
+									<label className="text-sm font-medium text-blue-900 whitespace-nowrap">입원/외출</label>
+									<select
+										value={formData.gyn}
+										onChange={(e) => updateField('gyn', e.target.value)}
+										disabled={!isEditMode}
+										className={`px-3 py-1.5 text-sm border rounded min-w-[140px] ${
+											isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+										}`}
+									>
+										<option value="0">외출</option>
+										<option value="1">입원(외박)</option>
+									</select>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+								<div className="p-3 border border-blue-200 rounded bg-blue-50/40">
+									<div className="mb-2 text-sm font-semibold text-blue-900">식사상태</div>
+									<div className="flex flex-wrap gap-3">
+										<div className="flex items-center gap-2">
+											<label className="text-sm text-blue-900">아침</label>
+											<select
+												value={formData.mealStatus.breakfast}
+												onChange={(e) =>
+													updateField('mealStatus', { ...formData.mealStatus, breakfast: e.target.value })
+												}
+												disabled={!isEditMode}
+												className={`px-2 py-1 text-sm border rounded ${
+													isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+												}`}
+											>
+												<option value="1">양호</option>
+												<option value="2">이상</option>
+											</select>
+										</div>
+										<div className="flex items-center gap-2">
+											<label className="text-sm text-blue-900">점심</label>
+											<select
+												value={formData.mealStatus.lunch}
+												onChange={(e) => updateField('mealStatus', { ...formData.mealStatus, lunch: e.target.value })}
+												disabled={!isEditMode}
+												className={`px-2 py-1 text-sm border rounded ${
+													isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+												}`}
+											>
+												<option value="1">양호</option>
+												<option value="2">이상</option>
+											</select>
+										</div>
+										<div className="flex items-center gap-2">
+											<label className="text-sm text-blue-900">저녁</label>
+											<select
+												value={formData.mealStatus.dinner}
+												onChange={(e) =>
+													updateField('mealStatus', { ...formData.mealStatus, dinner: e.target.value })
+												}
+												disabled={!isEditMode}
+												className={`px-2 py-1 text-sm border rounded ${
+													isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+												}`}
+											>
+												<option value="1">양호</option>
+												<option value="2">이상</option>
+											</select>
+										</div>
+									</div>
+								</div>
+
+								<div className="p-3 border border-blue-200 rounded bg-blue-50/40">
+									<div className="mb-2 text-sm font-semibold text-blue-900">간식상태</div>
+									<div className="flex flex-wrap gap-3">
+										<div className="flex items-center gap-2">
+											<label className="text-sm text-blue-900">오전</label>
+											<select
+												value={formData.snackStatus.morning}
+												onChange={(e) =>
+													updateField('snackStatus', { ...formData.snackStatus, morning: e.target.value })
+												}
+												disabled={!isEditMode}
+												className={`px-2 py-1 text-sm border rounded ${
+													isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+												}`}
+											>
+												<option value="1">양호</option>
+												<option value="2">이상</option>
+											</select>
+										</div>
+										<div className="flex items-center gap-2">
+											<label className="text-sm text-blue-900">오후</label>
+											<select
+												value={formData.snackStatus.afternoon}
+												onChange={(e) =>
+													updateField('snackStatus', { ...formData.snackStatus, afternoon: e.target.value })
+												}
+												disabled={!isEditMode}
+												className={`px-2 py-1 text-sm border rounded ${
+													isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+												}`}
+											>
+												<option value="1">양호</option>
+												<option value="2">이상</option>
+											</select>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div>
+								<label className="block mb-2 text-sm font-medium text-blue-900">특이사항</label>
+								<textarea
+									value={formData.specialNotes}
+									onChange={(e) => updateField('specialNotes', e.target.value)}
+									disabled={!isEditMode}
+									rows={5}
+									className={`w-full px-3 py-2 text-sm border rounded ${
+										isEditMode ? 'border-blue-300 bg-white' : 'border-blue-200 bg-gray-50'
+									}`}
+									placeholder="특이사항을 입력하세요"
+								/>
+							</div>
 						</div>
 
 						{/* 하단 버튼 영역 */}
 						<div className="flex justify-end gap-2 mt-4">
 							<button
-								onClick={handleModifyServiceItems}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-							>
-								서비스항목 수정
-							</button>
-							<button
 								onClick={handleSaveDailyWriter}
+								disabled={!isEditMode || loadingDetail}
 								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 							>
-								일별작성자 저장
+								저장
 							</button>
 							<button
 								onClick={handleSaveWriterBatch}
+								disabled={!isEditMode || loadingDetail}
 								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 							>
-								작성자 기간일괄 저장
+								기간일괄 저장
 							</button>
 							<button
 								onClick={handlePrintServicePerformance}
@@ -785,6 +1131,15 @@ export default function LongtermCareRegistration() {
 							>
 								서비스실적 출력
 							</button>
+							{isEditMode && (
+								<button
+									onClick={() => setIsEditMode(false)}
+									disabled={loadingDetail}
+									className="px-4 py-1.5 text-sm border border-gray-400 rounded bg-gray-200 hover:bg-gray-300 text-gray-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									취소
+								</button>
+							)}
 						</div>
 					</div>
 				</div>

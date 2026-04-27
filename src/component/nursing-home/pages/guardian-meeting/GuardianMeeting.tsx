@@ -2,30 +2,66 @@
 import React, { useState, useEffect } from 'react';
 
 interface GuardianMeetingData {
-	MTDT: string; // 간담회일자
-	MTST: string; // 간담회시작시간
-	MTET: string; // 간담회종료시간
-	MTLOC: string; // 간담회장소
-	MTSUB: string; // 간담회주제
-	MTCNT: string; // 간담회내용
-	ATTNUM: number; // 참석인원
-	ATTLIST: string; // 참석자명단
-	MTRSLT: string; // 간담회결과
-	MTNUM: string; // 간담회번호
+	ANCD: string | number;
+	MDT: string; // 간담일자 (PK)
+	STM?: string; // 시작시간
+	ETM?: string; // 종료시간
+	MPL?: string; // 장소
+	MDOC?: string; // 간담주제
+	MDES?: string; // 간담결과/내용(테이블 정의에 맞춰 저장)
+	MNM?: string; // 참석자
+	MCNT?: string | number; // 참석자수
+	MIMG?: string; // 사진1
+	MODT?: string; // 반영일자
+	MODES?: string; // 반영내용
+	ETC?: string; // 비고
+	URDT?: string;
+	INEMPNO?: string | number;
+	INEMPNM?: string;
 	[key: string]: any;
 }
 
+type UserInfo = {
+	ancd?: string | number;
+	uid?: string;
+	empno?: string | number;
+	empnm?: string;
+	[key: string]: any;
+};
+
 export default function GuardianMeeting() {
+	const formatDateYmd = (dateStr: string) => {
+		if (!dateStr) return '';
+		const s = String(dateStr).trim();
+		if (!s) return '';
+
+		if (s.includes('T') && s.length >= 10) return s.split('T')[0];
+		if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+		if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+
+		const d = new Date(s);
+		if (!Number.isNaN(d.getTime())) {
+			const y = d.getFullYear();
+			const m = String(d.getMonth() + 1).padStart(2, '0');
+			const day = String(d.getDate()).padStart(2, '0');
+			return `${y}-${m}-${day}`;
+		}
+
+		return s.length >= 10 ? s.slice(0, 10) : s;
+	};
+
 	const [meetingList, setMeetingList] = useState<GuardianMeetingData[]>([]);
 	const [selectedMeeting, setSelectedMeeting] = useState<GuardianMeetingData | null>(null);
 	const [isEditMode, setIsEditMode] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
+	const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+	const [hasProgramAccess, setHasProgramAccess] = useState<boolean>(true);
 
 	// 기간 필터
-	const [startDate, setStartDate] = useState<string>('2024-12-11');
-	const [endDate, setEndDate] = useState<string>('2025-12-11');
+	const [startDate, setStartDate] = useState<string>('');
+	const [endDate, setEndDate] = useState<string>('');
 
 	// 폼 데이터
 	const [formData, setFormData] = useState({
@@ -40,27 +76,102 @@ export default function GuardianMeeting() {
 		meetingResult: '' // 간담회결과
 	});
 
+	const fetchUserAndPermission = async () => {
+		try {
+			const res = await fetch('/api/auth/user-info', { method: 'GET' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '사용자 정보 조회 실패');
+			}
+
+			const u = (result.data || {}) as UserInfo;
+			setUserInfo(u);
+
+			const ancd = u?.ancd;
+			const uid = u?.uid;
+			if (!ancd || !uid) {
+				setHasProgramAccess(true);
+				return;
+			}
+
+			const permRes = await fetch(
+				`/api/f00131?ancd=${encodeURIComponent(String(ancd))}&uid=${encodeURIComponent(
+					String(uid)
+				)}&pgmid=${encodeURIComponent('F60040')}`,
+				{ method: 'GET' }
+			);
+			const perm = await permRes.json().catch(() => ({}));
+			if (!permRes.ok || !perm?.success) {
+				setHasProgramAccess(true);
+				return;
+			}
+
+			// F00131이 "사용 가능 목록"인 경우가 많아, 레코드가 없으면 기본 허용
+			if (typeof perm.allowed === 'boolean') {
+				setHasProgramAccess(perm.allowed === false ? false : true);
+				return;
+			}
+			setHasProgramAccess(true);
+		} catch (e) {
+			console.error('사용자/권한 조회 오류:', e);
+			setHasProgramAccess(true);
+		}
+	};
+
 	// 간담회 목록 조회
 	const fetchMeetings = async () => {
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/guardian-meeting?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setMeetingList([]);
+			const ancd = userInfo?.ancd;
+			if (!ancd) {
+				setMeetingList([]);
+				return;
+			}
+			const url = `/api/f60040?ancd=${encodeURIComponent(String(ancd))}&startDate=${encodeURIComponent(
+				startDate
+			)}&endDate=${encodeURIComponent(endDate)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '간담회 목록 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			setMeetingList(
+				list.map((r: any) => ({
+					...r,
+					MDT: formatDateYmd(r?.MDT),
+					MODT: formatDateYmd(r?.MODT),
+					URDT: formatDateYmd(r?.URDT),
+				}))
+			);
 		} catch (err) {
 			console.error('간담회 목록 조회 오류:', err);
+			setMeetingList([]);
 		} finally {
 			setLoading(false);
 		}
 	};
 
 	useEffect(() => {
+		// 최초 진입 시: 오늘 기준 최근 1년
+		const today = new Date();
+		const end = formatDateYmd(today.toISOString());
+		const oneYearAgo = new Date(today);
+		oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+		const start = formatDateYmd(oneYearAgo.toISOString());
+		setStartDate(start);
+		setEndDate(end);
+
+		fetchUserAndPermission();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	useEffect(() => {
+		if (!userInfo?.ancd) return;
+		if (!startDate || !endDate) return;
 		fetchMeetings();
-	}, [startDate, endDate]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [startDate, endDate, userInfo?.ancd]);
 
 	// 페이지네이션 계산
 	const totalPages = Math.ceil(meetingList.length / itemsPerPage);
@@ -77,15 +188,16 @@ export default function GuardianMeeting() {
 		setSelectedMeeting(meeting);
 		setIsEditMode(false);
 		setFormData({
-			meetingDate: meeting.MTDT || '',
-			meetingStartTime: meeting.MTST || '',
-			meetingEndTime: meeting.MTET || '',
-			meetingLocation: meeting.MTLOC || '',
-			meetingSubject: meeting.MTSUB || '',
-			meetingContent: meeting.MTCNT || '',
-			attendeeCount: String(meeting.ATTNUM || ''),
-			attendeeList: meeting.ATTLIST || '',
-			meetingResult: meeting.MTRSLT || ''
+			meetingDate: formatDateYmd(meeting.MDT || ''),
+			meetingStartTime: meeting.STM || '',
+			meetingEndTime: meeting.ETM || '',
+			meetingLocation: meeting.MPL || '',
+			meetingSubject: meeting.MDOC || '',
+			// 테이블에 "간담결과내용(MDES)"만 명시되어 있어, 화면의 "내용"과 "결과"를 합쳐 저장/표시
+			meetingContent: meeting.MDES || '',
+			attendeeCount: String(meeting.MCNT ?? ''),
+			attendeeList: meeting.MNM || '',
+			meetingResult: meeting.MODES || ''
 		});
 	};
 
@@ -102,6 +214,10 @@ export default function GuardianMeeting() {
 
 	// 추가
 	const handleAdd = () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		setSelectedMeeting(null);
 		setIsEditMode(true);
 		setFormData({
@@ -119,6 +235,10 @@ export default function GuardianMeeting() {
 
 	// 수정
 	const handleModify = () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!selectedMeeting) {
 			alert('수정할 간담회를 선택해주세요.');
 			return;
@@ -128,6 +248,10 @@ export default function GuardianMeeting() {
 
 	// 저장
 	const handleSave = async () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!formData.meetingDate) {
 			alert('간담회일자를 입력해주세요.');
 			return;
@@ -135,9 +259,37 @@ export default function GuardianMeeting() {
 
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedMeeting ? '/api/guardian-meeting/update' : '/api/guardian-meeting/create';
-			// const response = await fetch(url, { method: 'POST', body: JSON.stringify(formData) });
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error('기관정보(ANCD)를 확인할 수 없습니다.');
+
+			const payload: any = {
+				ANCD: ancd,
+				MDT: formatDateYmd(formData.meetingDate),
+				STM: formData.meetingStartTime || null,
+				ETM: formData.meetingEndTime || null,
+				MPL: formData.meetingLocation || null,
+				MDOC: formData.meetingSubject || null,
+				// 화면의 "내용"은 MDES로 저장
+				MDES: formData.meetingContent || null,
+				// 참석자명단은 MNM, 참석자수는 MCNT
+				MNM: formData.attendeeList || null,
+				MCNT: formData.attendeeCount || null,
+				// 화면의 "결과"는 MODES로 저장(테이블에 MODES가 존재)
+				MODT: null,
+				MODES: formData.meetingResult || null,
+				INEMPNO: userInfo?.empno != null ? String(userInfo.empno) : null,
+				INEMPNM: userInfo?.empnm != null ? String(userInfo.empnm) : null,
+			};
+
+			const res = await fetch(`/api/f60040?ancd=${encodeURIComponent(String(ancd))}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '간담회 저장에 실패했습니다.');
+			}
 
 			alert(selectedMeeting ? '간담회가 수정되었습니다.' : '간담회가 생성되었습니다.');
 			setIsEditMode(false);
@@ -152,6 +304,10 @@ export default function GuardianMeeting() {
 
 	// 삭제
 	const handleDelete = async () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!selectedMeeting) {
 			alert('삭제할 간담회를 선택해주세요.');
 			return;
@@ -163,8 +319,19 @@ export default function GuardianMeeting() {
 
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/guardian-meeting/${selectedMeeting.MTNUM}`, { method: 'DELETE' });
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error('기관정보(ANCD)를 확인할 수 없습니다.');
+			const mdt = formatDateYmd(selectedMeeting.MDT);
+			if (!mdt) throw new Error('간담회일자(MDT)를 확인할 수 없습니다.');
+
+			const res = await fetch(
+				`/api/f60040?ancd=${encodeURIComponent(String(ancd))}&mdt=${encodeURIComponent(String(mdt))}`,
+				{ method: 'DELETE' }
+			);
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '간담회 삭제에 실패했습니다.');
+			}
 
 			alert('간담회가 삭제되었습니다.');
 			setSelectedMeeting(null);
@@ -190,6 +357,10 @@ export default function GuardianMeeting() {
 
 	// 결과등록
 	const handleRegisterResult = async () => {
+		if (!hasProgramAccess) {
+			alert('프로그램 사용 권한이 없습니다.');
+			return;
+		}
 		if (!selectedMeeting) {
 			alert('결과를 등록할 간담회를 선택해주세요.');
 			return;
@@ -202,11 +373,28 @@ export default function GuardianMeeting() {
 
 		setLoading(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/guardian-meeting/${selectedMeeting.MTNUM}/result`, {
-			// 	method: 'POST',
-			// 	body: JSON.stringify({ meetingResult: formData.meetingResult })
-			// });
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error('기관정보(ANCD)를 확인할 수 없습니다.');
+			const mdt = formatDateYmd(selectedMeeting.MDT);
+			if (!mdt) throw new Error('간담회일자(MDT)를 확인할 수 없습니다.');
+
+			const payload: any = {
+				ANCD: ancd,
+				MDT: mdt,
+				MODES: formData.meetingResult || null,
+				INEMPNO: userInfo?.empno != null ? String(userInfo.empno) : null,
+				INEMPNM: userInfo?.empnm != null ? String(userInfo.empnm) : null,
+			};
+
+			const res = await fetch(`/api/f60040?ancd=${encodeURIComponent(String(ancd))}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '간담회결과 등록에 실패했습니다.');
+			}
 
 			alert('간담회결과가 등록되었습니다.');
 			await fetchMeetings();
@@ -449,12 +637,12 @@ export default function GuardianMeeting() {
 									key={index}
 									onClick={() => handleSelectMeeting(meeting)}
 									className={`p-2 border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-										selectedMeeting?.MTNUM === meeting.MTNUM ? 'bg-blue-100' : ''
+										selectedMeeting?.MDT === meeting.MDT ? 'bg-blue-100' : ''
 									}`}
 								>
 									<div className="grid grid-cols-2 gap-2 text-xs">
-										<div className="text-blue-900">{formatDate(meeting.MTDT || '')}</div>
-										<div className="text-blue-900 truncate">{meeting.MTSUB || '-'}</div>
+										<div className="text-blue-900">{formatDate(meeting.MDT || '')}</div>
+										<div className="text-blue-900 truncate">{meeting.MDOC || '-'}</div>
 									</div>
 								</div>
 							))
@@ -679,25 +867,29 @@ export default function GuardianMeeting() {
 						<>
 							<button
 								onClick={handleAdd}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								disabled={!hasProgramAccess}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								추가
 							</button>
 							<button
 								onClick={handleModify}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								disabled={!hasProgramAccess || !selectedMeeting}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								수정
 							</button>
 							<button
 								onClick={handleDelete}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								disabled={!hasProgramAccess || !selectedMeeting}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								삭제
 							</button>
 							<button
 								onClick={handleRegisterResult}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								disabled={!hasProgramAccess || !selectedMeeting}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								결과등록
 							</button>
@@ -723,6 +915,7 @@ export default function GuardianMeeting() {
 							</button>
 							<button
 								onClick={handleSave}
+								disabled={!hasProgramAccess}
 								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 							>
 								저장

@@ -255,3 +255,63 @@ export async function POST(req) {
   }
 }
 
+export async function DELETE(req) {
+  try {
+    const searchParams = req.nextUrl.searchParams;
+    const ancd = searchParams.get('ancd'); // optional, 세션 검증용
+    const pnum = searchParams.get('pnum');
+    const svdt = searchParams.get('svdt');
+
+    const gate = assertAnCdMatchesSession(req, ancd || null);
+    if (!gate.ok) return gate.response;
+
+    if (!pnum || !svdt) {
+      return new Response(JSON.stringify({ success: false, error: 'pnum, svdt 파라미터가 필요합니다' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const svdtDigits = String(svdt).includes('-') ? String(svdt).replace(/-/g, '') : String(svdt);
+    if (!/^\d{8}$/.test(svdtDigits)) {
+      return new Response(JSON.stringify({ success: false, error: 'svdt 형식이 올바르지 않습니다 (yyyy-mm-dd 또는 yyyymmdd)' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const pool = await connPool;
+    if (!pool) {
+      return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const request = pool.request();
+    request.input('ANCD', gate.sessionAncd);
+    request.input('PNUM', String(pnum));
+    request.input('SVDT', svdtDigits);
+
+    const query = `
+      DELETE FROM [돌봄시설DB].[dbo].[F14020]
+      WHERE [ANCD] = @ANCD
+        AND CAST([PNUM] AS VARCHAR) = CAST(@PNUM AS VARCHAR)
+        AND [SVDT] = @SVDT
+    `;
+
+    await request.query(query);
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (err) {
+    console.error('F14020 삭제 오류:', err);
+    return new Response(JSON.stringify({ success: false, error: err.message, details: err.toString() }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+

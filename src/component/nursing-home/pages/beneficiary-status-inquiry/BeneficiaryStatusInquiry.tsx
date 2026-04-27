@@ -448,12 +448,12 @@ export default function BeneficiaryStatusInquiry() {
 						>
 							출력
 						</button>
-						<button
+						{/* <button
 							onClick={handleClose}
 							className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 						>
 							닫기
-						</button>
+						</button> */}
 					</div>
 				</div>
 			</div>
