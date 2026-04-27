@@ -4,7 +4,7 @@ import siteMetadata from '../../data/siteMetadata'
 
 export const Footer = () => {
   return (
-    <footer>
+    <footer className="print:hidden">
       <div className="flex flex-col items-center mt-5">
         <div className="flex mb-3 space-x-4">
           <SocialIcon kind="mail" href={`mailto:${siteMetadata.email}`} size={6} />

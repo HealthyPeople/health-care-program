@@ -1,18 +1,38 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MemberListPanel } from '../../components/MemberListPanel';
+import { formatCareGradeLabel } from '../../utils/careGrade';
 
 interface MemberData {
 	[key: string]: any;
 }
 
+function toYmd(d: Date) {
+	const yyyy = d.getFullYear();
+	const mm = String(d.getMonth() + 1).padStart(2, '0');
+	const dd = String(d.getDate()).padStart(2, '0');
+	return `${yyyy}-${mm}-${dd}`;
+}
+
+function startOfWeekSunday(base: Date) {
+	const d = new Date(base);
+	d.setHours(0, 0, 0, 0);
+	d.setDate(d.getDate() - d.getDay());
+	return d;
+}
+
+const empty7 = () => ['', '', '', '', '', '', ''];
+
 export default function LongtermRecordFormat() {
-	// 년도 및 날짜 관련 state
+	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
+	const selectedPnum = useMemo(() => String(selectedMember?.PNUM ?? '').trim(), [selectedMember]);
+
 	const [year, setYear] = useState(new Date().getFullYear().toString());
 	const [weekDates, setWeekDates] = useState<string[]>([]);
+	const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekSunday(new Date()));
+	const [loading, setLoading] = useState(false);
 
-	// 수급자 상태 관련 state
 	const [status, setStatus] = useState<'와상' | '준와상' | '자립'>('준와상');
 	const [dementia, setDementia] = useState(false);
 	const [stroke, setStroke] = useState(false);
@@ -34,59 +54,47 @@ export default function LongtermRecordFormat() {
 	const [pressureSorePrevention, setPressureSorePrevention] = useState(false);
 	const [pressureSorePreventionTool, setPressureSorePreventionTool] = useState('');
 
-	// 7일치 일일 기록 데이터 (각 항목별로 7일치 배열)
-	const [dailyRecords, setDailyRecords] = useState({
-		// 신체활동지원
+	const [dailyRecords] = useState({
 		grooming: [false, false, false, false, false, false, false],
-		bathTime: ['', '', '', '', '', '', ''],
-		bathMethod: ['', '', '', '', '', '', ''],
-		mealType: ['', '', '', '', '', '', ''],
-		mealIntake: ['', '', '', '', '', '', ''],
+		bathTime: empty7(),
+		bathMethod: empty7(),
+		mealType: empty7(),
+		mealIntake: empty7(),
 		positionChange: [false, false, false, false, false, false, false],
-		toiletUsage: ['', '', '', '', '', '', ''],
+		toiletUsage: empty7(),
 		movementAssistance: [false, false, false, false, false, false, false],
 		walk: [false, false, false, false, false, false, false],
 		outing: [false, false, false, false, false, false, false],
-		physicalActivityNotes: '',
-		physicalActivityPreparer: ['', '', '', '', '', '', ''],
-		
-		// 인지관리및의사소통
+		physicalActivityNotes: empty7(),
+		physicalActivityPreparer: empty7(),
+
 		cognitiveSupport: [false, false, false, false, false, false, false],
 		communicationSupport: [false, false, false, false, false, false, false],
-		cognitiveNotes: '',
-		cognitivePreparer: ['', '', '', '', '', '', ''],
-		
-		// 건강및간호관리
-		vitalSigns: ['', '', '', '', '', '', ''],
-		healthManagementTime: ['', '', '', '', '', '', ''],
+		cognitiveNotes: empty7(),
+		cognitivePreparer: empty7(),
+
+		vitalSigns: empty7(),
 		healthManagement: [false, false, false, false, false, false, false],
-		nursingManagementTime: ['', '', '', '', '', '', ''],
 		nursingManagement: [false, false, false, false, false, false, false],
 		emergencyService: [false, false, false, false, false, false, false],
-		healthNotes: '',
-		healthPreparer: ['', '', '', '', '', '', ''],
-		
-		// 기능회복훈련
+		healthNotes: empty7(),
+		healthPreparer: empty7(),
+
+		trainingProgram: empty7(),
 		physicalFunctionTraining: [false, false, false, false, false, false, false],
 		cognitiveTraining: [false, false, false, false, false, false, false],
 		physicalTherapy: [false, false, false, false, false, false, false],
-		trainingNotes: '',
-		trainingPreparer: ['', '', '', '', '', '', ''],
-		
-		// 입퇴소시간
-		admissionDischargeTime: ['', '', '', '', '', '', '']
+		trainingNotes: empty7(),
+		trainingPreparer: empty7(),
+
+		admissionDischargeTime: empty7(),
 	});
 
-	const printRef = useRef<HTMLDivElement>(null);
-
-	// 주간 날짜 계산
-	const calculateWeekDates = () => {
+	const calculateWeekDates = (start: Date) => {
 		const dates: string[] = [];
-		const today = new Date();
-		const currentDay = today.getDay();
-		const startOfWeek = new Date(today);
-		startOfWeek.setDate(today.getDate() - currentDay);
-		
+		const startOfWeek = new Date(start);
+		startOfWeek.setHours(0, 0, 0, 0);
+
 		for (let i = 0; i < 7; i++) {
 			const date = new Date(startOfWeek);
 			date.setDate(startOfWeek.getDate() + i);
@@ -95,132 +103,243 @@ export default function LongtermRecordFormat() {
 			dates.push(`${month}/${day}`);
 		}
 		setWeekDates(dates);
+		setYear(String(startOfWeek.getFullYear()));
 	};
 
-	const handleMemberSelect = (member: MemberData) => {
-		setSelectedMember(member);
+	const applyRgJson = (raw: unknown) => {
+		if (!raw) return;
+		try {
+			const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
+			if (!j || typeof j !== 'object') return;
+
+			const m = j as Record<string, any>;
+			if (m.status === '와상' || m.status === '준와상' || m.status === '자립') setStatus(m.status);
+			if (typeof m.dementia === 'boolean') setDementia(m.dementia);
+			if (typeof m.stroke === 'boolean') setStroke(m.stroke);
+			if (typeof m.hypertension === 'boolean') setHypertension(m.hypertension);
+			if (typeof m.diabetes === 'boolean') setDiabetes(m.diabetes);
+			if (typeof m.arthritis === 'boolean') setArthritis(m.arthritis);
+			if (typeof m.otherDisease === 'boolean') setOtherDisease(m.otherDisease);
+			if (typeof m.otherDiseaseText === 'string') setOtherDiseaseText(m.otherDiseaseText);
+			if (typeof m.tracheostomy === 'boolean') setTracheostomy(m.tracheostomy);
+			if (typeof m.dentures === 'boolean') setDentures(m.dentures);
+			if (typeof m.nasogastricTube === 'boolean') setNasogastricTube(m.nasogastricTube);
+			if (typeof m.urinaryCatheter === 'boolean') setUrinaryCatheter(m.urinaryCatheter);
+			if (typeof m.cystostomy === 'boolean') setCystostomy(m.cystostomy);
+			if (typeof m.urostomy === 'boolean') setUrostomy(m.urostomy);
+			if (typeof m.colostomy === 'boolean') setColostomy(m.colostomy);
+			if (typeof m.diaper === 'boolean') setDiaper(m.diaper);
+			if (typeof m.pressureSore === 'boolean') setPressureSore(m.pressureSore);
+			if (typeof m.pressureSoreArea === 'string') setPressureSoreArea(m.pressureSoreArea);
+			if (typeof m.pressureSorePrevention === 'boolean') setPressureSorePrevention(m.pressureSorePrevention);
+			if (typeof m.pressureSorePreventionTool === 'string') setPressureSorePreventionTool(m.pressureSorePreventionTool);
+		} catch {
+			// ignore parse errors
+		}
 	};
+
+	const fetchF30112ForRange = async () => {
+		if (!selectedPnum) return;
+		setLoading(true);
+		try {
+			const from = toYmd(weekStart);
+			const toD = new Date(weekStart);
+			toD.setDate(toD.getDate() + 6);
+			const to = toYmd(toD);
+
+			const res = await fetch(`/api/f30112?pnum=${encodeURIComponent(selectedPnum)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+			const json = await res.json().catch(() => ({}));
+			const rows = json?.success && Array.isArray(json.data) ? json.data : [];
+
+			const row = rows[0] ?? null;
+			if (row?.RG_JSON) applyRgJson(row.RG_JSON);
+		} catch (e) {
+			console.error('F30112 기간 조회 오류:', e);
+			alert('기록양식 정보를 불러오는 중 오류가 발생했습니다.');
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const ltFormCss = `
+		.lt-sheet.lt-form table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; }
+		.lt-sheet.lt-form td, .lt-sheet.lt-form th {
+			border: 1px solid #000;
+			padding: 2px 4px;
+			vertical-align: middle;
+			font-weight: normal;
+			color: #000;
+			box-sizing: border-box;
+			-webkit-print-color-adjust: exact;
+			print-color-adjust: exact;
+		}
+		.lt-sheet.lt-form .lt-right { text-align: right; }
+		.lt-sheet.lt-form .lt-center { text-align: center; }
+		.lt-sheet.lt-form .lt-left { text-align: left; }
+		.lt-sheet.lt-form .lt-bold { font-weight: 700; }
+		.lt-sheet.lt-form .lt-title {
+			font-size: 15pt;
+			font-weight: 800;
+			text-align: center;
+			margin: 4px 0 8px 0;
+		}
+		.lt-sheet.lt-form .lt-law {
+			font-size: 8.5pt;
+			margin-bottom: 2px;
+		}
+		.lt-sheet.lt-form .lt-front {
+			font-size: 8.5pt;
+			text-align: right;
+			margin-bottom: 4px;
+		}
+		.lt-sheet.lt-form .lbl { font-weight: 700; text-align: center; }
+		.lt-sheet.lt-form .tight { padding: 3px 4px; }
+		.lt-sheet.lt-form .val-bold { font-weight: 700; }
+		.lt-sheet.lt-form .cb {
+			display: inline-block;
+			width: 10px;
+			height: 10px;
+			border: 1px solid #000;
+			vertical-align: middle;
+			margin-right: 3px;
+			box-sizing: border-box;
+		}
+		.lt-sheet.lt-form .cb.checked { background: #000; }
+		.lt-sheet.lt-form .cb-group { display: inline-block; margin-right: 10px; white-space: nowrap; }
+		.lt-sheet.lt-form .split-top { display: flex; align-items: center; min-height: 26px; }
+		.lt-sheet.lt-form .split-left { flex: 1; padding-right: 6px; border-right: 1px solid #000; margin-right: 6px; }
+		.lt-sheet.lt-form .split-right { flex: 1; }
+		.lt-sheet.lt-form .rec .cat {
+			width: 22px;
+			writing-mode: vertical-rl;
+			text-orientation: mixed;
+			transform: rotate(180deg);
+			text-align: center;
+			font-weight: 700;
+			font-size: 8.5pt;
+			line-height: 1.1;
+		}
+		.lt-sheet.lt-form .rec .grp { width: 34px; text-align: center; font-weight: 700; font-size: 8pt; vertical-align: middle; }
+		.lt-sheet.lt-form .rec .sub { font-size: 8pt; text-align: left; line-height: 1.15; }
+		.lt-sheet.lt-form .rec .day { font-size: 8pt; text-align: center; }
+		.lt-sheet.lt-form .rec .tiny { font-size: 7.5pt; line-height: 1.1; }
+		.lt-sheet.lt-form .rec .optcol { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+		.lt-sheet.lt-form .rec .sig { font-size: 8pt; text-align: center; }
+		.lt-sheet.lt-form .rec .sig-r { font-size: 8pt; text-align: right; }
+		.lt-sheet.lt-form .lt-footer { margin-top: 4px; font-size: 8pt; text-align: right; }
+	`;
+
+	/** 화면과 동일하게 보이도록 같은 문서에서 인쇄 (별도 창은 Tailwind 미적용·스타일 불일치 발생) */
+	const ltPrintLayoutCss = `
+		@media print {
+			@page {
+				size: A4 portrait;
+				margin: 10mm;
+			}
+			html, body {
+				background: #fff !important;
+				-webkit-print-color-adjust: exact !important;
+				print-color-adjust: exact !important;
+			}
+			.lt-no-print {
+				display: none !important;
+			}
+			.lt-longterm-root {
+				min-height: 0 !important;
+			}
+			.lt-longterm-page {
+				max-width: none !important;
+				padding: 0 !important;
+				margin: 0 !important;
+			}
+			.lt-longterm-card {
+				border: none !important;
+				box-shadow: none !important;
+				border-radius: 0 !important;
+				background: #fff !important;
+			}
+			.lt-longterm-sheet-wrap {
+				padding: 0 !important;
+				overflow: visible !important;
+			}
+			.lt-sheet.lt-form {
+				max-width: 210mm !important;
+				margin-left: auto !important;
+				margin-right: auto !important;
+			}
+			.lt-sheet.lt-form .cb,
+			.lt-sheet.lt-form .cb.checked {
+				-webkit-print-color-adjust: exact !important;
+				print-color-adjust: exact !important;
+			}
+		}
+	`;
 
 	const handlePrint = () => {
-		if (!printRef.current) return;
-		
-		const printWindow = window.open('', '_blank');
-		if (!printWindow) return;
-
-		const printContent = printRef.current.innerHTML;
-		
-		printWindow.document.write(`
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<title>장기요양급여 제공기록지</title>
-				<style>
-					@page {
-						size: A4;
-						margin: 0;
-					}
-					body {
-						margin: 0;
-						padding: 20px;
-						font-family: 'Malgun Gothic', sans-serif;
-						font-size: 10pt;
-						line-height: 1.4;
-					}
-					.print-container {
-						width: 100%;
-					}
-					table {
-						width: 100%;
-						border-collapse: collapse;
-						font-size: 9pt;
-					}
-					td, th {
-						border: 1px solid #000;
-						padding: 4px;
-						text-align: center;
-						vertical-align: middle;
-					}
-					.text-left {
-						text-align: left;
-					}
-					.text-right {
-						text-align: right;
-					}
-					.header-info {
-						display: flex;
-						justify-content: space-between;
-						margin-bottom: 10px;
-					}
-					.beneficiary-info {
-						display: grid;
-						grid-template-columns: repeat(4, 1fr);
-						gap: 5px;
-						margin-bottom: 10px;
-					}
-					.info-item {
-						display: flex;
-						align-items: center;
-						gap: 5px;
-					}
-					.label {
-						font-weight: bold;
-					}
-					input[type="checkbox"] {
-						width: 12px;
-						height: 12px;
-					}
-					input[type="text"] {
-						border: none;
-						border-bottom: 1px solid #000;
-						width: 100%;
-						text-align: center;
-					}
-					.section-title {
-						background-color: #f0f0f0;
-						font-weight: bold;
-						text-align: left;
-						padding: 5px;
-					}
-					@media print {
-						body {
-							margin: 0;
-							padding: 10px;
-						}
-					}
-				</style>
-			</head>
-			<body>
-				${printContent}
-			</body>
-			</html>
-		`);
-		
-		printWindow.document.close();
-		printWindow.focus();
-		setTimeout(() => {
-			printWindow.print();
-		}, 250);
+		if (typeof window === 'undefined') return;
+		requestAnimationFrame(() => {
+			window.print();
+		});
 	};
 
 	useEffect(() => {
-		calculateWeekDates();
+		calculateWeekDates(weekStart);
 	}, []);
 
+	useEffect(() => {
+		calculateWeekDates(weekStart);
+		if (selectedPnum) void fetchF30112ForRange();
+	}, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	const vitalDisplay = (i: number) => {
+		const v = dailyRecords.vitalSigns[i]?.trim();
+		return v || <span className="tiny lt-center">/</span>;
+	};
+
 	return (
-		<div className="min-h-screen text-black bg-white">
-			<div className="mx-auto max-w-[1800px] p-4">
+		<div className="lt-longterm-root min-h-screen text-black bg-white">
+			<style dangerouslySetInnerHTML={{ __html: ltFormCss }} />
+			<style dangerouslySetInnerHTML={{ __html: ltPrintLayoutCss }} />
+
+			<div className="lt-longterm-page mx-auto max-w-[1800px] p-4">
 				<div className="flex gap-4">
-					{/* 좌측: 수급자 목록 */}
-					<aside className="w-1/3 shrink-0">
-						<MemberListPanel onSelectMember={(m) => setSelectedMember(m)} />
+					<aside className="lt-no-print w-1/3 shrink-0">
+						<MemberListPanel
+							onSelectMember={async (m) => {
+								setSelectedMember(m);
+								setTimeout(() => void fetchF30112ForRange(), 0);
+							}}
+						/>
 					</aside>
 
-					{/* 우측: 기록 양식 */}
 					<section className="flex-1">
-						<div className="bg-white border border-blue-300 rounded-lg shadow-sm">
-							{/* 출력 버튼 */}
-							<div className="flex justify-end px-4 py-3 bg-blue-100 border-b border-blue-200">
+						<div className="lt-longterm-card bg-white border border-blue-300 rounded-lg shadow-sm">
+							<div className="lt-no-print flex justify-end px-4 py-3 bg-blue-100 border-b border-blue-200">
+								<div className="mr-auto flex items-center gap-2 text-sm text-blue-900">
+									<span className="font-semibold">기준일(주 시작)</span>
+									<input
+										type="date"
+										value={toYmd(weekStart)}
+										onChange={(e) => {
+											const v = e.target.value;
+											if (!v) return;
+											const d = new Date(`${v}T00:00:00`);
+											setWeekStart(startOfWeekSunday(d));
+										}}
+										className="rounded border border-blue-300 bg-white px-2 py-1"
+									/>
+									<button
+										type="button"
+										onClick={() => void fetchF30112ForRange()}
+										disabled={!selectedPnum || loading}
+										className="px-3 py-1 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										조회
+									</button>
+									{loading && <span className="text-blue-900/70">불러오는 중...</span>}
+								</div>
 								<button
+									type="button"
 									onClick={handlePrint}
 									className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-700 rounded hover:bg-blue-700"
 								>
@@ -228,463 +347,522 @@ export default function LongtermRecordFormat() {
 								</button>
 							</div>
 
-							{/* 기록 양식 내용 */}
-							<div className="p-4">
-								<div ref={printRef} className="print-container">
-									{/* 헤더 */}
-									<div className="mb-4 text-xs text-right">
-										노인장기요양보험법 시행규칙 [별지 제16호서식] &lt;개정 2019. 9. 27&gt;
-									</div>
-									<div className="mb-4 text-xs text-right">
-										(앞쪽)
-									</div>
-									<div className="mb-4 text-lg font-bold text-center">
-										장기요양급여 제공기록지(시설급여/단기보호)
-									</div>
+							<div className="lt-longterm-sheet-wrap p-4 overflow-x-auto">
+								<div className="lt-sheet lt-form max-w-[210mm] mx-auto bg-white">
+									<div className="lt-law">■ 노인장기요양보험법 시행규칙 [별지 제16호서식] &lt;개정 2019. 9. 27.&gt;</div>
+									<div className="lt-front">(앞쪽)</div>
+									<div className="lt-title">장기요양급여 제공기록지(시설급여/단기보호)</div>
 
-									{/* 수급자 정보 */}
-									<div className="grid grid-cols-4 gap-2 mb-4 text-sm">
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">수급자 성명:</span>
-											<span className="flex-1 text-center border-b border-black">{selectedMember?.P_NM || ''}</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">생년월일:</span>
-											<span className="flex-1 text-center border-b border-black">{selectedMember?.P_BRDT ? selectedMember.P_BRDT.substring(0, 10) : ''}</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">장기요양등급:</span>
-											<span className="flex-1 text-center border-b border-black">{formatCareGradeLabel(selectedMember?.P_GRD, '')}</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">장기요양인정번호:</span>
-											<span className="flex-1 text-center border-b border-black">{selectedMember?.P_CERTNO || ''}</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">장기요양기관명:</span>
-											<span className="flex-1 text-center border-b border-black">너싱홈 해원</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">장기요양기관기호:</span>
-											<span className="flex-1 text-center border-b border-black">14161000067</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<span className="font-semibold">침실:</span>
-											<span className="flex-1 text-center border-b border-black">{selectedMember?.P_ROOM || ''}</span>
-										</div>
-									</div>
+									<table className="lt-info">
+										<tbody>
+											<tr>
+												<td className="lbl tight" style={{ width: '11%' }}>수급자 성명</td>
+												<td className="lt-left val-bold" style={{ width: '14%' }}>{String(selectedMember?.P_NM ?? '').trim()}</td>
+												<td className="lbl tight" style={{ width: '11%' }}>생년월일</td>
+												<td className="lt-center val-bold" style={{ width: '14%' }}>
+													{selectedMember?.P_BRDT ? String(selectedMember.P_BRDT).substring(0, 10) : ''}
+												</td>
+												<td className="lbl tight" style={{ width: '11%' }}>장기요양등급</td>
+												<td className="lt-center val-bold" style={{ width: '10%' }}>
+													{formatCareGradeLabel(selectedMember?.P_GRD, '')}
+												</td>
+												<td className="lbl tight" style={{ width: '13%' }}>장기요양인정번호</td>
+												<td className="lt-center val-bold" style={{ width: '16%' }}>
+													{String(selectedMember?.P_CERTNO ?? '').trim()}
+												</td>
+											</tr>
+											<tr>
+												<td className="lbl tight">장기요양기관명</td>
+												<td className="lt-left val-bold" colSpan={3}>
+													너싱홈 해원
+												</td>
+												<td className="lbl tight">장기요양기관기호</td>
+												<td className="lt-center val-bold">14161000067</td>
+												<td className="lbl tight">침실</td>
+												<td className="lt-center val-bold">{String(selectedMember?.P_ROOM ?? '').trim()}</td>
+											</tr>
+										</tbody>
+									</table>
 
-									{/* 수급자 상태 */}
-									<div className="mb-4 space-y-2 text-sm">
-										<div className="font-semibold">수급자 상태</div>
-										<div className="flex items-center gap-4">
-											<span className="font-semibold">이동상태:</span>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={status === '와상'} readOnly className="w-4 h-4" />
-												<span>와상</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={status === '준와상'} readOnly className="w-4 h-4" />
-												<span>준와상</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={status === '자립'} readOnly className="w-4 h-4" />
-												<span>자립</span>
-											</label>
-										</div>
-										<div className="flex flex-wrap items-center gap-4">
-											<span className="font-semibold">질병:</span>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={dementia} readOnly className="w-4 h-4" />
-												<span>치매</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={stroke} readOnly className="w-4 h-4" />
-												<span>중풍</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={hypertension} readOnly className="w-4 h-4" />
-												<span>고혈압</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={diabetes} readOnly className="w-4 h-4" />
-												<span>당뇨</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={arthritis} readOnly className="w-4 h-4" />
-												<span>관절염</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={otherDisease} readOnly className="w-4 h-4" />
-												<span>기타(</span>
-											</label>
-											<span className="w-20 border-b border-black">{otherDiseaseText}</span>
-											<span>)</span>
-										</div>
-										<div className="flex flex-wrap items-center gap-4">
-											<span className="font-semibold">보조:</span>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={tracheostomy} readOnly className="w-4 h-4" />
-												<span>기관지절개관</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={dentures} readOnly className="w-4 h-4" />
-												<span>틀니(부분/전체)</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={nasogastricTube} readOnly className="w-4 h-4" />
-												<span>비위관(鼻胃管, L-tube)</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={urinaryCatheter} readOnly className="w-4 h-4" />
-												<span>고정소변배출관(유치도뇨관)</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={cystostomy} readOnly className="w-4 h-4" />
-												<span>방광루</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={urostomy} readOnly className="w-4 h-4" />
-												<span>요루(요도샛길)</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={colostomy} readOnly className="w-4 h-4" />
-												<span>장루(창자샛길)</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={diaper} readOnly className="w-4 h-4" />
-												<span>기저귀</span>
-											</label>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={pressureSore} readOnly className="w-4 h-4" />
-												<span>욕창(부위:</span>
-											</label>
-											<span className="w-20 border-b border-black">{pressureSoreArea}</span>
-											<span>)</span>
-											<label className="flex items-center gap-1">
-												<input type="checkbox" checked={pressureSorePrevention} readOnly className="w-4 h-4" />
-												<span>욕창방지 보조도구(</span>
-											</label>
-											<span className="w-20 border-b border-black">{pressureSorePreventionTool}</span>
-											<span>)</span>
-										</div>
-									</div>
+									<table style={{ marginTop: '6px' }}>
+										<tbody>
+											<tr>
+												<td className="lbl lt-center" rowSpan={4} style={{ width: '28px' }}>
+													수급자
+													<br />
+													상태
+												</td>
+												<td colSpan={2} style={{ padding: 0 }}>
+													<div className="split-top">
+														<div className="split-left lt-left">
+															<span className="cb-group">
+																<span className={`cb ${status === '와상' ? 'checked' : ''}`} />
+																와상
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${status === '준와상' ? 'checked' : ''}`} />
+																준와상
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${status === '자립' ? 'checked' : ''}`} />
+																자립
+															</span>
+														</div>
+														<div className="split-right lt-left">
+															<span className="cb-group">
+																<span className={`cb ${dementia ? 'checked' : ''}`} />
+																치매
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${stroke ? 'checked' : ''}`} />
+																중풍
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${hypertension ? 'checked' : ''}`} />
+																고혈압
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${diabetes ? 'checked' : ''}`} />
+																당뇨
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${arthritis ? 'checked' : ''}`} />
+																관절염
+															</span>
+															<span className="cb-group">
+																<span className={`cb ${otherDisease ? 'checked' : ''}`} />
+																기타({String(otherDiseaseText ?? '').trim()})
+															</span>
+														</div>
+													</div>
+												</td>
+											</tr>
+											<tr>
+												<td className="lt-left" colSpan={2}>
+													<span className="cb-group">
+														<span className={`cb ${tracheostomy ? 'checked' : ''}`} />
+														기관지절개관
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${dentures ? 'checked' : ''}`} />
+														틀니(부분/전체)
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${nasogastricTube ? 'checked' : ''}`} />
+														비위관(鼻胃管, L-tube)
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${urinaryCatheter ? 'checked' : ''}`} />
+														고정소변배출관(유치도뇨관)
+													</span>
+												</td>
+											</tr>
+											<tr>
+												<td className="lt-left" colSpan={2}>
+													<span className="cb-group">
+														<span className={`cb ${cystostomy ? 'checked' : ''}`} />
+														방광루
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${urostomy ? 'checked' : ''}`} />
+														요루(요도샛길)
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${colostomy ? 'checked' : ''}`} />
+														장루(창자샛길)
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${diaper ? 'checked' : ''}`} />
+														기저귀
+													</span>
+												</td>
+											</tr>
+											<tr>
+												<td className="lt-left" colSpan={2}>
+													<span className="cb-group">
+														<span className={`cb ${pressureSore ? 'checked' : ''}`} />
+														욕창(부위: {String(pressureSoreArea ?? '').trim()})
+													</span>
+													<span className="cb-group">
+														<span className={`cb ${pressureSorePrevention ? 'checked' : ''}`} />
+														욕창방지 보조도구({String(pressureSorePreventionTool ?? '').trim()})
+													</span>
+												</td>
+											</tr>
+										</tbody>
+									</table>
 
-									{/* 날짜 헤더 */}
-									<div className="mb-2 text-sm">
-										<span className="font-semibold">({year})년</span>
-										<span className="ml-4">월/</span>
-										{weekDates.map((date, idx) => (
-											<span key={idx} className="ml-2">{date}</span>
-										))}
-									</div>
-
-									{/* 7일치 기록 테이블 */}
-									<table className="w-full text-xs border border-black" style={{ fontSize: '9pt' }}>
+									<table className="rec" style={{ marginTop: '6px' }}>
 										<thead>
 											<tr>
-												<th className="p-1 text-left bg-gray-100 border border-black" style={{ width: '15%' }}>구분</th>
-												{weekDates.map((date, idx) => (
-													<th key={idx} className="p-1 border border-black" style={{ width: '12%' }}>{date}</th>
+												<th className="lt-center" style={{ width: '22px' }} rowSpan={2} />
+												<th className="lt-center lbl" colSpan={2} rowSpan={2} style={{ width: 'auto' }}>
+													구분
+												</th>
+												<th className="lt-center lbl" colSpan={7}>
+													({year})년&nbsp;&nbsp;월/일
+												</th>
+											</tr>
+											<tr>
+												{weekDates.map((d, i) => (
+													<th key={i} className="day hdr">
+														{d}
+													</th>
 												))}
 											</tr>
 										</thead>
 										<tbody>
-											{/* 신체활동지원 */}
 											<tr>
-												<td colSpan={8} className="p-1 font-semibold text-left bg-gray-100 border border-black">1. 신체활동지원</td>
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">세면, 구강, 머리감기, 몸단장, 옷 갈아입히기</td>
-												{dailyRecords.grooming.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">목욕 소요시간(분)</td>
-												{dailyRecords.bathTime.map((time, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{time}</span>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">목욕 방법</td>
-												{dailyRecords.bathMethod.map((method, idx) => (
-													<td key={idx} className="p-1 text-xs border border-black">
-														<div className="flex flex-col gap-1">
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={method === '전신입욕'} readOnly className="w-3 h-3" />
-																<span>전신입욕</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={method === '샤워식'} readOnly className="w-3 h-3" />
-																<span>샤워식</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={method === '일반식'} readOnly className="w-3 h-3" />
-																<span>일반식</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={method === '죽'} readOnly className="w-3 h-3" />
-																<span>죽</span>
-															</label>
-														</div>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">식사 종류</td>
-												{dailyRecords.mealType.map((type, idx) => (
-													<td key={idx} className="p-1 text-xs border border-black">
-														<div className="flex flex-col gap-1">
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={type === '죽'} readOnly className="w-3 h-3" />
-																<span>죽</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={type === '유동식'} readOnly className="w-3 h-3" />
-																<span>유동식(미음)</span>
-															</label>
-														</div>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">식사 섭취량</td>
-												{dailyRecords.mealIntake.map((intake, idx) => (
-													<td key={idx} className="p-1 text-xs border border-black">
-														<div className="flex flex-col gap-1">
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={intake === '1'} readOnly className="w-3 h-3" />
-																<span>1</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={intake === '1/2이상'} readOnly className="w-3 h-3" />
-																<span>1/2이상</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="radio" checked={intake === '1/2미만'} readOnly className="w-3 h-3" />
-																<span>1/2미만</span>
-															</label>
-														</div>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">체위변경(2시간마다)</td>
-												{dailyRecords.positionChange.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">화장실이용하기(기저귀 교환)(회)</td>
-												{dailyRecords.toiletUsage.map((usage, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{usage}</span>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">이동도움 및 신체기능유지ㆍ증진</td>
-												{dailyRecords.movementAssistance.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">산책(외출)동행</td>
-												{dailyRecords.walk.map((walk, idx) => (
-													<td key={idx} className="p-1 text-xs border border-black">
-														<div className="flex flex-col gap-1">
-															<label className="flex items-center gap-1">
-																<input type="checkbox" checked={walk} readOnly className="w-3 h-3" />
-																<span>산책</span>
-															</label>
-															<label className="flex items-center gap-1">
-																<input type="checkbox" checked={dailyRecords.outing[idx]} readOnly className="w-3 h-3" />
-																<span>외출</span>
-															</label>
-														</div>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">특이사항</td>
-												<td colSpan={7} className="p-1 border border-black">
-													<span className="inline-block w-full text-left border-b border-black">{dailyRecords.physicalActivityNotes}</span>
+												<td className="cat" rowSpan={11}>
+													신체활동지원
 												</td>
+												<td className="sub" colSpan={2}>
+													세면, 구강, 머리감기, 몸단장, 옷 갈아입히기
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.grooming[i] ? 'checked' : ''}`} />
+													</td>
+												))}
 											</tr>
 											<tr>
-												<td className="p-1 text-left border border-black">작성자 성명(서명)</td>
-												{dailyRecords.physicalActivityPreparer.map((name, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{name}</span>
+												<td className="grp" rowSpan={2}>
+													목욕
+												</td>
+												<td className="sub">소요시간</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center tiny">
+														{dailyRecords.bathTime[i] ? `${dailyRecords.bathTime[i]} 분` : '분'}
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub">방법</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														<div className="optcol">
+															<div>
+																<span className={`cb ${dailyRecords.bathMethod[i] === '전신입욕' ? 'checked' : ''}`} />
+																전신입욕
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.bathMethod[i] === '샤워식' ? 'checked' : ''}`} />
+																샤워식
+															</div>
+														</div>
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="grp" rowSpan={2}>
+													식사
+												</td>
+												<td className="sub">종류</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														<div className="optcol">
+															<div>
+																<span className={`cb ${dailyRecords.mealType[i] === '일반식' ? 'checked' : ''}`} />
+																일반식
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.mealType[i] === '죽' ? 'checked' : ''}`} />
+																죽
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.mealType[i] === '유동식' ? 'checked' : ''}`} />
+																유동식(미음)
+															</div>
+														</div>
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub">섭취량</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														<div className="optcol">
+															<div>
+																<span className={`cb ${dailyRecords.mealIntake[i] === '1' ? 'checked' : ''}`} />
+																1
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.mealIntake[i] === '1/2이상' ? 'checked' : ''}`} />
+																1/2이상
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.mealIntake[i] === '1/2미만' ? 'checked' : ''}`} />
+																1/2미만
+															</div>
+														</div>
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													체위변경 (2시간마다)
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.positionChange[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													화장실이용하기 (기저귀 교환)
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center tiny">
+														{dailyRecords.toiletUsage[i] ? `${dailyRecords.toiletUsage[i]} 회` : '회'}
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													이동도움 및 신체 기능유지 · 증진
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.movementAssistance[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													산책(외출)동행
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														<div className="optcol">
+															<div>
+																<span className={`cb ${dailyRecords.walk[i] ? 'checked' : ''}`} />
+																산책
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.outing[i] ? 'checked' : ''}`} />
+																외출
+															</div>
+														</div>
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													특이사항
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left" style={{ minHeight: '22px' }}>
+														{dailyRecords.physicalActivityNotes[i] || ''}
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													작성자 성명
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="sig">
+														<span className="tiny">{dailyRecords.physicalActivityPreparer[i] || '\u00a0'}</span>
+														<br />
+														<span className="tiny">(서명)</span>
 													</td>
 												))}
 											</tr>
 
-											{/* 인지관리및의사소통 */}
 											<tr>
-												<td colSpan={8} className="p-1 font-semibold text-left bg-gray-100 border border-black">2. 인지관리및의사소통</td>
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">인지관리지원</td>
-												{dailyRecords.cognitiveSupport.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">의사소통도움 등 발빛, 격려</td>
-												{dailyRecords.communicationSupport.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">특이사항</td>
-												<td colSpan={7} className="p-1 border border-black">
-													<span className="inline-block w-full text-left border-b border-black">{dailyRecords.cognitiveNotes}</span>
+												<td className="cat" rowSpan={4}>
+													인지 관리 및 의사 소통
 												</td>
+												<td className="sub" colSpan={2}>
+													인지관리지원
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.cognitiveSupport[i] ? 'checked' : ''}`} />
+													</td>
+												))}
 											</tr>
 											<tr>
-												<td className="p-1 text-left border border-black">작성자 성명(서명)</td>
-												{dailyRecords.cognitivePreparer.map((name, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{name}</span>
+												<td className="sub" colSpan={2}>
+													의사소통도움 등 말벗, 격려
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.communicationSupport[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													특이사항
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														{dailyRecords.cognitiveNotes[i] || ''}
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													작성자 성명
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="sig">
+														<span className="tiny">{dailyRecords.cognitivePreparer[i] || '\u00a0'}</span>
+														<br />
+														<span className="tiny">(서명)</span>
 													</td>
 												))}
 											</tr>
 
-											{/* 건강및간호관리 */}
 											<tr>
-												<td colSpan={8} className="p-1 font-semibold text-left bg-gray-100 border border-black">3. 건강및간호관리</td>
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">혈압/체온</td>
-												{dailyRecords.vitalSigns.map((vital, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{vital}</span>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">건강관리(분)</td>
-												{dailyRecords.healthManagementTime.map((time, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<div className="flex items-center gap-1">
-															<span className="flex-1 inline-block text-center border-b border-black">{time}</span>
-															<input type="checkbox" checked={dailyRecords.healthManagement[idx]} readOnly className="w-3 h-3" />
-														</div>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">간호관리(분)</td>
-												{dailyRecords.nursingManagementTime.map((time, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<div className="flex items-center gap-1">
-															<span className="flex-1 inline-block text-center border-b border-black">{time}</span>
-															<input type="checkbox" checked={dailyRecords.nursingManagement[idx]} readOnly className="w-3 h-3" />
-														</div>
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">기타(응급서비스)</td>
-												{dailyRecords.emergencyService.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">특이사항</td>
-												<td colSpan={7} className="p-1 border border-black">
-													<span className="inline-block w-full text-left border-b border-black">{dailyRecords.healthNotes}</span>
+												<td className="cat" rowSpan={6}>
+													건강 및 간호 관리
 												</td>
+												<td className="sub" colSpan={2}>
+													혈압/체온
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center tiny">
+														{vitalDisplay(i)}
+													</td>
+												))}
 											</tr>
 											<tr>
-												<td className="p-1 text-left border border-black">작성자 성명(서명)</td>
-												{dailyRecords.healthPreparer.map((name, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{name}</span>
+												<td className="sub" colSpan={2}>
+													건강관리( 분)
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.healthManagement[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													간호관리( 분)
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.nursingManagement[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													기타(응급서비스)
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.emergencyService[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													특이사항
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														{dailyRecords.healthNotes[i] || ''}
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													작성자 성명
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="sig-r">
+														<span className="tiny">{dailyRecords.healthPreparer[i] || '\u00a0'}</span>{' '}
+														<span className="tiny">(서명)</span>
 													</td>
 												))}
 											</tr>
 
-											{/* 기능회복훈련 */}
 											<tr>
-												<td colSpan={8} className="p-1 font-semibold text-left bg-gray-100 border border-black">4. 기능회복훈련</td>
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">신체·인지기능 향상 프로그램</td>
-												<td colSpan={7} className="p-1 text-xs border border-black">
-													신체기능·기본동작, 일상생활동작훈련
+												<td className="cat" rowSpan={6}>
+													기능회복훈련
 												</td>
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">신체기능·기본동작, 일상생활동작훈련</td>
-												{dailyRecords.physicalFunctionTraining.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">인지기능 향상훈련</td>
-												{dailyRecords.cognitiveTraining.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">물리(작업)치료</td>
-												{dailyRecords.physicalTherapy.map((checked, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<input type="checkbox" checked={checked} readOnly className="w-3 h-3" />
-													</td>
-												))}
-											</tr>
-											<tr>
-												<td className="p-1 text-left border border-black">특이사항</td>
-												<td colSpan={7} className="p-1 border border-black">
-													<span className="inline-block w-full text-left border-b border-black">{dailyRecords.trainingNotes}</span>
+												<td className="sub" colSpan={2}>
+													신체 · 인지기능 향상 프로그램
 												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														{dailyRecords.trainingProgram[i] || ''}
+													</td>
+												))}
 											</tr>
 											<tr>
-												<td className="p-1 text-left border border-black">작성자 성명(서명)</td>
-												{dailyRecords.trainingPreparer.map((name, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{name}</span>
+												<td className="sub" colSpan={2}>
+													신체기능 · 기본동작, 일상생활동작훈련
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.physicalFunctionTraining[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													인지기능 향상훈련
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.cognitiveTraining[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													물리(작업)치료
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center">
+														<span className={`cb ${dailyRecords.physicalTherapy[i] ? 'checked' : ''}`} />
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													특이사항
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="tiny lt-left">
+														{dailyRecords.trainingNotes[i] || ''}
+													</td>
+												))}
+											</tr>
+											<tr>
+												<td className="sub" colSpan={2}>
+													작성자 성명
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="sig">
+														<span className="tiny">{dailyRecords.trainingPreparer[i] || '\u00a0'}</span>
+														<br />
+														<span className="tiny">(서명)</span>
 													</td>
 												))}
 											</tr>
 
-											{/* 입퇴소시간 */}
 											<tr>
-												<td className="p-1 text-left border border-black">수급자의 입·퇴소시간, 외박 및 복귀시간, 외출시간</td>
-												{dailyRecords.admissionDischargeTime.map((time, idx) => (
-													<td key={idx} className="p-1 border border-black">
-														<span className="inline-block w-full text-center border-b border-black">{time}</span>
+												<td className="lbl lt-center" colSpan={3} style={{ lineHeight: 1.25 }}>
+													수급자의 입·퇴소시간,
+													<br />
+													외박 및 복귀시간, 외출시간
+												</td>
+												{weekDates.map((_, i) => (
+													<td key={i} className="lt-center tiny">
+														{dailyRecords.admissionDischargeTime[i] || ''}
 													</td>
 												))}
 											</tr>
 										</tbody>
 									</table>
 
-									<div className="mt-4 text-xs text-center">
-										210mm X 297mm [백상지 80g/㎡]
-									</div>
+									<div className="lt-footer">210mm X 297mm [백상지 80g/㎡]</div>
 								</div>
 							</div>
 						</div>

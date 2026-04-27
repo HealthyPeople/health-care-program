@@ -450,12 +450,12 @@ export default function DailyLongtermCare() {
 						</div>
 					</aside>
 
-					{/* 우측: 월 서비스실적 조회 */}
+					{/* 우측: 일 서비스실적 조회 */}
 					<section className="flex-1">
 						<div className="bg-white border border-blue-300 rounded-lg shadow-sm">
 							{/* 헤더 */}
 							<div className="flex items-center justify-between px-4 py-3 bg-blue-100 border-b border-blue-200">
-								<h2 className="text-xl font-semibold text-blue-900">월 서비스실적 조회</h2>
+								<h2 className="text-xl font-semibold text-blue-900">일 서비스실적 조회</h2>
 								<div className="flex items-center gap-2">
 									{isEditMode ? (
 										<>

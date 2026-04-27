@@ -124,10 +124,26 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50 h-fit">
+    <div className="nh-root-shell w-full min-h-screen bg-gray-50 h-fit">
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media print {
+              .nh-root-shell { background: #fff !important; min-height: auto !important; }
+              .nh-main-content {
+                margin-left: 0 !important;
+                margin-top: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                max-width: none !important;
+              }
+            }
+          `,
+        }}
+      />
       {/* 상단 헤더 고정 */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between bg-blue-600 h-14 px-6 text-white shadow w-full"
+        className="print:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between bg-blue-600 h-14 px-6 text-white shadow w-full"
         style={{ height: HEADER_HEIGHT }}
       >
         <div className="flex items-center gap-4">
@@ -183,14 +199,14 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
       </header>
       {/* 왼쪽 메뉴 고정 */}
       <aside
-        className="fixed z-40 top-14 left-0 h-[calc(100vh-56px)] bg-white border-r border-gray-200 overflow-y-auto"
+        className="print:hidden fixed z-40 top-14 left-0 h-[calc(100vh-56px)] bg-white border-r border-gray-200 overflow-y-auto"
         style={{ width: SIDEBAR_WIDTH, top: HEADER_HEIGHT }}
       >
         {renderMenu()}
       </aside>
       {/* 본문 컨텐츠: TabHost를 항상 표시 */}
       <main
-        className="min-h-screen p-0"
+        className="nh-main-content min-h-screen p-0"
         style={{ marginLeft: SIDEBAR_WIDTH, marginTop: HEADER_HEIGHT }}
       >
         <TabHost />
@@ -198,7 +214,7 @@ export const NursingHome = ({ children }: NursingHomeProps) => {
 
       {/* 확인 모달 */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
+        <div className="print:hidden fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-lg shadow-xl p-6 Tab:p-8 PC:p-10 max-w-md w-full mx-4">
             <div className="text-center">
               <h3 className="text-lg Tab:text-xl PC:text-2xl font-bold text-gray-900 mb-4 PC:mb-6">

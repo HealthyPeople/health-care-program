@@ -423,6 +423,7 @@ export default function LongtermPhysicalActivity() {
 								)}
 							</div>
 						</div>
+						{selectedMember ? (
 						<div className="grid grid-cols-2 gap-4">
 							{/* 좌측: 식사 정보, 목욕 정보 */}
 							<div className="space-y-4">
@@ -906,6 +907,11 @@ export default function LongtermPhysicalActivity() {
 								</div>
 							</div>
 						</div>
+						) : (
+							<div className="rounded border border-blue-200 bg-white p-8 text-center text-blue-900/70">
+								왼쪽에서 수급자를 선택하면 내용을 확인/수정할 수 있습니다.
+							</div>
+						)}
 					</section>
 				</div>
 			</div>

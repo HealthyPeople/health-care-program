@@ -390,7 +390,7 @@ export default function TabHost() {
   return (
     <div className="flex flex-col h-full min-h-[600px]">
       {/* 탭 바 */}
-      <div className="flex items-center gap-1 bg-white border-b border-gray-200">
+      <div className="print:hidden flex items-center gap-1 bg-white border-b border-gray-200">
         {tabs.map((tab) => (
           <button
             key={tab.id}

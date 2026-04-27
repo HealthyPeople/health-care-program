@@ -9,6 +9,8 @@ export async function GET(req) {
     const searchParams = req.nextUrl.searchParams;
     const pnum = searchParams.get('pnum');
     const pnumsRaw = searchParams.get('pnums');
+    const from = searchParams.get('from'); // optional: yyyy-mm-dd
+    const to = searchParams.get('to'); // optional: yyyy-mm-dd
     const ancd = searchParams.get('ancd'); // optional, 세션 검증용
 
     const gate = assertAnCdMatchesSession(req, ancd || null);
@@ -38,7 +40,7 @@ export async function GET(req) {
     const request = pool.request();
     request.input('sessionAncd', gate.sessionAncd);
 
-    // 최신 1건(있다면)을 PNUM별로 가져오기 위해 ROW_NUMBER 사용 (INDT 컬럼이 일반적으로 존재)
+    // PNUM 조건 구성
     const inParams = [];
     pnums.forEach((v, idx) => {
       const key = `p${idx}`;
@@ -46,18 +48,45 @@ export async function GET(req) {
       request.input(key, v);
     });
 
-    const query = `
-      SELECT *
-      FROM (
-        SELECT
-          t.*,
-          ROW_NUMBER() OVER (PARTITION BY t.[PNUM] ORDER BY t.[INDT] DESC) as rn
+    // 기간 조회 지원: from/to가 주어지면 해당 범위 내 전체를 반환(INDT 기준)
+    // - from/to가 없으면 기존과 동일하게 PNUM별 최신 1건 반환
+    const hasRange = Boolean(from || to);
+    if (hasRange) {
+      // 문자열 날짜(yyyy-mm-dd)를 DATETIME 범위로 안전하게 처리
+      // - from: 00:00:00
+      // - to:   23:59:59.997 (SQL Server datetime)
+      if (from) request.input('fromDate', `${String(from).trim()} 00:00:00`);
+      if (to) request.input('toDate', `${String(to).trim()} 23:59:59.997`);
+    }
+
+    const dateWhere = hasRange
+      ? `
+          ${from ? 'AND t.[INDT] >= @fromDate' : ''}
+          ${to ? 'AND t.[INDT] <= @toDate' : ''}
+        `
+      : '';
+
+    const query = hasRange
+      ? `
+        SELECT t.*
         FROM [돌봄시설DB].[dbo].[F30112] t
         WHERE t.[ANCD] = @sessionAncd
           AND CAST(t.[PNUM] AS VARCHAR) IN (${inParams.join(',')})
-      ) x
-      WHERE x.rn = 1
-    `;
+          ${dateWhere}
+        ORDER BY t.[PNUM] ASC, t.[INDT] DESC
+      `
+      : `
+        SELECT *
+        FROM (
+          SELECT
+            t.*,
+            ROW_NUMBER() OVER (PARTITION BY t.[PNUM] ORDER BY t.[INDT] DESC) as rn
+          FROM [돌봄시설DB].[dbo].[F30112] t
+          WHERE t.[ANCD] = @sessionAncd
+            AND CAST(t.[PNUM] AS VARCHAR) IN (${inParams.join(',')})
+        ) x
+        WHERE x.rn = 1
+      `;
 
     const result = await request.query(query);
 
