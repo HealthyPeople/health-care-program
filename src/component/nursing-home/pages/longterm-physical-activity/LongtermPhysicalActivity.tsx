@@ -13,10 +13,50 @@ export default function LongtermPhysicalActivity() {
 	const [isEditing, setIsEditing] = useState(false);
 	const [originalDraft, setOriginalDraft] = useState<Record<string, any> | null>(null);
 
+	const WEEKDAY_CODE_TO_LABEL: Record<string, string> = {
+		'1': '일요일',
+		'2': '월요일',
+		'3': '화요일',
+		'4': '수요일',
+		'5': '목요일',
+		'6': '금요일',
+		'7': '토요일'
+	};
+
+	const MEAL_VAL_TO_LABEL: Record<string, string> = {
+		'1': '1',
+		'2': '1/2이상',
+		'3': '1/2미만'
+	};
+	const MEAL_LABEL_TO_VAL: Record<string, string> = {
+		'1': '1',
+		'1/2이상': '2',
+		'1/2미만': '3'
+	};
+
+	const MEAL_KIND_TO_LABEL: Record<string, string> = {
+		'1': '일반식',
+		'2': '죽',
+		'3': '유동식(미음)',
+		'4': '경관식',
+		'5': '일반식(당뇨)',
+		'6': '일반식(저염식)',
+		'7': '다진식'
+	};
+	const MEAL_KIND_LABEL_TO_CODE: Record<string, string> = {
+		'일반식': '1',
+		'죽': '2',
+		'유동식(미음)': '3',
+		'경관식': '4',
+		'일반식(당뇨)': '5',
+		'일반식(저염식)': '6',
+		'다진식': '7'
+	};
+
 	// 식사 정보 관련 state
-	const [mealType, setMealType] = useState('일반식(저염식)');
+	const [mealType, setMealType] = useState<'1' | '2' | '3' | '4' | '5' | '6' | '7'>('1'); // PH_MEAL_KIND
 	const [mealIntake, setMealIntake] = useState('1');
-	const [mealClassification, setMealClassification] = useState('일반식(저염식)');
+	const [mealClassification, setMealClassification] = useState(''); // 식사구분 (ST_KIND)
 	const [mealLocation, setMealLocation] = useState('지층 생활실');
 	const [mealConfirmer, setMealConfirmer] = useState('');
 
@@ -57,19 +97,21 @@ export default function LongtermPhysicalActivity() {
 
 	const buildDraft = () => ({
 		// 식사
-		ST_KIND: mealType,
-		PH_MEAL_KIND_NM: mealType,
+		ST_KIND: mealClassification,
+		PH_MEAL_KIND: mealType,
+		PH_MEAL_KIND_NM: MEAL_KIND_TO_LABEL[mealType] ?? '',
+		PH_MEAL_VAL: MEAL_LABEL_TO_VAL[mealIntake] ?? '',
 		PH_MEAL_VAL_NM: mealIntake,
-		PH_MEAL_WT_NM: mealClassification,
+		PH_MEAL_WT_NM: '',
 		ST_PLAC: mealLocation,
 		ST_CONF: mealConfirmer,
 		// 목욕
 		PH_BATH_METH_NM: bathMethod,
 		PH_BATH_TM: bathTimeRequired,
 		BATH_SPV_TM: bathTime,
-		PH_BATH_WK1: bathDay1,
+		PH_BATH_WK1: String(bathDay1 || '').trim().split(/\s+/)[0] || '',
 		BATH_EMPNM01: bathProvider1,
-		PH_BATH_WK2: bathDay2,
+		PH_BATH_WK2: String(bathDay2 || '').trim().split(/\s+/)[0] || '',
 		BATH_EMPNM02: bathProvider2,
 		// 신체활동
 		PH_HEAD_HELP: faceWashing || grooming,
@@ -79,7 +121,7 @@ export default function LongtermPhysicalActivity() {
 		PH_OUT_HELP: outingAccompany,
 		PH_TOL_CNT: toiletUsage,
 		// 작성자
-		INEMPNM: preparerName
+		PH_WRITE_NAME: preparerName
 	});
 
 	const isDirty = () => {
@@ -93,18 +135,37 @@ export default function LongtermPhysicalActivity() {
 	};
 
 	const applyDraft = (d: any) => {
-		setMealType(String(d?.PH_MEAL_KIND_NM ?? d?.ST_KIND ?? mealType));
-		setMealIntake(String(d?.PH_MEAL_VAL_NM ?? mealIntake));
-		setMealClassification(String(d?.PH_MEAL_WT_NM ?? mealClassification));
+		const toWeekdayOption = (codeOrLabel: any, fallback: string) => {
+			const s = String(codeOrLabel ?? '').trim();
+			if (/^[1-7]$/.test(s)) return `${s} ${WEEKDAY_CODE_TO_LABEL[s] || ''}`.trim();
+			// 이미 "2 월요일" 형태면 그대로
+			if (/^[1-7]\s+/.test(s)) return s;
+			return fallback;
+		};
+		{
+			const code = String(d?.PH_MEAL_KIND ?? '').trim();
+			const label = String(d?.PH_MEAL_KIND_NM ?? '').trim();
+			if (code && /^[1-7]$/.test(code)) {
+				setMealType(code as '1' | '2' | '3' | '4' | '5' | '6' | '7');
+			} else if (label && MEAL_KIND_LABEL_TO_CODE[label] && /^[1-7]$/.test(MEAL_KIND_LABEL_TO_CODE[label])) {
+				setMealType(MEAL_KIND_LABEL_TO_CODE[label] as '1' | '2' | '3' | '4' | '5' | '6' | '7');
+			}
+		}
+		{
+			const v = String(d?.PH_MEAL_VAL ?? '').trim();
+			if (v && MEAL_VAL_TO_LABEL[v]) setMealIntake(MEAL_VAL_TO_LABEL[v]);
+			else setMealIntake(String(d?.PH_MEAL_VAL_NM ?? mealIntake));
+		}
+		setMealClassification(String(d?.ST_KIND ?? mealClassification));
 		setMealLocation(String(d?.ST_PLAC ?? mealLocation));
 		setMealConfirmer(String(d?.ST_CONF ?? mealConfirmer));
 
 		setBathMethod(String(d?.PH_BATH_METH_NM ?? d?.PH_BATH_METH ?? bathMethod));
 		setBathTimeRequired(String(d?.PH_BATH_TM ?? bathTimeRequired));
 		setBathTime(String(d?.BATH_SPV_TM ?? bathTime));
-		setBathDay1(String(d?.PH_BATH_WK1 ?? bathDay1));
+		setBathDay1(toWeekdayOption(d?.PH_BATH_WK1, bathDay1));
 		setBathProvider1(String(d?.BATH_EMPNM01 ?? bathProvider1));
-		setBathDay2(String(d?.PH_BATH_WK2 ?? bathDay2));
+		setBathDay2(toWeekdayOption(d?.PH_BATH_WK2, bathDay2));
 		setBathProvider2(String(d?.BATH_EMPNM02 ?? bathProvider2));
 
 		const yn = (v: any) => {
@@ -120,7 +181,7 @@ export default function LongtermPhysicalActivity() {
 		setOutingAccompany(yn(d?.PH_OUT_HELP));
 		setToiletUsage(String(d?.PH_TOL_CNT ?? ''));
 
-		setPreparerName(String(d?.INEMPNM ?? ''));
+		setPreparerName(String(d?.PH_WRITE_NAME ?? d?.INEMPNM ?? ''));
 	};
 
 	const fetchDefaults = async (pnum: string) => {
@@ -132,7 +193,9 @@ export default function LongtermPhysicalActivity() {
 			const row = json?.success && Array.isArray(json.data) ? json.data[0] : null;
 			const draft = row ? {
 				ST_KIND: row.ST_KIND ?? '',
-				PH_MEAL_KIND_NM: row.PH_MEAL_KIND_NM ?? row.ST_KIND ?? '',
+				PH_MEAL_KIND: row.PH_MEAL_KIND ?? '',
+				PH_MEAL_KIND_NM: row.PH_MEAL_KIND_NM ?? '',
+				PH_MEAL_VAL: row.PH_MEAL_VAL ?? '',
 				PH_MEAL_VAL_NM: row.PH_MEAL_VAL_NM ?? '',
 				PH_MEAL_WT_NM: row.PH_MEAL_WT_NM ?? '',
 				ST_PLAC: row.ST_PLAC ?? '',
@@ -150,7 +213,7 @@ export default function LongtermPhysicalActivity() {
 				PH_WORK_HELP: row.PH_WORK_HELP ?? '',
 				PH_OUT_HELP: row.PH_OUT_HELP ?? '',
 				PH_TOL_CNT: row.PH_TOL_CNT ?? '',
-				INEMPNM: row.INEMPNM ?? '',
+				PH_WRITE_NAME: row.PH_WRITE_NAME ?? row.INEMPNM ?? '',
 			} : buildDraft();
 
 			applyDraft(draft);
@@ -376,15 +439,17 @@ export default function LongtermPhysicalActivity() {
 											</label>
 											<select
 												value={mealType}
-												onChange={(e) => setMealType(e.target.value)}
+												onChange={(e) => setMealType(e.target.value as '1' | '2' | '3' | '4' | '5' | '6' | '7')}
 												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											>
-												<option value="일반식(저염식)">일반식(저염식)</option>
-												<option value="일반식">일반식</option>
-												<option value="연식">연식</option>
-												<option value="죽식">죽식</option>
-												<option value="유동식">유동식</option>
+												<option value="1">일반식</option>
+												<option value="2">죽</option>
+												<option value="3">유동식(미음)</option>
+												<option value="4">경관식</option>
+												<option value="5">일반식(당뇨)</option>
+												<option value="6">일반식(저염식)</option>
+												<option value="7">다진식</option>
 											</select>
 										</div>
 										{/* 식사섭취량 */}
@@ -436,18 +501,14 @@ export default function LongtermPhysicalActivity() {
 											<label className="w-24 px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">
 												식사구분
 											</label>
-											<select
+											<input
+												type="text"
 												value={mealClassification}
 												onChange={(e) => setMealClassification(e.target.value)}
 												disabled={!isEditing}
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
-											>
-												<option value="일반식(저염식)">일반식(저염식)</option>
-												<option value="일반식">일반식</option>
-												<option value="연식">연식</option>
-												<option value="죽식">죽식</option>
-												<option value="유동식">유동식</option>
-											</select>
+												placeholder="ST_KIND"
+											/>
 										</div>
 										{/* 식사장소 */}
 										<div className="flex items-center gap-2">
@@ -726,7 +787,7 @@ export default function LongtermPhysicalActivity() {
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">세면, 구강, 머리감기</label>
-											<span className="text-sm text-blue-900/70">실시</span>
+											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										<div className="flex items-center gap-2">
 											<input
@@ -737,7 +798,7 @@ export default function LongtermPhysicalActivity() {
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">몸단장, 옷갈아입히기</label>
-											<span className="text-sm text-blue-900/70">실시</span>
+											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										<div className="flex items-center gap-2">
 											<input
@@ -748,7 +809,7 @@ export default function LongtermPhysicalActivity() {
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">이동도움 및 신체 기능유지. 증진</label>
-											<span className="text-sm text-blue-900/70">실시</span>
+											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										<div className="flex items-center gap-2">
 											<input
@@ -759,7 +820,7 @@ export default function LongtermPhysicalActivity() {
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">체위변경(2시간마다)</label>
-											<span className="text-sm text-blue-900/70">실시</span>
+											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										<div className="flex items-center gap-2">
 											<input
@@ -770,7 +831,7 @@ export default function LongtermPhysicalActivity() {
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">산책동행</label>
-											<span className="text-sm text-blue-900/70">실시</span>
+											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										{/* 화장실이용하기 */}
 										<div className="flex items-center gap-2">
@@ -792,7 +853,7 @@ export default function LongtermPhysicalActivity() {
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<label className="text-sm text-blue-900">외출동행</label>
-											<span className="text-sm text-blue-900/70">실시</span>
+											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										{/* 작성자성명 */}
 										<div className="flex items-center gap-2">

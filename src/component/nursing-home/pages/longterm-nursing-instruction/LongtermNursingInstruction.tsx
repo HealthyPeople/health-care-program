@@ -8,6 +8,9 @@ interface MemberData {
 }
 
 export default function LongtermNursingInstruction() {
+	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
+	const [loadingDefaults, setLoadingDefaults] = useState(false);
+
 	// 생체징후 관련 state
 	const [systolicBP, setSystolicBP] = useState('');
 	const [diastolicBP, setDiastolicBP] = useState('');
@@ -51,6 +54,122 @@ export default function LongtermNursingInstruction() {
 	const [isEditMode, setIsEditMode] = useState(false);
 	const [originalData, setOriginalData] = useState<any>(null);
 
+	const selectedPnum = String(selectedMember?.PNUM ?? '').trim();
+
+	const buildDraft = () => ({
+		NS_SBDP: systolicBP,
+		NS_EBDP: diastolicBP,
+		NS_TMPBD: bodyTemperature,
+		NS_HEALTH_HELP_NM: healthManagementNote,
+		NS_NURSE_HELP_NM: nursingManagementNote,
+		NS_ETC: medicationManagement,
+		NS_SORE_CHK: pressureSoreObservation,
+		NS_MEDI_CHK: problemBehavior,
+		NS_SORE_MNG_NM: abnormalArea,
+		INEMPNM: preparerName,
+		ST_CONF: confirmer,
+		ROOM_NO: roomNumber,
+		NS_ETC_DESC: JSON.stringify({
+			healthManagement,
+			nursingManagement,
+			emergencyService,
+			fall,
+			dehydration,
+			pressureSoreManagement,
+			incontinence,
+			delirium,
+			painVAS
+		})
+	});
+
+	const applyDraft = (d: any) => {
+		const yn = (v: any) => {
+			const s = String(v ?? '').trim().toLowerCase();
+			return s === '1' || s === 'y' || s === 'true';
+		};
+		setSystolicBP(String(d?.NS_SBDP ?? ''));
+		setDiastolicBP(String(d?.NS_EBDP ?? ''));
+		setBodyTemperature(String(d?.NS_TMPBD ?? ''));
+		setHealthManagementNote(String(d?.NS_HEALTH_HELP_NM ?? ''));
+		setNursingManagementNote(String(d?.NS_NURSE_HELP_NM ?? ''));
+		setMedicationManagement(yn(d?.NS_ETC));
+		setPressureSoreObservation(yn(d?.NS_SORE_CHK));
+		setProblemBehavior(yn(d?.NS_MEDI_CHK));
+		setAbnormalArea(String(d?.NS_SORE_MNG_NM ?? ''));
+		setPreparerName(String(d?.INEMPNM ?? ''));
+		setPreparerSearchTerm(String(d?.INEMPNM ?? ''));
+		setConfirmer(String(d?.ST_CONF ?? ''));
+		setConfirmerSearchTerm(String(d?.ST_CONF ?? ''));
+		setRoomNumber(String(d?.ROOM_NO ?? ''));
+		try {
+			const extra = d?.NS_ETC_DESC ? JSON.parse(String(d.NS_ETC_DESC)) : null;
+			if (extra && typeof extra === 'object') {
+				if (typeof extra.healthManagement === 'boolean') setHealthManagement(extra.healthManagement);
+				if (typeof extra.nursingManagement === 'boolean') setNursingManagement(extra.nursingManagement);
+				if (typeof extra.emergencyService === 'boolean') setEmergencyService(extra.emergencyService);
+				if (typeof extra.fall === 'boolean') setFall(extra.fall);
+				if (typeof extra.dehydration === 'boolean') setDehydration(extra.dehydration);
+				if (typeof extra.pressureSoreManagement === 'boolean') setPressureSoreManagement(extra.pressureSoreManagement);
+				if (typeof extra.incontinence === 'boolean') setIncontinence(extra.incontinence);
+				if (typeof extra.delirium === 'boolean') setDelirium(extra.delirium);
+				if (typeof extra.painVAS === 'string') setPainVAS(extra.painVAS);
+			}
+		} catch {}
+	};
+
+	const isDirty = () => {
+		if (!originalData) return false;
+		const cur = buildDraft() as Record<string, any>;
+		for (const k of Object.keys(cur)) {
+			if (String(cur[k] ?? '') !== String(originalData[k] ?? '')) return true;
+		}
+		return false;
+	};
+
+	const fetchDefaults = async (pnum: string) => {
+		if (!pnum) return;
+		setLoadingDefaults(true);
+		try {
+			const res = await fetch(`/api/f30112?pnum=${encodeURIComponent(pnum)}`);
+			const json = await res.json();
+			const row = json?.success && Array.isArray(json.data) ? json.data[0] : null;
+			const draft = row
+				? {
+						NS_SBDP: row.NS_SBDP,
+						NS_EBDP: row.NS_EBDP,
+						NS_TMPBD: row.NS_TMPBD,
+						NS_HEALTH_HELP_NM: row.NS_HEALTH_HELP_NM,
+						NS_NURSE_HELP_NM: row.NS_NURSE_HELP_NM,
+						NS_ETC: row.NS_ETC,
+						NS_SORE_CHK: row.NS_SORE_CHK,
+						NS_MEDI_CHK: row.NS_MEDI_CHK,
+						NS_SORE_MNG_NM: row.NS_SORE_MNG_NM,
+						INEMPNM: row.INEMPNM,
+						ST_CONF: row.ST_CONF,
+						ROOM_NO: row.ROOM_NO,
+						NS_ETC_DESC: row.NS_ETC_DESC
+					}
+				: buildDraft();
+			applyDraft(draft);
+			setOriginalData({ ...draft });
+			setIsEditMode(false);
+		} catch (e) {
+			console.error('F30112 조회 오류:', e);
+			alert('기준정보를 조회하는 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingDefaults(false);
+		}
+	};
+
+	const handleSelectMember = async (member: MemberData) => {
+		if (isEditMode && isDirty()) {
+			const ok = confirm('수정한 내용을 저장하지 않으면 적용되지 않습니다. 수급자를 변경하시겠습니까?');
+			if (!ok) return;
+		}
+		setSelectedMember(member);
+		await fetchDefaults(String(member?.PNUM ?? '').trim());
+	};
+
 	// 직원 검색 함수
 	const searchEmployee = async (searchTerm: string, setSuggestions: (data: Array<{EMPNO: string; EMPNM: string}>) => void, setShowDropdown: (show: boolean) => void) => {
 		if (!searchTerm || searchTerm.trim() === '') {
@@ -79,118 +198,52 @@ export default function LongtermNursingInstruction() {
 	};
 
 	const handleEdit = () => {
+		if (!selectedPnum) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
 		// 원본 데이터 백업
-		setOriginalData({
-			systolicBP,
-			diastolicBP,
-			bodyTemperature,
-			healthManagement,
-			healthManagementNote,
-			nursingManagement,
-			nursingManagementNote,
-			emergencyService,
-			preparerName,
-			preparerSearchTerm,
-			pressureSoreObservation,
-			confirmer,
-			confirmerSearchTerm,
-			abnormalArea,
-			problemBehavior,
-			fall,
-			dehydration,
-			pressureSoreManagement,
-			incontinence,
-			delirium,
-			painVAS,
-			medicationManagement,
-			roomNumber
-		});
+		setOriginalData({ ...buildDraft() });
 		setIsEditMode(true);
 	};
 
 	const handleCancel = () => {
+		if (isDirty()) {
+			const ok = confirm('수정한 내용은 저장되지 않습니다. 취소하시겠습니까?');
+			if (!ok) return;
+		}
 		// 원본 데이터로 복원
 		if (originalData) {
-			setSystolicBP(originalData.systolicBP);
-			setDiastolicBP(originalData.diastolicBP);
-			setBodyTemperature(originalData.bodyTemperature);
-			setHealthManagement(originalData.healthManagement);
-			setHealthManagementNote(originalData.healthManagementNote);
-			setNursingManagement(originalData.nursingManagement);
-			setNursingManagementNote(originalData.nursingManagementNote);
-			setEmergencyService(originalData.emergencyService);
-			setPreparerName(originalData.preparerName);
-			setPreparerSearchTerm(originalData.preparerSearchTerm);
-			setPressureSoreObservation(originalData.pressureSoreObservation);
-			setConfirmer(originalData.confirmer);
-			setConfirmerSearchTerm(originalData.confirmerSearchTerm);
-			setAbnormalArea(originalData.abnormalArea);
-			setProblemBehavior(originalData.problemBehavior);
-			setFall(originalData.fall);
-			setDehydration(originalData.dehydration);
-			setPressureSoreManagement(originalData.pressureSoreManagement);
-			setIncontinence(originalData.incontinence);
-			setDelirium(originalData.delirium);
-			setPainVAS(originalData.painVAS);
-			setMedicationManagement(originalData.medicationManagement);
-			setRoomNumber(originalData.roomNumber);
+			applyDraft(originalData);
 		}
 		setIsEditMode(false);
 	};
 
-	const handleSave = () => {
-		// TODO: API 호출 등 실제 저장 로직 구현
-		console.log({
-			systolicBP,
-			diastolicBP,
-			bodyTemperature,
-			healthManagement,
-			healthManagementNote,
-			nursingManagement,
-			nursingManagementNote,
-			emergencyService,
-			preparerName,
-			pressureSoreObservation,
-			confirmer,
-			abnormalArea,
-			problemBehavior,
-			fall,
-			dehydration,
-			pressureSoreManagement,
-			incontinence,
-			delirium,
-			painVAS,
-			medicationManagement,
-			roomNumber
-		});
-		alert('간호지시가 저장되었습니다.');
-		setIsEditMode(false);
-		// 저장 후 원본 데이터 업데이트
-		setOriginalData({
-			systolicBP,
-			diastolicBP,
-			bodyTemperature,
-			healthManagement,
-			healthManagementNote,
-			nursingManagement,
-			nursingManagementNote,
-			emergencyService,
-			preparerName,
-			preparerSearchTerm,
-			pressureSoreObservation,
-			confirmer,
-			confirmerSearchTerm,
-			abnormalArea,
-			problemBehavior,
-			fall,
-			dehydration,
-			pressureSoreManagement,
-			incontinence,
-			delirium,
-			painVAS,
-			medicationManagement,
-			roomNumber
-		});
+	const handleSave = async () => {
+		if (!selectedPnum) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		try {
+			const payload = { pnum: selectedPnum, ...buildDraft() };
+			const res = await fetch('/api/f30112', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!json?.success) {
+				alert(json?.error || '저장 중 오류가 발생했습니다.');
+				return;
+			}
+			const cur = buildDraft();
+			setOriginalData({ ...cur });
+			setIsEditMode(false);
+			alert('성공적으로 수정되었습니다.');
+		} catch (e) {
+			console.error('F30112 저장 오류:', e);
+			alert('저장 중 오류가 발생했습니다.');
+		}
 	};
 
 	const handleDelete = () => {
@@ -266,11 +319,24 @@ export default function LongtermNursingInstruction() {
 				<div className="flex gap-4">
 					{/* 좌측: 수급자 목록 */}
 					<aside className="w-1/3 shrink-0">
-						<MemberListPanel />
+						<MemberListPanel onSelectMember={handleSelectMember} />
 					</aside>
 
 					{/* 우측: 간호지시 입력 */}
 					<section className="flex-1">
+						<div className="mb-3 flex items-center justify-between rounded border border-blue-200 bg-blue-50 px-3 py-2">
+							<div className="text-sm text-blue-900">
+								{selectedMember ? (
+									<>
+										<span className="font-semibold">{String(selectedMember.P_NM ?? '').trim() || '선택됨'}</span>
+										<span className="ml-2 text-blue-900/70">PNUM: {selectedPnum || '-'}</span>
+										{loadingDefaults && <span className="ml-2 text-blue-900/70">불러오는 중...</span>}
+									</>
+								) : (
+									<span className="text-blue-900/70">왼쪽에서 수급자를 선택해주세요.</span>
+								)}
+							</div>
+						</div>
 						<div className="bg-white border border-blue-300 rounded-lg shadow-sm">
 							<div className="px-4 py-3 bg-blue-100 border-b border-blue-200">
 								<h2 className="text-xl font-semibold text-blue-900">간호지시</h2>
@@ -286,6 +352,7 @@ export default function LongtermNursingInstruction() {
 										type="number"
 										value={systolicBP}
 										onChange={(e) => setSystolicBP(e.target.value)}
+										disabled={!isEditMode}
 										className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 									/>
 									<label className="w-24 px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">
@@ -295,6 +362,7 @@ export default function LongtermNursingInstruction() {
 										type="number"
 										value={diastolicBP}
 										onChange={(e) => setDiastolicBP(e.target.value)}
+										disabled={!isEditMode}
 										className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 									/>
 									<label className="w-24 px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">
@@ -305,6 +373,7 @@ export default function LongtermNursingInstruction() {
 										step="0.1"
 										value={bodyTemperature}
 										onChange={(e) => setBodyTemperature(e.target.value)}
+										disabled={!isEditMode}
 										className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 									/>
 								</div>
@@ -321,6 +390,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={healthManagement}
 												onChange={(e) => setHealthManagement(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">실시</span>
@@ -330,6 +400,7 @@ export default function LongtermNursingInstruction() {
 										type="text"
 										value={healthManagementNote}
 										onChange={(e) => setHealthManagementNote(e.target.value)}
+										disabled={!isEditMode}
 										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 									/>
 								</div>
@@ -346,6 +417,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={nursingManagement}
 												onChange={(e) => setNursingManagement(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">실시</span>
@@ -355,6 +427,7 @@ export default function LongtermNursingInstruction() {
 										type="text"
 										value={nursingManagementNote}
 										onChange={(e) => setNursingManagementNote(e.target.value)}
+										disabled={!isEditMode}
 										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 									/>
 								</div>
@@ -367,6 +440,7 @@ export default function LongtermNursingInstruction() {
 											type="checkbox"
 											checked={emergencyService}
 											onChange={(e) => setEmergencyService(e.target.checked)}
+											disabled={!isEditMode}
 											className="w-4 h-4 border border-blue-300 rounded"
 										/>
 										<span className="text-sm text-blue-900">실시</span>
@@ -378,6 +452,7 @@ export default function LongtermNursingInstruction() {
 											value={preparerSearchTerm || preparerName}
 											onChange={(e) => {
 												const value = e.target.value;
+												if (!isEditMode) return;
 												setPreparerName(value);
 												setPreparerSearchTerm(value);
 												if (!value || value.trim() === '') {
@@ -386,6 +461,7 @@ export default function LongtermNursingInstruction() {
 												}
 											}}
 											onFocus={() => {
+												if (!isEditMode) return;
 												if (preparerName) {
 													setPreparerSearchTerm(preparerName);
 												}
@@ -395,6 +471,7 @@ export default function LongtermNursingInstruction() {
 											}}
 											className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											placeholder="작성자 검색"
+											disabled={!isEditMode}
 										/>
 										{showPreparerDropdown && preparerSuggestions.length > 0 && (
 											<div className="absolute z-10 w-full mt-1 overflow-y-auto bg-white border border-blue-300 rounded shadow-lg max-h-40">
@@ -402,6 +479,7 @@ export default function LongtermNursingInstruction() {
 													<div
 														key={`${employee.EMPNO}-${index}`}
 														onClick={() => {
+															if (!isEditMode) return;
 															setPreparerName(employee.EMPNM);
 															setPreparerSearchTerm(employee.EMPNM);
 															setShowPreparerDropdown(false);
@@ -424,6 +502,7 @@ export default function LongtermNursingInstruction() {
 											type="checkbox"
 											checked={pressureSoreObservation}
 											onChange={(e) => setPressureSoreObservation(e.target.checked)}
+											disabled={!isEditMode}
 											className="w-4 h-4 border border-blue-300 rounded"
 										/>
 										<span className="text-sm text-blue-900">이상있음</span>
@@ -435,6 +514,7 @@ export default function LongtermNursingInstruction() {
 											value={confirmerSearchTerm || confirmer}
 											onChange={(e) => {
 												const value = e.target.value;
+												if (!isEditMode) return;
 												setConfirmer(value);
 												setConfirmerSearchTerm(value);
 												if (!value || value.trim() === '') {
@@ -443,6 +523,7 @@ export default function LongtermNursingInstruction() {
 												}
 											}}
 											onFocus={() => {
+												if (!isEditMode) return;
 												if (confirmer) {
 													setConfirmerSearchTerm(confirmer);
 												}
@@ -452,6 +533,7 @@ export default function LongtermNursingInstruction() {
 											}}
 											className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											placeholder="확인자 검색"
+											disabled={!isEditMode}
 										/>
 										{showConfirmerDropdown && confirmerSuggestions.length > 0 && (
 											<div className="absolute z-10 w-full mt-1 overflow-y-auto bg-white border border-blue-300 rounded shadow-lg max-h-40">
@@ -459,6 +541,7 @@ export default function LongtermNursingInstruction() {
 													<div
 														key={`${employee.EMPNO}-${index}`}
 														onClick={() => {
+															if (!isEditMode) return;
 															setConfirmer(employee.EMPNM);
 															setConfirmerSearchTerm(employee.EMPNM);
 															setShowConfirmerDropdown(false);
@@ -481,6 +564,7 @@ export default function LongtermNursingInstruction() {
 									<textarea
 										value={abnormalArea}
 										onChange={(e) => setAbnormalArea(e.target.value)}
+										disabled={!isEditMode}
 										className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded min-h-[100px]"
 										placeholder="이상부위 및 피부상태를 입력하세요"
 									/>
@@ -496,6 +580,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={problemBehavior}
 												onChange={(e) => setProblemBehavior(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">유</span>
@@ -506,6 +591,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={fall}
 												onChange={(e) => setFall(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">유</span>
@@ -516,6 +602,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={dehydration}
 												onChange={(e) => setDehydration(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">있음</span>
@@ -526,6 +613,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={pressureSoreManagement}
 												onChange={(e) => setPressureSoreManagement(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">관리</span>
@@ -540,6 +628,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={incontinence}
 												onChange={(e) => setIncontinence(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">유</span>
@@ -550,6 +639,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={delirium}
 												onChange={(e) => setDelirium(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">의심</span>
@@ -563,6 +653,7 @@ export default function LongtermNursingInstruction() {
 													value="약"
 													checked={painVAS === '약'}
 													onChange={(e) => setPainVAS(e.target.value)}
+													disabled={!isEditMode}
 													className="w-4 h-4 border border-blue-300"
 												/>
 												<span className="text-sm text-blue-900">약</span>
@@ -574,6 +665,7 @@ export default function LongtermNursingInstruction() {
 													value="중"
 													checked={painVAS === '중'}
 													onChange={(e) => setPainVAS(e.target.value)}
+													disabled={!isEditMode}
 													className="w-4 h-4 border border-blue-300"
 												/>
 												<span className="text-sm text-blue-900">중</span>
@@ -585,6 +677,7 @@ export default function LongtermNursingInstruction() {
 													value="강"
 													checked={painVAS === '강'}
 													onChange={(e) => setPainVAS(e.target.value)}
+													disabled={!isEditMode}
 													className="w-4 h-4 border border-blue-300"
 												/>
 												<span className="text-sm text-blue-900">강</span>
@@ -596,6 +689,7 @@ export default function LongtermNursingInstruction() {
 												type="checkbox"
 												checked={medicationManagement}
 												onChange={(e) => setMedicationManagement(e.target.checked)}
+												disabled={!isEditMode}
 												className="w-4 h-4 border border-blue-300 rounded"
 											/>
 											<span className="text-sm text-blue-900">관리</span>
@@ -609,6 +703,7 @@ export default function LongtermNursingInstruction() {
 											type="text"
 											value={roomNumber}
 											onChange={(e) => setRoomNumber(e.target.value)}
+											disabled={!isEditMode}
 											className="w-32 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 										/>
 									</div>

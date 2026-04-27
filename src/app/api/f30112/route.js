@@ -101,6 +101,20 @@ function cleanInt(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+async function getF30112Columns(pool) {
+  const result = await pool.request().query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'F30112'
+  `);
+  const cols = new Set();
+  (result.recordset || []).forEach((r) => {
+    const c = String(r.COLUMN_NAME || '').trim();
+    if (c) cols.add(c.toUpperCase());
+  });
+  return cols;
+}
+
 // F30112 업서트(수급자별 기준정보 저장)
 // body: { ancd?: string|number, pnum: string|number, ...fields }
 export async function POST(req) {
@@ -117,45 +131,69 @@ export async function POST(req) {
     const pool = await connPool;
     if (!pool) return json({ success: false, error: '데이터베이스 연결 실패' }, 500);
 
-    // 화면(장기요양-신체활동)에서 쓰는 필드 위주로 저장
-    // F30112 스키마(이미지) 기준으로 존재하는 컬럼만 사용
-    const inputs = {
-      ANCD: gate.sessionAncd,
-      PNUM: pnum,
-      // 식사
-      ST_KIND: cleanStr(body?.ST_KIND ?? body?.mealType ?? body?.PH_MEAL_KIND_NM),
-      ST_PLAC: cleanStr(body?.ST_PLAC ?? body?.mealLocation),
-      ST_CONF: cleanStr(body?.ST_CONF ?? body?.mealConfirmer),
-      PH_MEAL_KIND_NM: cleanStr(body?.PH_MEAL_KIND_NM ?? body?.mealType),
-      PH_MEAL_VAL_NM: cleanStr(body?.PH_MEAL_VAL_NM ?? body?.mealIntake),
-      PH_MEAL_WT_NM: cleanStr(body?.PH_MEAL_WT_NM ?? body?.mealClassification),
+    const columns = await getF30112Columns(pool);
 
-      // 목욕
-      PH_BATH_METH_NM: cleanStr(body?.PH_BATH_METH_NM ?? body?.bathMethod),
-      PH_BATH_TM: cleanInt(body?.PH_BATH_TM ?? body?.bathTimeRequired),
-      PH_BATH_WK1: cleanStr(body?.PH_BATH_WK1 ?? body?.bathDay1),
-      PH_BATH_WK2: cleanStr(body?.PH_BATH_WK2 ?? body?.bathDay2),
-      BATH_SPV_TM: cleanStr(body?.BATH_SPV_TM ?? body?.bathTime),
-      BATH_EMPNM01: cleanStr(body?.BATH_EMPNM01 ?? body?.bathProvider1),
-      BATH_EMPNM02: cleanStr(body?.BATH_EMPNM02 ?? body?.bathProvider2),
+    const raw = { ...(body || {}) };
+    delete raw.ancd;
+    delete raw.ANCD;
+    delete raw.pnum;
+    delete raw.PNUM;
 
-      // 신체활동
-      PH_HEAD_HELP: normalizeBoolToDb(body?.PH_HEAD_HELP ?? body?.faceWashing ?? body?.grooming),
-      PH_MOVE_HELP: normalizeBoolToDb(body?.PH_MOVE_HELP ?? body?.movementAssistance),
-      PH_CHANG_HELP: normalizeBoolToDb(body?.PH_CHANG_HELP ?? body?.positionChange),
-      PH_WORK_HELP: normalizeBoolToDb(body?.PH_WORK_HELP ?? body?.walkAccompany),
-      PH_OUT_HELP: normalizeBoolToDb(body?.PH_OUT_HELP ?? body?.outingAccompany),
-      PH_TOL_CNT: cleanInt(body?.PH_TOL_CNT ?? body?.toiletUsage),
+    // 자동 매핑(화면에서 보내는 alias 일부 대응)
+    if (raw.mealType != null && raw.ST_KIND == null) raw.ST_KIND = raw.mealType;
+    if (raw.mealLocation != null && raw.ST_PLAC == null) raw.ST_PLAC = raw.mealLocation;
+    if (raw.mealConfirmer != null && raw.ST_CONF == null) raw.ST_CONF = raw.mealConfirmer;
+    if (raw.confirmer != null && raw.ST_CONF == null) raw.ST_CONF = raw.confirmer;
+    if (raw.mealType != null && raw.PH_MEAL_KIND_NM == null) raw.PH_MEAL_KIND_NM = raw.mealType;
+    if (raw.mealIntake != null && raw.PH_MEAL_VAL_NM == null) raw.PH_MEAL_VAL_NM = raw.mealIntake;
+    if (raw.mealClassification != null && raw.PH_MEAL_WT_NM == null) raw.PH_MEAL_WT_NM = raw.mealClassification;
 
-      // 작성자
-      INEMPNM: cleanStr(body?.INEMPNM ?? body?.preparerName),
-    };
+    if (raw.bathMethod != null && raw.PH_BATH_METH_NM == null) raw.PH_BATH_METH_NM = raw.bathMethod;
+    if (raw.bathTimeRequired != null && raw.PH_BATH_TM == null) raw.PH_BATH_TM = raw.bathTimeRequired;
+    if (raw.bathDay1 != null && raw.PH_BATH_WK1 == null) raw.PH_BATH_WK1 = raw.bathDay1;
+    if (raw.bathDay2 != null && raw.PH_BATH_WK2 == null) raw.PH_BATH_WK2 = raw.bathDay2;
+    if (raw.bathTime != null && raw.BATH_SPV_TM == null) raw.BATH_SPV_TM = raw.bathTime;
+    if (raw.bathProvider1 != null && raw.BATH_EMPNM01 == null) raw.BATH_EMPNM01 = raw.bathProvider1;
+    if (raw.bathProvider2 != null && raw.BATH_EMPNM02 == null) raw.BATH_EMPNM02 = raw.bathProvider2;
+
+    // 작성자: 신체활동은 PH_WRITE_NAME 사용
+    if (raw.preparerName != null) {
+      if (raw.PH_WRITE_NAME == null) raw.PH_WRITE_NAME = raw.preparerName;
+      if (raw.INEMPNM == null) raw.INEMPNM = raw.preparerName;
+    }
+
+    // 컬럼 존재하는 것만 선별 (대소문자/스키마 변화에 안전)
+    const toSave = {};
+    Object.entries(raw).forEach(([k, v]) => {
+      const kk = String(k || '').trim();
+      if (!kk) return;
+      const key = kk.toUpperCase();
+      if (!columns.has(key)) return;
+      if (key === 'ANCD' || key === 'PNUM') return;
+      if (key === 'INDT') return;
+
+      // 0/1 플래그로 쓰이는 컬럼은 boolean도 허용
+      if (/(_CHK|_HELP|^NS_ETC$|^PH_)/i.test(key) && typeof v === 'boolean') {
+        toSave[key] = normalizeBoolToDb(v);
+        return;
+      }
+      toSave[key] = v;
+    });
+
+    if (Object.keys(toSave).length === 0) {
+      return json({ success: false, error: '저장할 값이 없습니다(컬럼 매핑 확인 필요)' }, 400);
+    }
 
     const request = pool.request();
-    Object.entries(inputs).forEach(([k, val]) => request.input(k, val));
+    request.input('ANCD', gate.sessionAncd);
+    request.input('PNUM', pnum);
+    Object.entries(toSave).forEach(([k, val]) => request.input(k, val == null ? null : String(val)));
 
-    // 최신 1건이 있으면 갱신, 없으면 삽입
-    // (INDT가 기준정보의 이력 컬럼인 경우가 많아 최신건 기준으로 업데이트)
+    const keys = Object.keys(toSave);
+    const setSql = keys.map((k) => `t.[${k}] = @${k}`).join(',\n          ');
+    const insertCols = keys.map((k) => `[${k}]`).join(',');
+    const insertVals = keys.map((k) => `@${k}`).join(',');
+
     await request.query(`
       IF EXISTS (
         SELECT 1
@@ -164,26 +202,7 @@ export async function POST(req) {
       )
       BEGIN
         UPDATE t SET
-          [ST_KIND] = @ST_KIND,
-          [ST_PLAC] = @ST_PLAC,
-          [ST_CONF] = @ST_CONF,
-          [PH_MEAL_KIND_NM] = @PH_MEAL_KIND_NM,
-          [PH_MEAL_VAL_NM] = @PH_MEAL_VAL_NM,
-          [PH_MEAL_WT_NM] = @PH_MEAL_WT_NM,
-          [PH_BATH_METH_NM] = @PH_BATH_METH_NM,
-          [PH_BATH_TM] = @PH_BATH_TM,
-          [PH_BATH_WK1] = @PH_BATH_WK1,
-          [PH_BATH_WK2] = @PH_BATH_WK2,
-          [BATH_SPV_TM] = @BATH_SPV_TM,
-          [BATH_EMPNM01] = @BATH_EMPNM01,
-          [BATH_EMPNM02] = @BATH_EMPNM02,
-          [PH_HEAD_HELP] = @PH_HEAD_HELP,
-          [PH_MOVE_HELP] = @PH_MOVE_HELP,
-          [PH_CHANG_HELP] = @PH_CHANG_HELP,
-          [PH_WORK_HELP] = @PH_WORK_HELP,
-          [PH_OUT_HELP] = @PH_OUT_HELP,
-          [PH_TOL_CNT] = @PH_TOL_CNT,
-          [INEMPNM] = @INEMPNM,
+          ${setSql},
           [INDT] = GETDATE()
         FROM [돌봄시설DB].[dbo].[F30112] t
         WHERE t.[ANCD] = @ANCD
@@ -195,25 +214,8 @@ export async function POST(req) {
       END
       ELSE
       BEGIN
-        INSERT INTO [돌봄시설DB].[dbo].[F30112] (
-          [ANCD],[PNUM],
-          [ST_KIND],[ST_PLAC],[ST_CONF],
-          [PH_MEAL_KIND_NM],[PH_MEAL_VAL_NM],[PH_MEAL_WT_NM],
-          [PH_BATH_METH_NM],[PH_BATH_TM],[PH_BATH_WK1],[PH_BATH_WK2],
-          [BATH_SPV_TM],[BATH_EMPNM01],[BATH_EMPNM02],
-          [PH_HEAD_HELP],[PH_MOVE_HELP],[PH_CHANG_HELP],[PH_WORK_HELP],[PH_OUT_HELP],[PH_TOL_CNT],
-          [INEMPNM],
-          [INDT]
-        ) VALUES (
-          @ANCD,@PNUM,
-          @ST_KIND,@ST_PLAC,@ST_CONF,
-          @PH_MEAL_KIND_NM,@PH_MEAL_VAL_NM,@PH_MEAL_WT_NM,
-          @PH_BATH_METH_NM,@PH_BATH_TM,@PH_BATH_WK1,@PH_BATH_WK2,
-          @BATH_SPV_TM,@BATH_EMPNM01,@BATH_EMPNM02,
-          @PH_HEAD_HELP,@PH_MOVE_HELP,@PH_CHANG_HELP,@PH_WORK_HELP,@PH_OUT_HELP,@PH_TOL_CNT,
-          @INEMPNM,
-          GETDATE()
-        )
+        INSERT INTO [돌봄시설DB].[dbo].[F30112] ([ANCD],[PNUM],${insertCols},[INDT])
+        VALUES (@ANCD,@PNUM,${insertVals},GETDATE())
       END
     `);
 
