@@ -6,8 +6,8 @@ import { RoomNoFloorSelect } from '../../components/RoomNoFloorSelect';
 import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
 
 interface MemberData {
-	ANCD: string;
-	PNUM: string;
+	ANCD?: string;
+	PNUM?: string;
 	P_NM: string;
 	P_SEX: string;
 	P_GRD: string;
@@ -17,13 +17,39 @@ interface MemberData {
 	[key: string]: any;
 }
 
+/** MSSQL/clients가 ancd·pnum 소문자로 줄 때 조회 파라미터가 비어 목록만 비는 현상 방지 */
+function memberAncd(m: MemberData | null | undefined): string {
+	if (!m) return '';
+	const raw = m.ANCD ?? (m as Record<string, unknown>).ancd;
+	return raw !== undefined && raw !== null && String(raw).trim() !== '' ? String(raw).trim() : '';
+}
+
+function memberPnum(m: MemberData | null | undefined): string {
+	if (!m) return '';
+	const raw = m.PNUM ?? (m as Record<string, unknown>).pnum;
+	return raw !== undefined && raw !== null && String(raw).trim() !== '' ? String(raw).trim() : '';
+}
+
+function memberKey(m: MemberData | null | undefined): string {
+	return `${memberAncd(m)}-${memberPnum(m)}`;
+}
+
 interface BathServiceData {
 	SVDT: string; // 제공일자
 	SVTM: string; // 제공시간
 	[key: string]: any;
 }
 
+type UserInfo = {
+	ancd?: string | number;
+	uid?: string;
+	empno?: string | number;
+	empnm?: string;
+	[key: string]: any;
+};
+
 export default function BathService() {
+	const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [serviceDates, setServiceDates] = useState<string[]>([]);
@@ -33,9 +59,9 @@ export default function BathService() {
 
 	// 폼 데이터
 	const [formData, setFormData] = useState({
-		serviceDate: '2025-12-08', // 제공일자
+		serviceDate: '', // 제공일자(VDT)
 		serviceTime: '', // 제공시간
-		beneficiary: '길덕남', // 수급자
+		beneficiary: '', // 수급자
 		// 수급자상태 - 목욕전
 		beforeBathFace: false, // 얼굴
 		beforeBathLips: false, // 입술
@@ -51,6 +77,64 @@ export default function BathService() {
 		clearPersonInCharge: false, // 담당자지움
 		serviceUnavailableReason: '' // 서비스불가사유
 	});
+
+	/** 네트워크 JSON의 VDT가 ISO·로케일 문자열(Date 직렬화)·빈값 혼재해도 yyyy-mm-dd로 통일 */
+	const formatDateYmd = (v: unknown) => {
+		if (v == null || v === '') return '';
+		if (v instanceof Date && !Number.isNaN(v.getTime())) {
+			const y = v.getFullYear();
+			const m = String(v.getMonth() + 1).padStart(2, '0');
+			const d = String(v.getDate()).padStart(2, '0');
+			return `${y}-${m}-${d}`;
+		}
+		const s = String(v).trim();
+		if (!s) return '';
+		if (s.includes('T')) return s.split('T')[0].slice(0, 10);
+		if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+		if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+		const parsed = Date.parse(s);
+		if (!Number.isNaN(parsed)) {
+			const dt = new Date(parsed);
+			const y = dt.getFullYear();
+			const m = String(dt.getMonth() + 1).padStart(2, '0');
+			const d = String(dt.getDate()).padStart(2, '0');
+			return `${y}-${m}-${d}`;
+		}
+		return '';
+	};
+
+	const boolToXO = (checked: boolean) => (checked ? 'O' : 'X');
+	const xoToBool = (v: unknown) => String(v ?? '').trim().toUpperCase() === 'O';
+
+	const bathMethodToCode = (label: string) => {
+		const s = String(label || '').trim();
+		if (!s) return null;
+		// 1: 전신입욕, 2: 샤워식, 3: 침상목욕(추정)
+		if (s === '입욕') return '1';
+		if (s.startsWith('샤워식')) return '2';
+		if (s === '목욕의자') return '2';
+		return null;
+	};
+
+	const codeToBathMethod = (code: unknown) => {
+		const c = String(code ?? '').trim();
+		if (c === '1') return '입욕';
+		if (c === '2') return '샤워식-목욕의자';
+		if (c === '3') return '기타';
+		return '샤워식-목욕의자';
+	};
+
+	const fetchUserInfo = async () => {
+		try {
+			const res = await fetch('/api/auth/user-info', { method: 'GET' });
+			const json = await res.json().catch(() => ({}));
+			if (res.ok && json?.success) {
+				setUserInfo(json.data || null);
+			}
+		} catch {
+			// ignore
+		}
+	};
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -147,6 +231,7 @@ export default function BathService() {
 
 	useEffect(() => {
 		fetchMembers();
+		fetchUserInfo();
 	}, []);
 
 	// 검색어 변경 시 실시간 검색 (디바운싱)
@@ -173,24 +258,66 @@ export default function BathService() {
 
 		setLoadingServices(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/bath-service/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 샘플 데이터
-			const sampleDates = [
-				'2025-12-08',
-				'2025-12-04',
-				'2025-12-01',
-				'2025-11-27',
-				'2025-11-24',
-				'2025-11-20',
-				'2025-11-17'
-			];
-			setServiceDates(sampleDates);
+			const url = `/api/f33030?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
+			const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'same-origin' });
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) throw new Error(json?.error || '제공일자 조회 실패');
+
+			const list = Array.isArray(json.data) ? json.data : [];
+			const dates: string[] = Array.from(
+				new Set(
+					list
+						.map((r: any) => formatDateYmd(r?.VDT ?? r?.vdt))
+						.filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+				)
+			) as string[];
+			dates.sort((a: string, b: string) => (a > b ? -1 : a < b ? 1 : 0));
+			setServiceDates(dates);
 		} catch (err) {
 			console.error('제공일자 조회 오류:', err);
+			setServiceDates([]);
+		} finally {
+			setLoadingServices(false);
+		}
+	};
+
+	const fetchDetail = async (ancd: string, pnum: string, vdt: string) => {
+		setLoadingServices(true);
+		try {
+			const url = `/api/f33030?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&vdt=${encodeURIComponent(
+				vdt
+			)}`;
+			const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'same-origin' });
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) throw new Error(json?.error || '상세 조회 실패');
+
+			const row = Array.isArray(json.data) ? json.data?.[0] : null;
+			if (!row) return;
+
+			setFormData(prev => ({
+				...prev,
+				serviceDate: formatDateYmd(row?.VDT ?? row?.vdt) || vdt,
+				serviceTime: row?.SRV_TM ?? row?.srv_tm ?? '',
+				beneficiary: selectedMember?.P_NM || prev.beneficiary,
+				// DB 정의: 목욕전=AF_*, 목욕후=BF_* (표준 정의서 기준)
+				beforeBathFace: xoToBool(row?.AF_FACE ?? row?.af_face),
+				beforeBathLips: xoToBool(row?.AF_LIP ?? row?.af_lip),
+				beforeBathNailColor: xoToBool(
+					row?.AF_NAIL_COLOR ?? row?.AF_NAIL_COLO ?? row?.af_nail_color ?? row?.af_nail_colo
+				),
+				beforeBathCognitiveState: xoToBool(row?.AF_COG_STAT ?? row?.af_cog_stat),
+				afterBathFace: xoToBool(row?.BF_FACE ?? row?.bf_face),
+				afterBathLips: xoToBool(row?.BF_LIP ?? row?.bf_lip),
+				afterBathNailColor: xoToBool(
+					row?.BF_NAIL_COLOR ?? row?.BF_NAIL_COLO ?? row?.bf_nail_color ?? row?.bf_nail_colo
+				),
+				afterBathCognitiveState: xoToBool(row?.BF_COG_STAT ?? row?.bf_cog_stat),
+				bathingMethod: codeToBathMethod(row?.BATH_METH ?? row?.bath_meth),
+				// 제공자/담당자지움은 테이블에 명확한 매핑이 없어 화면값 유지
+				serviceUnavailableReason: row?.SRV_WRNG_DESC ?? row?.srv_wrng_desc ?? ''
+			}));
+		} catch (e) {
+			console.error('상세 조회 오류:', e);
 		} finally {
 			setLoadingServices(false);
 		}
@@ -199,8 +326,27 @@ export default function BathService() {
 	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
-		fetchServiceDates(member.ANCD, member.PNUM);
+		setSelectedDateIndex(null);
+		setServiceDatePage(1);
+		setFormData(prev => ({
+			...prev,
+			beneficiary: member.P_NM || '',
+			serviceDate: '',
+			serviceTime: '',
+			beforeBathFace: false,
+			beforeBathLips: false,
+			beforeBathNailColor: false,
+			beforeBathCognitiveState: false,
+			afterBathFace: false,
+			afterBathLips: false,
+			afterBathNailColor: false,
+			afterBathCognitiveState: false,
+			bathingMethod: '샤워식-목욕의자',
+			provider: '',
+			clearPersonInCharge: false,
+			serviceUnavailableReason: ''
+		}));
+		fetchServiceDates(memberAncd(member), memberPnum(member));
 	};
 
 	// 제공일자 선택 함수
@@ -208,6 +354,9 @@ export default function BathService() {
 		setSelectedDateIndex(index);
 		const selectedDate = serviceDates[index];
 		setFormData(prev => ({ ...prev, serviceDate: selectedDate || '' }));
+		if (selectedMember && selectedDate) {
+			fetchDetail(memberAncd(selectedMember), memberPnum(selectedMember), selectedDate);
+		}
 	};
 
 	// 날짜 형식 변환 함수
@@ -239,23 +388,49 @@ export default function BathService() {
 
 		setLoadingServices(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedDateIndex !== null ? '/api/bath-service/update' : '/api/bath-service/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
+			const payload: any = {
+				PNUM: memberPnum(selectedMember),
+				VDT: formData.serviceDate,
+				SRV_TM: formData.serviceTime || '',
+				// 체크=문제있음(O), 미체크=문제없음(X) — 목욕전=AF_*, 목욕후=BF_*
+				AF_FACE: boolToXO(formData.beforeBathFace),
+				AF_LIP: boolToXO(formData.beforeBathLips),
+				AF_NAIL_COLOR: boolToXO(formData.beforeBathNailColor),
+				AF_COG_STAT: boolToXO(formData.beforeBathCognitiveState),
+				BF_FACE: boolToXO(formData.afterBathFace),
+				BF_LIP: boolToXO(formData.afterBathLips),
+				BF_NAIL_COLOR: boolToXO(formData.afterBathNailColor),
+				BF_COG_STAT: boolToXO(formData.afterBathCognitiveState),
+				SRV_WRNG_DESC: formData.serviceUnavailableReason || '',
+				BATH_METH: bathMethodToCode(formData.bathingMethod),
+				INEMPNO: userInfo?.empno != null ? String(userInfo.empno) : null,
+				// 제공자 입력이 숫자면 사원번호2로 저장 (그 외는 null)
+				INEMPNO1: formData.clearPersonInCharge
+					? null
+					: (() => {
+							const n = parseInt(String(formData.provider || '').trim(), 10);
+							return Number.isFinite(n) ? String(n) : null;
+						})(),
+			};
+
+			const res = await fetch(`/api/f33030?ancd=${encodeURIComponent(memberAncd(selectedMember))}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '목욕서비스 저장 실패');
+			}
 
 			alert(selectedDateIndex !== null ? '목욕서비스가 수정되었습니다.' : '목욕서비스가 저장되었습니다.');
 			
 			// 데이터 다시 조회
 			if (selectedMember) {
-				await fetchServiceDates(selectedMember.ANCD, selectedMember.PNUM);
+				await fetchServiceDates(memberAncd(selectedMember), memberPnum(selectedMember));
+				if (formData.serviceDate) {
+					await fetchDetail(memberAncd(selectedMember), memberPnum(selectedMember), formData.serviceDate);
+				}
 			}
 		} catch (err) {
 			console.error('목욕서비스 저장 오류:', err);
@@ -283,16 +458,21 @@ export default function BathService() {
 
 		setLoadingServices(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/bath-service/${selectedDateIndex}`, {
-			// 	method: 'DELETE'
-			// });
+			const dateToDelete = serviceDates[selectedDateIndex];
+			const url = `/api/f33030?ancd=${encodeURIComponent(memberAncd(selectedMember))}&pnum=${encodeURIComponent(
+				memberPnum(selectedMember)
+			)}&vdt=${encodeURIComponent(dateToDelete)}`;
+			const res = await fetch(url, { method: 'DELETE', cache: 'no-store', credentials: 'same-origin' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '목욕서비스 삭제 실패');
+			}
 
 			alert('목욕서비스가 삭제되었습니다.');
 			
 			// 데이터 다시 조회
 			if (selectedMember) {
-				await fetchServiceDates(selectedMember.ANCD, selectedMember.PNUM);
+				await fetchServiceDates(memberAncd(selectedMember), memberPnum(selectedMember));
 			}
 			
 			// 폼 초기화
@@ -313,6 +493,7 @@ export default function BathService() {
 				serviceUnavailableReason: ''
 			}));
 			setSelectedDateIndex(null);
+			setServiceDatePage(1);
 		} catch (err) {
 			console.error('목욕서비스 삭제 오류:', err);
 			alert('목욕서비스 삭제 중 오류가 발생했습니다.');
@@ -415,10 +596,10 @@ export default function BathService() {
 									) : (
 										currentMembers.map((member, index) => (
 											<tr
-												key={`${member.ANCD}-${member.PNUM}-${index}`}
+												key={`${memberAncd(member)}-${memberPnum(member)}-${index}`}
 												onClick={() => handleSelectMember(member)}
 												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
+													memberKey(selectedMember) === memberKey(member) ? 'bg-blue-100' : ''
 												}`}
 											>
 												<td className="px-2 py-1.5 text-center border-r border-blue-100">{startIndex + index + 1}</td>

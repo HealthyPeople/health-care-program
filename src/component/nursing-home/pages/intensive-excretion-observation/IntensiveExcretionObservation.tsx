@@ -18,14 +18,15 @@ interface MemberData {
 }
 
 interface ObservationData {
-	OBSDT: string; // 관찰일자
-	OBSTM: string; // 관찰시간
-	URINE: string; // 소변
-	STOOL: string; // 대변
-	DIAPER: string; // 기저귀
-	REMARKS: string; // 비고
-	OBSERVER: string; // 관찰자
-	OBSNUM: string;
+	ANCD?: string;
+	PNUM?: string;
+	OBSDT: string; // 관찰일자(VDT)
+	OBSTM: string; // 관찰시간구분(VTM_GU)
+	URINE: string; // 소변구분(PSS_GU) '0'/'1'
+	STOOL: string; // 대변구분(DNG_GU) '0'/'1'
+	DIAPER: string; // 기저귀교환(NPPY_CNG_GU) '0'/'1'
+	REMARKS: string; // 비고(ETC)
+	OBSERVER: string; // 관찰자(INEMPNM)
 	[key: string]: any;
 }
 
@@ -174,15 +175,33 @@ export default function IntensiveExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/intensive-excretion-observation/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setObservationDates([]);
+			const today = new Date();
+			const end = today.toISOString().split('T')[0];
+			const oneYearAgo = new Date(today);
+			oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+			const start = oneYearAgo.toISOString().split('T')[0];
+
+			const url = `/api/f33020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
+				pnum
+			)}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '관찰일자 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const dates: string[] = Array.from(
+				new Set(
+					list
+						.map((r: any) => formatDateDisplay(String(r?.VDT ?? r?.OBSDT ?? '')))
+						.filter((d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d))
+				)
+			) as string[];
+			dates.sort((a: string, b: string) => (a > b ? -1 : a < b ? 1 : 0));
+			setObservationDates(dates);
 		} catch (err) {
 			console.error('관찰일자 조회 오류:', err);
+			setObservationDates([]);
 		} finally {
 			setLoadingObservations(false);
 		}
@@ -197,15 +216,30 @@ export default function IntensiveExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/intensive-excretion-observation?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&date=${encodeURIComponent(date)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setObservationList([]);
+			const url = `/api/f33020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
+				pnum
+			)}&vdt=${encodeURIComponent(date)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '관찰 데이터 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const mapped: ObservationData[] = list.map((r: any) => ({
+				ANCD: r?.ANCD,
+				PNUM: r?.PNUM,
+				OBSDT: formatDateDisplay(r?.VDT || ''),
+				OBSTM: String(r?.VTM_GU ?? ''),
+				URINE: String(r?.PSS_GU ?? '0'),
+				STOOL: String(r?.DNG_GU ?? '0'),
+				DIAPER: String(r?.NPPY_CNG_GU ?? '0'),
+				REMARKS: r?.ETC ?? '',
+				OBSERVER: r?.INEMPNM ?? ''
+			}));
+			setObservationList(mapped);
 		} catch (err) {
 			console.error('관찰 데이터 조회 오류:', err);
+			setObservationList([]);
 		} finally {
 			setLoadingObservations(false);
 		}
@@ -287,17 +321,27 @@ export default function IntensiveExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedObservationIndex !== null ? '/api/intensive-excretion-observation/update' : '/api/intensive-excretion-observation/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
+			const payload = {
+				PNUM: selectedMember.PNUM,
+				VDT: formData.observationDate,
+				VTM_GU: String(formData.observationTime).trim().slice(0, 2),
+				PSS_GU: formData.urine ? '1' : '0',
+				DNG_GU: formData.stool ? '1' : '0',
+				NPPY_CNG_GU: formData.diaperChange ? '1' : '0',
+				ETC: formData.remarks || '',
+				INEMPNO: null,
+				INEMPNM: formData.observer || null
+			};
+
+			const res = await fetch(`/api/f33020?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload)
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '관찰 데이터 저장 실패');
+			}
 
 			alert(selectedObservationIndex !== null ? '관찰 데이터가 수정되었습니다.' : '관찰 데이터가 저장되었습니다.');
 			
@@ -344,10 +388,16 @@ export default function IntensiveExcretionObservation() {
 		setLoadingObservations(true);
 		try {
 			const observationToDelete = observationList[selectedObservationIndex];
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/intensive-excretion-observation/${observationToDelete.OBSNUM}`, {
-			// 	method: 'DELETE'
-			// });
+			const vdt = formatDateDisplay(observationToDelete.OBSDT || formData.observationDate || '');
+			const vtmGu = String(observationToDelete.OBSTM || formData.observationTime || '').trim().slice(0, 2);
+			const url = `/api/f33020?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+				selectedMember.PNUM
+			)}&vdt=${encodeURIComponent(vdt)}&vtmGu=${encodeURIComponent(vtmGu)}`;
+			const res = await fetch(url, { method: 'DELETE' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '관찰 데이터 삭제 실패');
+			}
 
 			alert('관찰 데이터가 삭제되었습니다.');
 			
