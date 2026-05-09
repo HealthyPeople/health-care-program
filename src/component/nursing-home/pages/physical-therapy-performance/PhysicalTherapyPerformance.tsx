@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import BeneficiaryListPanel, { BeneficiaryMember } from '../../components/BeneficiaryListPanel';
 
 interface MemberData {
 	ANCD: string;
@@ -14,15 +15,13 @@ interface MemberData {
 }
 
 interface TherapyRecordData {
-	TRDT: string; // 치료일자
-	TRST: string; // 치료시작시간
-	TRET: string; // 치료종료시간
-	THERAPIST: string; // 치료자
+	TDT: string; // 치료일자 (F32020)
+	JHEMP?: number | string | null; // 담당자(사번)
 	[key: string]: any;
 }
 
 export default function PhysicalTherapyPerformance() {
-	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
+	const [selectedMember, setSelectedMember] = useState<BeneficiaryMember | null>(null);
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [treatmentDates, setTreatmentDates] = useState<string[]>([]);
 	const [treatmentRecords, setTreatmentRecords] = useState<TherapyRecordData[]>([]);
@@ -31,83 +30,69 @@ export default function PhysicalTherapyPerformance() {
 	const [datePage, setDatePage] = useState(1);
 	const dateItemsPerPage = 10;
 
-	// 폼 데이터
-	const [formData, setFormData] = useState({
-		beneficiary: '길덕남', // 수급자
-		treatmentDate: '2025-12-11', // 치료일자
-		treatmentStartTime: '', // 치료시작시간
-		treatmentEndTime: '', // 치료종료시간
-		therapist: '', // 치료자
-		// 운동치료 - 기구이용
-		equipmentBicycle: true, // 자전거
-		equipmentResistanceBand: true, // 탄력밴드운동
-		equipmentFullBodyMassager: true, // 전신안마기
-		equipmentPully: true, // Pully
-		equipmentShoulderJoint: true, // 견관절운동기
-		equipmentParallelBar: true, // 평행봉걷기
-		equipmentTreadmill: true, // 런닝머신
-		// 운동치료 - 단순운동
-		simpleFootMassager: true, // 발맛사지기
-		simpleTiltingTable: true, // 틸팅테이블
-		simpleBallExercise: true, // 공운동
-		simpleBeadThreading: true, // 구술꿰기
-		simplePegboard: true, // 패기보드끼우
-		simpleManualExercise: true, // 도수운동
-		simpleROM: true, // ROM
-		// Modalities
-		modalityStrength: true, // 근력운동
-		modalityFunctional: true, // 기능향상운동
-		modalityWeightShift: true, // 체중이동/지지
-		modalityGaitTraining: true, // 보행훈련
-		modalityHotCold: true, // Hot&Cold Pa
-		modalityInfrared: true, // 적외선치료
-		modalityUltrasound: true, // 초음파치료
-		// 기타
-		otherTENS: true, // 경피신경전기
-		otherInterferential: true, // 간섭전류치료
-		otherElectrical: true, // 전기자극치료
-		otherParaffin: true, // 파라핀치료
-		otherTreatment1: false, // 기타치료 1
-		otherTreatment2: false, // 기타치료 2
-		otherTreatment3: false // 기타치료 3
+	// F32020 폼 데이터(이미지 스키마 기반: 실시=1, 미실시=0 / 횟수·시간 등은 TVAL/TETCVAL로 입력)
+	const createEmptyForm = (tdt?: string) => ({
+		TDT: tdt || new Date().toISOString().slice(0, 10),
+		JHEMP: '',
+		// 기구이용: TCHK01~07 / TVAL01~07
+		TCHK01: '0', TVAL01: '',
+		TCHK02: '0', TVAL02: '',
+		TCHK03: '0', TVAL03: '',
+		TCHK04: '0', TVAL04: '',
+		TCHK05: '0', TVAL05: '',
+		TCHK06: '0', TVAL06: '',
+		TCHK07: '0', TVAL07: '',
+		// 단순운동(기본): TCHK08~12 / TVAL08~12
+		TCHK08: '0', TVAL08: '',
+		TCHK09: '0', TVAL09: '',
+		TCHK10: '0', TVAL10: '',
+		TCHK11: '0', TVAL11: '',
+		TCHK12: '0', TVAL12: '',
+		TTEXT_1: '',
+		// 단순운동(치료/훈련): TCHK21~26 / TVAL21~26
+		TCHK21: '0', TVAL21: '',
+		TCHK22: '0', TVAL22: '',
+		TCHK23: '0', TVAL23: '',
+		TCHK24: '0', TVAL24: '',
+		TCHK25: '0', TVAL25: '',
+		TCHK26: '0', TVAL26: '',
+		TTEXT_2: '',
+		// Modalities: TCHK31~37 / TVAL31~37
+		TCHK31: '0', TVAL31: '',
+		TCHK32: '0', TVAL32: '',
+		TCHK33: '0', TVAL33: '',
+		TCHK34: '0', TVAL34: '',
+		TCHK35: '0', TVAL35: '',
+		TCHK36: '0', TVAL36: '',
+		TCHK37: '0', TVAL37: '',
+		TTEXT_3: '',
+		// 기타치료: TETC_1~5 / TETCVAL_1~5
+		TETC_1: '', TETCVAL_1: '',
+		TETC_2: '', TETCVAL_2: '',
+		TETC_3: '', TETCVAL_3: '',
+		TETC_4: '', TETCVAL_4: '',
+		TETC_5: '', TETCVAL_5: '',
+		TTEXT_4: '',
+		ETC: '',
 	});
+	const [formData, setFormData] = useState(() => createEmptyForm());
 
-	// 수급자 목록 데이터
-	const [memberList, setMemberList] = useState<MemberData[]>([]);
-	const [loading, setLoading] = useState(false);
-	const [selectedStatus, setSelectedStatus] = useState<string>('입소');
-	const [selectedGrade, setSelectedGrade] = useState<string>('');
-	const [selectedFloor, setSelectedFloor] = useState<string>('');
-	const [searchTerm, setSearchTerm] = useState('');
-	const [currentPage, setCurrentPage] = useState(1);
-	const itemsPerPage = 10;
-
-	// 수급자 목록 조회
-	const fetchMembers = async (nameSearch?: string) => {
-		setLoading(true);
-		try {
-			const url = nameSearch && nameSearch.trim() !== '' 
-				? `/api/f10010?name=${encodeURIComponent(nameSearch.trim())}`
-				: '/api/f10010';
-			
-			const response = await fetch(url);
-			const result = await response.json();
-			
-			if (result.success) {
-				setMemberList(result.data || []);
-			}
-		} catch (err) {
-			console.error('수급자 목록 조회 오류:', err);
-		} finally {
-			setLoading(false);
-		}
+	const extractFloorFromRoomNo = (roomNo: any): number | null => {
+		const s = String(roomNo ?? '').trim();
+		if (!s) return null;
+		const digits = s.replace(/\D/g, '');
+		if (!digits) return null;
+		const n = parseInt(digits, 10);
+		if (!Number.isFinite(n) || Number.isNaN(n) || n < 0) return null;
+		return Math.floor(n / 100);
 	};
 
 	// 나이 계산 함수
-	const calculateAge = (birthDate: string) => {
-		if (!birthDate) return '-';
+	const calculateAge = (birthDate: any) => {
+		const s = String(birthDate ?? '').trim();
+		if (s.length < 4) return '-';
 		try {
-			const year = parseInt(birthDate.substring(0, 4));
+			const year = parseInt(s.substring(0, 4));
 			const currentYear = new Date().getFullYear();
 			return (currentYear - year).toString();
 		} catch {
@@ -115,93 +100,30 @@ export default function PhysicalTherapyPerformance() {
 		}
 	};
 
-	// 필터링된 수급자 목록
-	const filteredMembers = memberList.filter((member) => {
-		if (selectedStatus) {
-			const memberStatus = String(member.P_ST || '').trim();
-			if (selectedStatus === '입소' && memberStatus !== '1') {
-				return false;
-			}
-			if (selectedStatus === '퇴소' && memberStatus !== '9') {
-				return false;
-			}
-		}
-		
-		if (selectedGrade) {
-			const memberGrade = String(member.P_GRD || '').trim();
-			const selectedGradeTrimmed = String(selectedGrade).trim();
-			if (memberGrade !== selectedGradeTrimmed) {
-				return false;
-			}
-		}
-		
-		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
-			}
-		}
-		
-		if (searchTerm && searchTerm.trim() !== '') {
-			const searchLower = searchTerm.toLowerCase().trim();
-			if (!member.P_NM?.toLowerCase().includes(searchLower)) {
-				return false;
-			}
-		}
-		
-		return true;
-	}).sort((a, b) => {
-		const nameA = (a.P_NM || '').trim();
-		const nameB = (b.P_NM || '').trim();
-		return nameA.localeCompare(nameB, 'ko');
-	});
-
-	// 페이지네이션 계산
-	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
-	const startIndex = (currentPage - 1) * itemsPerPage;
-	const endIndex = startIndex + itemsPerPage;
-	const currentMembers = filteredMembers.slice(startIndex, endIndex);
-
-	const handlePageChange = (page: number) => {
-		setCurrentPage(page);
-	};
-
-	useEffect(() => {
-		fetchMembers();
-	}, []);
-
-	// 검색어 변경 시 실시간 검색 (디바운싱)
-	useEffect(() => {
-		const timer = setTimeout(() => {
-			setCurrentPage(1);
-			fetchMembers(searchTerm);
-		}, 300);
-
-		return () => clearTimeout(timer);
-	}, [searchTerm]);
-
-	// 필터 변경 시 페이지 초기화
-	useEffect(() => {
-		setCurrentPage(1);
-	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
-
 	// 치료일자 목록 조회
 	const fetchTreatmentDates = async (ancd: string, pnum: string) => {
 		if (!ancd || !pnum) {
 			setTreatmentDates([]);
+			setTreatmentRecords([]);
 			return;
 		}
 
 		setLoadingRecords(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/physical-therapy-performance/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setTreatmentDates([]);
+			const url = `/api/f32020?pnum=${encodeURIComponent(pnum)}`;
+			const response = await fetch(url, { cache: 'no-store' });
+			const result = await response.json();
+
+			if (result.success) {
+				const list: TherapyRecordData[] = result.data || [];
+				setTreatmentRecords(list);
+				setTreatmentDates(list.map((r) => r.TDT).filter(Boolean));
+				setSelectedDateIndex(null);
+				setDatePage(1);
+			} else {
+				setTreatmentRecords([]);
+				setTreatmentDates([]);
+			}
 		} catch (err) {
 			console.error('치료일자 조회 오류:', err);
 		} finally {
@@ -210,28 +132,27 @@ export default function PhysicalTherapyPerformance() {
 	};
 
 	// 수급자 선택 함수
-	const handleSelectMember = (member: MemberData) => {
-		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
-		fetchTreatmentDates(member.ANCD, member.PNUM);
+	const handleSelectMember = (member: BeneficiaryMember) => {
+		setSelectedMember(member as any);
+		setFormData(createEmptyForm(new Date().toISOString().slice(0, 10)));
+		fetchTreatmentDates(String(member.ANCD), String(member.PNUM));
 	};
 
 	// 치료일자 선택 함수
 	const handleSelectDate = (index: number) => {
 		setSelectedDateIndex(index);
-		const selectedDate = treatmentDates[index];
-		setFormData(prev => ({ ...prev, treatmentDate: selectedDate || '' }));
-		setIsEditMode(false);
-		// TODO: 선택한 날짜의 치료 기록 조회
 		const selectedRecord = treatmentRecords[index];
+		const selectedDate = treatmentDates[index];
+		setIsEditMode(false);
 		if (selectedRecord) {
-			setFormData(prev => ({
+			setFormData((prev) => ({
 				...prev,
-				treatmentDate: selectedRecord.TRDT || '',
-				treatmentStartTime: selectedRecord.TRST || '',
-				treatmentEndTime: selectedRecord.TRET || '',
-				therapist: selectedRecord.THERAPIST || ''
+				...selectedRecord,
+				JHEMP: String((selectedRecord as any).JHEMP ?? ''),
+				TDT: selectedRecord.TDT || selectedDate || prev.TDT,
 			}));
+		} else {
+			setFormData(createEmptyForm(selectedDate || undefined));
 		}
 	};
 
@@ -257,24 +178,25 @@ export default function PhysicalTherapyPerformance() {
 			return;
 		}
 
-		if (!formData.treatmentDate) {
+		if (!formData.TDT) {
 			alert('치료일자를 입력해주세요.');
 			return;
 		}
 
 		setLoadingRecords(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedDateIndex !== null ? '/api/physical-therapy-performance/update' : '/api/physical-therapy-performance/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
+			const response = await fetch('/api/f32020', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					PNUM: selectedMember.PNUM,
+					...formData,
+				}),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result.success) {
+				throw new Error(result?.error || '저장 실패');
+			}
 
 			alert(selectedDateIndex !== null ? '물리치료실적이 수정되었습니다.' : '물리치료실적이 저장되었습니다.');
 			setIsEditMode(false);
@@ -293,40 +215,7 @@ export default function PhysicalTherapyPerformance() {
 
 	// 지움 함수
 	const handleClear = () => {
-		setFormData(prev => ({
-			...prev,
-			treatmentStartTime: '',
-			treatmentEndTime: '',
-			therapist: '',
-			equipmentBicycle: false,
-			equipmentResistanceBand: false,
-			equipmentFullBodyMassager: false,
-			equipmentPully: false,
-			equipmentShoulderJoint: false,
-			equipmentParallelBar: false,
-			equipmentTreadmill: false,
-			simpleFootMassager: false,
-			simpleTiltingTable: false,
-			simpleBallExercise: false,
-			simpleBeadThreading: false,
-			simplePegboard: false,
-			simpleManualExercise: false,
-			simpleROM: false,
-			modalityStrength: false,
-			modalityFunctional: false,
-			modalityWeightShift: false,
-			modalityGaitTraining: false,
-			modalityHotCold: false,
-			modalityInfrared: false,
-			modalityUltrasound: false,
-			otherTENS: false,
-			otherInterferential: false,
-			otherElectrical: false,
-			otherParaffin: false,
-			otherTreatment1: false,
-			otherTreatment2: false,
-			otherTreatment3: false
-		}));
+		setFormData(createEmptyForm());
 		setIsEditMode(true);
 		setSelectedDateIndex(null);
 	};
@@ -349,10 +238,15 @@ export default function PhysicalTherapyPerformance() {
 
 		setLoadingRecords(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/physical-therapy-performance/${selectedDateIndex}`, {
-			// 	method: 'DELETE'
-			// });
+			const tdt = treatmentDates[selectedDateIndex];
+			const response = await fetch(
+				`/api/f32020?pnum=${encodeURIComponent(selectedMember.PNUM)}&tdt=${encodeURIComponent(tdt)}`,
+				{ method: 'DELETE' }
+			);
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result.success) {
+				throw new Error(result?.error || '삭제 실패');
+			}
 
 			alert('물리치료실적이 삭제되었습니다.');
 			setIsEditMode(false);
@@ -374,7 +268,7 @@ export default function PhysicalTherapyPerformance() {
 
 	// 출력 함수들
 	const handlePrintRecord = async () => {
-		if (!selectedMember || !formData.treatmentDate) {
+		if (!selectedMember || !formData.TDT) {
 			alert('출력할 물리치료실적을 선택해주세요.');
 			return;
 		}
@@ -407,196 +301,80 @@ export default function PhysicalTherapyPerformance() {
 	const currentDateItems = treatmentDates.slice(dateStartIndex, dateEndIndex);
 
 	// 치료 항목 렌더링 함수
-	const renderTreatmentItem = (key: string, label: string, checked: boolean) => {
+	const renderTreatmentItem = (chkKey: string, valKey: string, label: string) => {
+		const checked = String((formData as any)[chkKey] ?? '0') === '1';
+		const value = String((formData as any)[valKey] ?? '');
 		return (
-			<div key={key} className="flex items-center gap-2 py-2 border-b border-blue-100">
+			<div key={`${chkKey}-${valKey}`} className="flex items-center gap-2 py-2 border-b border-blue-100">
 				<input
 					type="checkbox"
 					checked={checked}
-					onChange={(e) => setFormData(prev => ({ ...prev, [key]: e.target.checked }))}
+					onChange={(e) =>
+						setFormData((prev: any) => ({
+							...prev,
+							[chkKey]: e.target.checked ? '1' : '0',
+						}))
+					}
 					className="w-4 h-4 text-blue-500 border border-blue-300 rounded focus:ring-blue-500"
 				/>
 				<label className="text-sm text-blue-900 flex-1">{label}</label>
 				<input
 					type="text"
-					className="w-20 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-					placeholder=""
+					value={value}
+					onChange={(e) =>
+						setFormData((prev: any) => ({
+							...prev,
+							[valKey]: e.target.value,
+						}))
+					}
+					className="w-24 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+					placeholder="횟수/분"
 				/>
 			</div>
 		);
 	};
 
+	const equipmentItems = [
+		{ chk: 'TCHK01', val: 'TVAL01', label: '자전거' },
+		{ chk: 'TCHK02', val: 'TVAL02', label: '탄력밴드운동' },
+		{ chk: 'TCHK03', val: 'TVAL03', label: '전신안마기' },
+		{ chk: 'TCHK04', val: 'TVAL04', label: 'Pully' },
+		{ chk: 'TCHK05', val: 'TVAL05', label: '견관절운동기' },
+		{ chk: 'TCHK06', val: 'TVAL06', label: '평행봉걷기' },
+		{ chk: 'TCHK07', val: 'TVAL07', label: '러닝머신' },
+	];
+
+	const simpleBaseItems = [
+		{ chk: 'TCHK08', val: 'TVAL08', label: '발맛사지기' },
+		{ chk: 'TCHK09', val: 'TVAL09', label: '틸팅테이블' },
+		{ chk: 'TCHK10', val: 'TVAL10', label: '공운동' },
+		{ chk: 'TCHK11', val: 'TVAL11', label: '구술꿰기' },
+		{ chk: 'TCHK12', val: 'TVAL12', label: '패기보드끼우기' },
+	];
+
+	const simpleTherapyItems = [
+		{ chk: 'TCHK21', val: 'TVAL21', label: '도수운동' },
+		{ chk: 'TCHK22', val: 'TVAL22', label: 'ROM' },
+		{ chk: 'TCHK23', val: 'TVAL23', label: '근력운동' },
+		{ chk: 'TCHK24', val: 'TVAL24', label: '기능향상운동' },
+		{ chk: 'TCHK25', val: 'TVAL25', label: '체중이동/지지' },
+		{ chk: 'TCHK26', val: 'TVAL26', label: '보행훈련' },
+	];
+
+	const modalityItems = [
+		{ chk: 'TCHK31', val: 'TVAL31', label: 'Hot&Cold Pack' },
+		{ chk: 'TCHK32', val: 'TVAL32', label: '적외선치료' },
+		{ chk: 'TCHK33', val: 'TVAL33', label: '초음파치료' },
+		{ chk: 'TCHK34', val: 'TVAL34', label: '경피신경전기자극치료' },
+		{ chk: 'TCHK35', val: 'TVAL35', label: '간섭전류치료' },
+		{ chk: 'TCHK36', val: 'TVAL36', label: '전기자극치료' },
+		{ chk: 'TCHK37', val: 'TVAL37', label: '파라핀치료' },
+	];
+
 	return (
 		<div className="flex flex-col min-h-screen text-black bg-white">
 			<div className="flex h-[calc(100vh-56px)]">
-				{/* 좌측 패널: 수급자 목록 */}
-				<div className="flex flex-col w-1/4 p-4 bg-white border-r border-blue-200">
-					{/* 필터 헤더 */}
-					<div className="mb-3">
-						<h3 className="mb-2 text-sm font-semibold text-blue-900">수급자 목록</h3>
-						<div className="space-y-2">
-							{/* 이름 검색 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">이름 검색</div>
-								<input 
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded" 
-									placeholder="예) 홍길동"
-									value={searchTerm}
-									onChange={(e) => setSearchTerm(e.target.value)}
-								/>
-							</div>
-							{/* 현황 필터 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">현황</div>
-								<select
-									value={selectedStatus}
-									onChange={(e) => setSelectedStatus(e.target.value)}
-									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">현황 전체</option>
-									<option value="입소">입소</option>
-									<option value="퇴소">퇴소</option>
-								</select>
-							</div>
-							{/* 등급 필터 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">등급</div>
-								<select
-									value={selectedGrade}
-									onChange={(e) => setSelectedGrade(e.target.value)}
-									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">등급 전체</option>
-									<option value="1">1등급</option>
-									<option value="2">2등급</option>
-									<option value="3">3등급</option>
-									<option value="4">4등급</option>
-									<option value="5">5등급</option>
-									<option value="9">인지지원</option>
-								</select>
-							</div>
-							{/* 층수 필터 */}
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">층수</div>
-								<select
-									value={selectedFloor}
-									onChange={(e) => setSelectedFloor(e.target.value)}
-									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">층수 전체</option>
-									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-										<option key={floor} value={String(floor)}>{floor}층</option>
-									))}
-								</select>
-							</div>
-						</div>
-					</div>
-
-					{/* 수급자 목록 테이블 */}
-					<div className="flex flex-col overflow-hidden bg-white border border-blue-300 rounded-lg">
-						<div className="overflow-y-auto">
-							<table className="w-full text-xs">
-								<thead className="sticky top-0 border-b border-blue-200 bg-blue-50">
-									<tr>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">연번</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">현황</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">수급자명</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">성별</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">등급</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900">나이</th>
-									</tr>
-								</thead>
-								<tbody>
-									{loading ? (
-										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
-										</tr>
-									) : filteredMembers.length === 0 ? (
-										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">수급자 데이터가 없습니다</td>
-										</tr>
-									) : (
-										currentMembers.map((member, index) => (
-											<tr
-												key={`${member.ANCD}-${member.PNUM}-${index}`}
-												onClick={() => handleSelectMember(member)}
-												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
-												}`}
-											>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">{startIndex + index + 1}</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">{member.P_NM || '-'}</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{formatCareGradeLabel(member.P_GRD)}
-												</td>
-												<td className="px-2 py-1.5 text-center">{calculateAge(member.P_BRDT)}</td>
-											</tr>
-										))
-									)}
-								</tbody>
-							</table>
-						</div>
-						{/* 페이지네이션 */}
-						{totalPages > 1 && (
-							<div className="p-2 bg-white border-t border-blue-200">
-								<div className="flex items-center justify-center gap-1">
-									<button
-										onClick={() => handlePageChange(1)}
-										disabled={currentPage === 1}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&lt;&lt;
-									</button>
-									<button
-										onClick={() => handlePageChange(currentPage - 1)}
-										disabled={currentPage === 1}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&lt;
-									</button>
-									
-									{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-										const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
-										return (
-											<button
-												key={pageNum}
-												onClick={() => handlePageChange(pageNum)}
-												className={`px-2 py-1 text-xs border rounded ${
-													currentPage === pageNum
-														? 'bg-blue-500 text-white border-blue-500'
-														: 'border-blue-300 hover:bg-blue-50'
-												}`}
-											>
-												{pageNum}
-											</button>
-										);
-									})}
-									
-									<button
-										onClick={() => handlePageChange(currentPage + 1)}
-										disabled={currentPage === totalPages}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&gt;
-									</button>
-									<button
-										onClick={() => handlePageChange(totalPages)}
-										disabled={currentPage === totalPages}
-										className="px-2 py-1 text-xs border border-blue-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-50"
-									>
-										&gt;&gt;
-									</button>
-								</div>
-							</div>
-						)}
-					</div>
-				</div>
+				<BeneficiaryListPanel selectedMember={selectedMember} onSelect={handleSelectMember} className="w-1/4" />
 
 				{/* 중간-왼쪽 패널: 치료일자 목록 */}
 				<div className="flex flex-col w-1/4 bg-white border-r border-blue-200">
@@ -687,53 +465,52 @@ export default function PhysicalTherapyPerformance() {
 
 				{/* 우측 패널: 입력 폼 */}
 				<div className="flex-1 p-4 overflow-y-auto bg-white">
-					{/* 상단: 수급자, 치료일자, 치료시간, 치료자 */}
+					{/* 상단: 수급자, 치료일자, 담당자 */}
 					<div className="flex flex-wrap items-center gap-4 mb-4">
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">수급자</label>
 							<input
 								type="text"
-								value={formData.beneficiary}
-								onChange={(e) => setFormData(prev => ({ ...prev, beneficiary: e.target.value }))}
-								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px]"
-								placeholder="수급자명"
+								value={selectedMember?.P_NM || ''}
+								readOnly
+								className="px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50 min-w-[150px]"
+								placeholder="수급자를 선택해주세요"
 							/>
 						</div>
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">치료일자</label>
 							<input
-								type="text"
-								value={formData.treatmentDate}
-								readOnly
-								className="px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50 min-w-[150px]"
+								type="date"
+								value={String((formData as any).TDT || '').slice(0, 10)}
+								onChange={(e) => {
+									setIsEditMode(true);
+									setSelectedDateIndex(null);
+									setFormData((prev: any) => ({ ...prev, TDT: e.target.value }));
+								}}
+								disabled={!selectedMember}
+								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px] disabled:bg-gray-50 disabled:border-blue-200"
 							/>
 						</div>
 						<div className="flex items-center gap-2">
-							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">치료시간</label>
+							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">담당자(사번)</label>
 							<input
-								type="time"
-								value={formData.treatmentStartTime}
-								onChange={(e) => setFormData(prev => ({ ...prev, treatmentStartTime: e.target.value }))}
-								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-							/>
-							<span className="text-blue-900">~</span>
-							<input
-								type="time"
-								value={formData.treatmentEndTime}
-								onChange={(e) => setFormData(prev => ({ ...prev, treatmentEndTime: e.target.value }))}
-								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-							/>
-						</div>
-						<div className="flex items-center gap-2">
-							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">치료자</label>
-							<input
-								type="text"
-								value={formData.therapist}
-								onChange={(e) => setFormData(prev => ({ ...prev, therapist: e.target.value }))}
+								type="number"
+								value={String((formData as any).JHEMP ?? '')}
+								onChange={(e) => setFormData((prev: any) => ({ ...prev, JHEMP: e.target.value }))}
 								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px]"
-								placeholder="치료자를 입력하세요"
+								placeholder="예) 1001"
 							/>
 						</div>
+						{selectedMember && (
+							<div className="text-sm text-blue-900/80">
+								<span className="mr-3">등급: {formatCareGradeLabel(selectedMember.P_GRD)}</span>
+								<span className="mr-3">성별: {selectedMember.P_SEX === '1' ? '남' : selectedMember.P_SEX === '2' ? '여' : '-'}</span>
+								<span className="mr-3">나이: {calculateAge((selectedMember as any).P_BRDT)}</span>
+								<span>
+									층: {extractFloorFromRoomNo((selectedMember as any).ROOM_NO) !== null ? `${extractFloorFromRoomNo((selectedMember as any).ROOM_NO)}층` : '-'}
+								</span>
+							</div>
+						)}
 					</div>
 
 					{/* 메인 컨텐츠: 4개 컬럼 */}
@@ -744,13 +521,7 @@ export default function PhysicalTherapyPerformance() {
 								<h3 className="text-base font-semibold text-blue-900">운동치료 - 기구이용</h3>
 							</div>
 							<div className="space-y-1">
-								{renderTreatmentItem('equipmentBicycle', '자전거', formData.equipmentBicycle)}
-								{renderTreatmentItem('equipmentResistanceBand', '탄력밴드운동', formData.equipmentResistanceBand)}
-								{renderTreatmentItem('equipmentFullBodyMassager', '전신안마기', formData.equipmentFullBodyMassager)}
-								{renderTreatmentItem('equipmentPully', 'Pully', formData.equipmentPully)}
-								{renderTreatmentItem('equipmentShoulderJoint', '견관절운동기', formData.equipmentShoulderJoint)}
-								{renderTreatmentItem('equipmentParallelBar', '평행봉걷기', formData.equipmentParallelBar)}
-								{renderTreatmentItem('equipmentTreadmill', '러닝머신', formData.equipmentTreadmill)}
+								{equipmentItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
 							</div>
 						</div>
 
@@ -760,29 +531,48 @@ export default function PhysicalTherapyPerformance() {
 								<h3 className="text-base font-semibold text-blue-900">운동치료 - 단순운동</h3>
 							</div>
 							<div className="space-y-1">
-								{renderTreatmentItem('simpleFootMassager', '발맛사지기', formData.simpleFootMassager)}
-								{renderTreatmentItem('simpleTiltingTable', '틸팅테이블', formData.simpleTiltingTable)}
-								{renderTreatmentItem('simpleBallExercise', '공운동', formData.simpleBallExercise)}
-								{renderTreatmentItem('simpleBeadThreading', '구술꿰기', formData.simpleBeadThreading)}
-								{renderTreatmentItem('simplePegboard', '패기보드끼우', formData.simplePegboard)}
-								{renderTreatmentItem('simpleManualExercise', '도수운동', formData.simpleManualExercise)}
-								{renderTreatmentItem('simpleROM', 'ROM', formData.simpleROM)}
+								{simpleBaseItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
+							</div>
+							<div className="mt-3">
+								<div className="text-xs text-blue-900/80 mb-1">미실시 사유</div>
+								<textarea
+									value={String((formData as any).TTEXT_1 ?? '')}
+									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_1: e.target.value }))}
+									className="w-full min-h-[72px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									placeholder="미실시 사유를 입력하세요"
+								/>
 							</div>
 						</div>
 
 						{/* Column 3: Modalities */}
 						<div className="flex-1 border border-blue-300 rounded-lg p-4 bg-white">
 							<div className="mb-4 pb-2 border-b border-blue-200">
-								<h3 className="text-base font-semibold text-blue-900">Modalities</h3>
+								<h3 className="text-base font-semibold text-blue-900">단순운동(치료/훈련) + Modalities</h3>
 							</div>
 							<div className="space-y-1">
-								{renderTreatmentItem('modalityStrength', '근력운동', formData.modalityStrength)}
-								{renderTreatmentItem('modalityFunctional', '기능향상운동', formData.modalityFunctional)}
-								{renderTreatmentItem('modalityWeightShift', '체중이동/지지', formData.modalityWeightShift)}
-								{renderTreatmentItem('modalityGaitTraining', '보행훈련', formData.modalityGaitTraining)}
-								{renderTreatmentItem('modalityHotCold', 'Hot&Cold Pa', formData.modalityHotCold)}
-								{renderTreatmentItem('modalityInfrared', '적외선치료', formData.modalityInfrared)}
-								{renderTreatmentItem('modalityUltrasound', '초음파치료', formData.modalityUltrasound)}
+								{simpleTherapyItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
+							</div>
+							<div className="mt-3">
+								<div className="text-xs text-blue-900/80 mb-1">미실시 사유(단순운동-치료/훈련)</div>
+								<textarea
+									value={String((formData as any).TTEXT_2 ?? '')}
+									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_2: e.target.value }))}
+									className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+								/>
+							</div>
+							<div className="mt-4 pt-3 border-t border-blue-100">
+								<div className="text-sm font-semibold text-blue-900 mb-2">Modalities</div>
+								<div className="space-y-1">
+									{modalityItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
+								</div>
+								<div className="mt-3">
+									<div className="text-xs text-blue-900/80 mb-1">미실시 사유(Modalities)</div>
+									<textarea
+										value={String((formData as any).TTEXT_3 ?? '')}
+										onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_3: e.target.value }))}
+										className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									/>
+								</div>
 							</div>
 						</div>
 
@@ -791,14 +581,41 @@ export default function PhysicalTherapyPerformance() {
 							<div className="mb-4 pb-2 border-b border-blue-200">
 								<h3 className="text-base font-semibold text-blue-900">기타</h3>
 							</div>
-							<div className="space-y-1">
-								{renderTreatmentItem('otherTENS', '경피신경전기', formData.otherTENS)}
-								{renderTreatmentItem('otherInterferential', '간섭전류치료', formData.otherInterferential)}
-								{renderTreatmentItem('otherElectrical', '전기자극치료', formData.otherElectrical)}
-								{renderTreatmentItem('otherParaffin', '파라핀치료', formData.otherParaffin)}
-								{renderTreatmentItem('otherTreatment1', '기타치료 1', formData.otherTreatment1)}
-								{renderTreatmentItem('otherTreatment2', '기타치료 2', formData.otherTreatment2)}
-								{renderTreatmentItem('otherTreatment3', '기타치료 3', formData.otherTreatment3)}
+							<div className="space-y-2">
+								{[1, 2, 3, 4, 5].map((n) => (
+									<div key={n} className="flex items-center gap-2 py-1.5 border-b border-blue-100">
+										<input
+											type="text"
+											value={String((formData as any)[`TETC_${n}`] ?? '')}
+											onChange={(e) => setFormData((prev: any) => ({ ...prev, [`TETC_${n}`]: e.target.value }))}
+											className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+											placeholder={`기타치료 ${n}`}
+										/>
+										<input
+											type="text"
+											value={String((formData as any)[`TETCVAL_${n}`] ?? '')}
+											onChange={(e) => setFormData((prev: any) => ({ ...prev, [`TETCVAL_${n}`]: e.target.value }))}
+											className="w-24 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+											placeholder="시간/횟수"
+										/>
+									</div>
+								))}
+							</div>
+							<div className="mt-3">
+								<div className="text-xs text-blue-900/80 mb-1">미실시 사유(기타치료)</div>
+								<textarea
+									value={String((formData as any).TTEXT_4 ?? '')}
+									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_4: e.target.value }))}
+									className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+								/>
+							</div>
+							<div className="mt-3">
+								<div className="text-xs text-blue-900/80 mb-1">비고</div>
+								<textarea
+									value={String((formData as any).ETC ?? '')}
+									onChange={(e) => setFormData((prev: any) => ({ ...prev, ETC: e.target.value }))}
+									className="w-full min-h-[72px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+								/>
 							</div>
 						</div>
 					</div>
