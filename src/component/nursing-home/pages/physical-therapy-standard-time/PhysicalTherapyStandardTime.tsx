@@ -344,12 +344,12 @@ export default function PhysicalTherapyStandardTime() {
 						>
 							{isEditing ? '저장' : '수정'}
 						</button>
-						<button
+						{/* <button
 							onClick={handleClose}
 							className="px-6 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
 						>
 							닫기
-						</button>
+						</button> */}
 					</div>
 				</div>
 			</div>

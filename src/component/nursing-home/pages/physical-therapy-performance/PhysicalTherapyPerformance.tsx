@@ -377,7 +377,7 @@ export default function PhysicalTherapyPerformance() {
 				<BeneficiaryListPanel selectedMember={selectedMember} onSelect={handleSelectMember} className="w-1/4" />
 
 				{/* 중간-왼쪽 패널: 치료일자 목록 */}
-				<div className="flex flex-col w-1/4 bg-white border-r border-blue-200">
+				<div className="flex flex-col w-[220px] bg-white border-r border-blue-200">
 					<div className="px-3 py-2 border-b border-blue-200 bg-blue-50">
 						<label className="text-sm font-medium text-blue-900">치료일자</label>
 					</div>
@@ -464,9 +464,29 @@ export default function PhysicalTherapyPerformance() {
 				</div>
 
 				{/* 우측 패널: 입력 폼 */}
-				<div className="flex-1 p-4 overflow-y-auto bg-white">
+				<div className="relative flex-1 p-4 overflow-y-auto bg-white">
+					{selectedMember && !loadingRecords && treatmentDates.length === 0 && !isEditMode && (
+						<div className="absolute inset-0 z-20 flex items-start justify-center pt-10 bg-white/65 backdrop-blur-[1px]">
+							<div className="w-[min(520px,90%)] px-4 py-3 text-sm text-blue-900 bg-white border border-blue-200 rounded shadow-sm">
+								<div className="font-medium">데이터가 없습니다.</div>
+								<div className="mt-2 flex justify-end">
+									<button
+										onClick={handleClear}
+										className="px-3 py-1.5 text-xs font-medium text-blue-900 bg-blue-200 border border-blue-300 rounded hover:bg-blue-300"
+									>
+										신규등록
+									</button>
+								</div>
+							</div>
+						</div>
+					)}
+
 					{/* 상단: 수급자, 치료일자, 담당자 */}
-					<div className="flex flex-wrap items-center gap-4 mb-4">
+					<div
+						className={`flex flex-wrap items-center gap-4 mb-4 ${
+							selectedMember && !loadingRecords && treatmentDates.length === 0 && !isEditMode ? 'pointer-events-none opacity-70' : ''
+						}`}
+					>
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">수급자</label>
 							<input
@@ -488,7 +508,7 @@ export default function PhysicalTherapyPerformance() {
 									setFormData((prev: any) => ({ ...prev, TDT: e.target.value }));
 								}}
 								disabled={!selectedMember}
-								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px] disabled:bg-gray-50 disabled:border-blue-200"
+								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 w-[140px] disabled:bg-gray-50 disabled:border-blue-200"
 							/>
 						</div>
 						<div className="flex items-center gap-2">
@@ -514,7 +534,11 @@ export default function PhysicalTherapyPerformance() {
 					</div>
 
 					{/* 메인 컨텐츠: 4개 컬럼 */}
-					<div className="flex gap-4 mb-6">
+					<div
+						className={`flex gap-4 mb-4 ${
+							selectedMember && !loadingRecords && treatmentDates.length === 0 && !isEditMode ? 'pointer-events-none opacity-70' : ''
+						}`}
+					>
 						{/* Column 1: 운동치료 - 기구이용 */}
 						<div className="flex-1 border border-blue-300 rounded-lg p-4 bg-white">
 							<div className="mb-4 pb-2 border-b border-blue-200">
@@ -534,7 +558,7 @@ export default function PhysicalTherapyPerformance() {
 								{simpleBaseItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
 							</div>
 							<div className="mt-3">
-								<div className="text-xs text-blue-900/80 mb-1">미실시 사유</div>
+								<div className="text-xs text-blue-900/80 mb-1">특이사항및변경사유(운동치료)</div>
 								<textarea
 									value={String((formData as any).TTEXT_1 ?? '')}
 									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_1: e.target.value }))}
@@ -544,45 +568,55 @@ export default function PhysicalTherapyPerformance() {
 							</div>
 						</div>
 
-						{/* Column 3: Modalities */}
+						{/* Column 3: 단순운동(치료/훈련) */}
 						<div className="flex-1 border border-blue-300 rounded-lg p-4 bg-white">
 							<div className="mb-4 pb-2 border-b border-blue-200">
-								<h3 className="text-base font-semibold text-blue-900">단순운동(치료/훈련) + Modalities</h3>
+								<h3 className="text-base font-semibold text-blue-900">단순운동(치료/훈련)</h3>
 							</div>
 							<div className="space-y-1">
 								{simpleTherapyItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
 							</div>
 							<div className="mt-3">
-								<div className="text-xs text-blue-900/80 mb-1">미실시 사유(단순운동-치료/훈련)</div>
+								<div className="text-xs text-blue-900/80 mb-1">특이사항및변경사유(단순운동-치료/훈련)</div>
 								<textarea
 									value={String((formData as any).TTEXT_2 ?? '')}
 									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_2: e.target.value }))}
 									className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 								/>
 							</div>
-							<div className="mt-4 pt-3 border-t border-blue-100">
-								<div className="text-sm font-semibold text-blue-900 mb-2">Modalities</div>
-								<div className="space-y-1">
-									{modalityItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
-								</div>
-								<div className="mt-3">
-									<div className="text-xs text-blue-900/80 mb-1">미실시 사유(Modalities)</div>
-									<textarea
-										value={String((formData as any).TTEXT_3 ?? '')}
-										onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_3: e.target.value }))}
-										className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-									/>
-								</div>
-							</div>
 						</div>
 
-						{/* Column 4: 기타 */}
+						{/* Column 4: Modalities (기존 기타 위치) */}
 						<div className="flex-1 border border-blue-300 rounded-lg p-4 bg-white">
 							<div className="mb-4 pb-2 border-b border-blue-200">
-								<h3 className="text-base font-semibold text-blue-900">기타</h3>
+								<h3 className="text-base font-semibold text-blue-900">Modalities</h3>
 							</div>
+							<div className="space-y-1">
+								{modalityItems.map((it) => renderTreatmentItem(it.chk, it.val, it.label))}
+							</div>
+							<div className="mt-3">
+								<div className="text-xs text-blue-900/80 mb-1">특이사항및변경사유(Modalities)</div>
+								<textarea
+									value={String((formData as any).TTEXT_3 ?? '')}
+									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_3: e.target.value }))}
+									className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+								/>
+							</div>
+						</div>
+					</div>
+
+					{/* 하단: 기타 (가로 널찍하게) */}
+					<div
+						className={`border border-blue-300 rounded-lg p-4 bg-white mb-6 ${
+							selectedMember && !loadingRecords && treatmentDates.length === 0 && !isEditMode ? 'pointer-events-none opacity-70' : ''
+						}`}
+					>
+						<div className="mb-4 pb-2 border-b border-blue-200 flex items-center justify-between">
+							<h3 className="text-base font-semibold text-blue-900">기타</h3>
+						</div>
+						<div className="grid grid-cols-2 gap-4">
 							<div className="space-y-2">
-								{[1, 2, 3, 4, 5].map((n) => (
+								{[1, 2, 3].map((n) => (
 									<div key={n} className="flex items-center gap-2 py-1.5 border-b border-blue-100">
 										<input
 											type="text"
@@ -595,33 +629,57 @@ export default function PhysicalTherapyPerformance() {
 											type="text"
 											value={String((formData as any)[`TETCVAL_${n}`] ?? '')}
 											onChange={(e) => setFormData((prev: any) => ({ ...prev, [`TETCVAL_${n}`]: e.target.value }))}
-											className="w-24 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+											className="w-28 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 											placeholder="시간/횟수"
 										/>
 									</div>
 								))}
 							</div>
-							<div className="mt-3">
-								<div className="text-xs text-blue-900/80 mb-1">미실시 사유(기타치료)</div>
-								<textarea
-									value={String((formData as any).TTEXT_4 ?? '')}
-									onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_4: e.target.value }))}
-									className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-								/>
-							</div>
-							<div className="mt-3">
-								<div className="text-xs text-blue-900/80 mb-1">비고</div>
-								<textarea
-									value={String((formData as any).ETC ?? '')}
-									onChange={(e) => setFormData((prev: any) => ({ ...prev, ETC: e.target.value }))}
-									className="w-full min-h-[72px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-								/>
+							<div className="space-y-2">
+								{[4, 5].map((n) => (
+									<div key={n} className="flex items-center gap-2 py-1.5 border-b border-blue-100">
+										<input
+											type="text"
+											value={String((formData as any)[`TETC_${n}`] ?? '')}
+											onChange={(e) => setFormData((prev: any) => ({ ...prev, [`TETC_${n}`]: e.target.value }))}
+											className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+											placeholder={`기타치료 ${n}`}
+										/>
+										<input
+											type="text"
+											value={String((formData as any)[`TETCVAL_${n}`] ?? '')}
+											onChange={(e) => setFormData((prev: any) => ({ ...prev, [`TETCVAL_${n}`]: e.target.value }))}
+											className="w-28 px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+											placeholder="시간/횟수"
+										/>
+									</div>
+								))}
+								<div className="mt-2">
+									<div className="text-xs text-blue-900/80 mb-1">특이사항및변경사유(기타치료)</div>
+									<textarea
+										value={String((formData as any).TTEXT_4 ?? '')}
+										onChange={(e) => setFormData((prev: any) => ({ ...prev, TTEXT_4: e.target.value }))}
+										className="w-full min-h-[60px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									/>
+								</div>
+								<div>
+									<div className="text-xs text-blue-900/80 mb-1">비고</div>
+									<textarea
+										value={String((formData as any).ETC ?? '')}
+										onChange={(e) => setFormData((prev: any) => ({ ...prev, ETC: e.target.value }))}
+										className="w-full min-h-[72px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+									/>
+								</div>
 							</div>
 						</div>
 					</div>
 
 					{/* 하단 버튼 영역 */}
-					<div className="flex justify-end gap-2">
+					<div
+						className={`flex justify-end gap-2 ${
+							selectedMember && !loadingRecords && treatmentDates.length === 0 && !isEditMode ? 'pointer-events-none opacity-70' : ''
+						}`}
+					>
 						<button
 							onClick={handleSave}
 							className="px-4 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
