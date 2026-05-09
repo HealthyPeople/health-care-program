@@ -44,6 +44,8 @@ type PlanForm = {
 export default function PhysicalTherapyPlanEvaluation() {
 	const [selectedMember, setSelectedMember] = useState<BeneficiaryMember | null>(null);
 
+	const [showDevNotice, setShowDevNotice] = useState(true);
+
 	const [planRecords, setPlanRecords] = useState<PlanRecordData[]>([]);
 	const [loadingRecords, setLoadingRecords] = useState(false);
 	const [selectedPlanIndex, setSelectedPlanIndex] = useState<number | null>(null);
@@ -530,6 +532,33 @@ export default function PhysicalTherapyPlanEvaluation() {
 					</div>
 				</div>
 			</div>
+
+			{showDevNotice && (
+				<div className="fixed inset-0 z-50">
+					<div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+					<div className="absolute inset-0 flex items-center justify-center p-4">
+						<div className="w-full max-w-[520px] rounded-xl border border-blue-200 bg-white shadow-xl">
+							<div className="px-5 py-4 border-b border-blue-100">
+								<div className="text-base font-semibold text-blue-900">안내</div>
+							</div>
+							<div className="px-5 py-4 text-sm text-blue-900 whitespace-pre-line">
+								물리치료 계획 및 평가 등록 페이지는 개발중입니다.
+								{'\n'}
+								(기존 프로그램에서 계획 및 평가 페이지 확인 못함)
+							</div>
+							<div className="px-5 py-4 border-t border-blue-100 flex justify-end">
+								<button
+									type="button"
+									onClick={() => setShowDevNotice(false)}
+									className="px-4 py-2 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								>
+									확인
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
