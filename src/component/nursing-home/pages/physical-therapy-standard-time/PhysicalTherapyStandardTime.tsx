@@ -1,13 +1,12 @@
 "use client";
 import React, { useEffect, useMemo, useState } from 'react';
-import BeneficiaryListPanel, { BeneficiaryMember } from '../../components/BeneficiaryListPanel';
 
 export default function PhysicalTherapyStandardTime() {
 	const [centerName, setCenterName] = useState('');
 	const [loading, setLoading] = useState(false);
-	const [selectedMember, setSelectedMember] = useState<BeneficiaryMember | null>(null);
+	const [isEditing, setIsEditing] = useState(false);
 
-	const createEmpty = () => ({
+  	const createEmpty = () => ({
 		SVAL01: '', SVAL02: '', SVAL03: '', SVAL04: '', SVAL05: '', SVAL06: '', SVAL07: '', SVAL08: '', SVAL09: '', SVAL10: '', SVAL11: '', SVAL12: '',
 		SVAL21: '', SVAL22: '', SVAL23: '', SVAL24: '', SVAL25: '', SVAL26: '',
 		SVAL31: '', SVAL32: '', SVAL33: '', SVAL34: '', SVAL35: '', SVAL36: '', SVAL37: '',
@@ -16,6 +15,12 @@ export default function PhysicalTherapyStandardTime() {
 		INEMPNM: '',
 	});
 	const [formData, setFormData] = useState(() => createEmpty());
+	const [originalData, setOriginalData] = useState(() => createEmpty());
+
+	// 등록자(사원) 검색
+	const [registrarSearchTerm, setRegistrarSearchTerm] = useState('');
+	const [registrarSuggestions, setRegistrarSuggestions] = useState<Array<{ EMPNO: string; EMPNM: string }>>([]);
+	const [showRegistrarDropdown, setShowRegistrarDropdown] = useState(false);
 
 	const equipmentItems = useMemo(
 		() => [
@@ -66,7 +71,21 @@ export default function PhysicalTherapyStandardTime() {
 				const res = await fetch('/api/f32090', { cache: 'no-store' });
 				const json = await res.json();
 				if (json?.success && json.data) {
-					setFormData((prev) => ({ ...prev, ...json.data }));
+					const raw = { ...createEmpty(), ...json.data } as Record<string, unknown>;
+					// F32090의 SVALxx는 CHAR(3)이라 공백 패딩이 있을 수 있음 → number input 표시 위해 trim
+					Object.keys(raw).forEach((k) => {
+						const v = raw[k];
+						if (v == null) {
+							raw[k] = '';
+							return;
+						}
+						if (typeof v === 'string') {
+							raw[k] = v.trim();
+						}
+					});
+					const next = raw as any;
+					setFormData(next);
+					setOriginalData(next);
 				}
 			} catch (e) {
 				// ignore
@@ -84,17 +103,81 @@ export default function PhysicalTherapyStandardTime() {
 		boot();
 	}, []);
 
+	const searchEmployee = async (term: string) => {
+		if (!term || term.trim() === '') {
+			setRegistrarSuggestions([]);
+			setShowRegistrarDropdown(false);
+			return;
+		}
+		try {
+			const url = `/api/f01010?name=${encodeURIComponent(term.trim())}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			if (result.success && Array.isArray(result.data)) {
+				const list = result.data.map((r: any) => ({
+					EMPNO: String(r?.EMPNO ?? ''),
+					EMPNM: String(r?.EMPNM ?? ''),
+				}));
+				setRegistrarSuggestions(list);
+				setShowRegistrarDropdown(list.length > 0);
+			} else {
+				setRegistrarSuggestions([]);
+				setShowRegistrarDropdown(false);
+			}
+		} catch (err) {
+			console.error('사원 검색 오류:', err);
+			setRegistrarSuggestions([]);
+			setShowRegistrarDropdown(false);
+		}
+	};
+
+	// 사원 검색 debounce
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			if (isEditing && registrarSearchTerm.trim() !== '') {
+				searchEmployee(registrarSearchTerm);
+			} else {
+				setRegistrarSuggestions([]);
+				setShowRegistrarDropdown(false);
+			}
+		}, 250);
+		return () => clearTimeout(timer);
+	}, [registrarSearchTerm, isEditing]);
+
+	// 외부 클릭 시 드롭다운 닫기
+	useEffect(() => {
+		const handleClickOutside = (event: MouseEvent) => {
+			const target = event.target as HTMLElement;
+			if (!target.closest('.employee-dropdown-container')) {
+				setShowRegistrarDropdown(false);
+			}
+		};
+		if (showRegistrarDropdown) {
+			document.addEventListener('mousedown', handleClickOutside);
+			return () => document.removeEventListener('mousedown', handleClickOutside);
+		}
+	}, [showRegistrarDropdown]);
+
 	const handleRegister = async () => {
+		if (!isEditing) return;
 		setLoading(true);
 		try {
+			const payload: Record<string, unknown> = { ...formData };
+			// 저장 시에도 공백 제거(CHAR 컬럼 패딩 방지 및 일관성)
+			Object.keys(payload).forEach((k) => {
+				const v = payload[k];
+				if (typeof v === 'string') payload[k] = v.trim();
+			});
 			const res = await fetch('/api/f32090', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(formData),
+				body: JSON.stringify(payload),
 			});
 			const json = await res.json().catch(() => ({}));
 			if (!res.ok || !json.success) throw new Error(json?.error || '저장 실패');
 			alert('물리치료표준시간이 저장되었습니다.');
+			setOriginalData(formData);
+			setIsEditing(false);
 		} catch (err) {
 			console.error('물리치료표준시간 등록 오류:', err);
 			alert('물리치료표준시간 등록 중 오류가 발생했습니다.');
@@ -112,13 +195,17 @@ export default function PhysicalTherapyStandardTime() {
 		return (
 			<div key={key} className="flex items-center gap-2 py-2 border-b border-blue-100">
 				<label className="text-sm text-blue-900 min-w-[180px]">{label}</label>
-				<input
-					type="number"
-					value={value}
-					onChange={(e) => setFormData((prev) => ({ ...prev, [key]: e.target.value }))}
-					className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-					placeholder="분"
-				/>
+				<div className="flex flex-1 items-center gap-2">
+					<input
+						type="number"
+						value={value}
+						onChange={(e) => setFormData((prev) => ({ ...prev, [key]: e.target.value }))}
+						disabled={!isEditing}
+						className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 disabled:bg-gray-50 disabled:border-blue-200"
+						placeholder=""
+					/>
+					<span className="text-sm text-blue-900/80 whitespace-nowrap">분</span>
+				</div>
 			</div>
 		);
 	};
@@ -135,7 +222,8 @@ export default function PhysicalTherapyStandardTime() {
 								type="text"
 								value={centerName}
 								onChange={(e) => setCenterName(e.target.value)}
-								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[200px]"
+								disabled={!isEditing}
+								className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[200px] disabled:bg-gray-50 disabled:border-blue-200"
 								placeholder="센터명"
 							/>
 						</div>
@@ -170,37 +258,91 @@ export default function PhysicalTherapyStandardTime() {
 							<textarea
 								value={String((formData as any).ETC ?? '')}
 								onChange={(e) => setFormData((prev) => ({ ...prev, ETC: e.target.value }))}
-								className="w-full min-h-[96px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
+								disabled={!isEditing}
+								className="w-full min-h-[96px] px-2 py-1 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 disabled:bg-gray-50 disabled:border-blue-200"
 							/>
 						</div>
 						<div className="w-[320px] p-4 bg-white border border-blue-300 rounded-lg">
 							<div className="text-sm font-semibold text-blue-900 mb-2">등록자</div>
-							<div className="space-y-2">
+							<div className="space-y-2 employee-dropdown-container relative">
+								<input
+									type="text"
+									value={registrarSearchTerm || String((formData as any).INEMPNM ?? '')}
+									onChange={(e) => {
+										setRegistrarSearchTerm(e.target.value);
+										setFormData((prev) => ({ ...prev, INEMPNM: e.target.value }));
+									}}
+									onFocus={() => {
+										if (isEditing && registrarSearchTerm.trim() !== '') searchEmployee(registrarSearchTerm);
+									}}
+									disabled={!isEditing}
+									className="w-full px-3 py-1.5 text-sm border border-blue-300 rounded disabled:bg-gray-50 disabled:border-blue-200"
+									placeholder="등록자 검색(성명)"
+								/>
+
+								{isEditing && showRegistrarDropdown && registrarSuggestions.length > 0 && (
+									<div className="absolute z-20 w-full mt-1 bg-white border border-blue-200 rounded shadow max-h-48 overflow-auto">
+										{registrarSuggestions.map((emp, idx) => (
+											<button
+												key={`${emp.EMPNO}-${idx}`}
+												type="button"
+												onClick={() => {
+													setFormData((prev) => ({ ...prev, INEMPNO: emp.EMPNO, INEMPNM: emp.EMPNM }));
+													setRegistrarSearchTerm(emp.EMPNM);
+													setShowRegistrarDropdown(false);
+												}}
+												className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50"
+											>
+												<span className="font-medium text-blue-900">{emp.EMPNM}</span>
+												<span className="ml-2 text-blue-900/70">({emp.EMPNO})</span>
+											</button>
+										))}
+									</div>
+								)}
+
 								<input
 									type="text"
 									value={String((formData as any).INEMPNO ?? '')}
-									onChange={(e) => setFormData((prev) => ({ ...prev, INEMPNO: e.target.value }))}
-									className="w-full px-3 py-1.5 text-sm border border-blue-300 rounded"
+									readOnly
+									className="w-full px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50"
 									placeholder="사번(INEMPNO)"
-								/>
-								<input
-									type="text"
-									value={String((formData as any).INEMPNM ?? '')}
-									onChange={(e) => setFormData((prev) => ({ ...prev, INEMPNM: e.target.value }))}
-									className="w-full px-3 py-1.5 text-sm border border-blue-300 rounded"
-									placeholder="성명(INEMPNM)"
 								/>
 							</div>
 						</div>
 					</div>
 
 					<div className="flex justify-end gap-2">
+						{isEditing && (
+							<button
+								onClick={() => {
+									setFormData(originalData);
+									setRegistrarSearchTerm(String((originalData as any).INEMPNM ?? ''));
+									setShowRegistrarDropdown(false);
+									setIsEditing(false);
+								}}
+								disabled={loading}
+								className="px-6 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								취소
+							</button>
+						)}
 						<button
-							onClick={handleRegister}
+							onClick={() => {
+								if (!isEditing) {
+									setIsEditing(true);
+									setRegistrarSearchTerm(String((formData as any).INEMPNM ?? ''));
+									return;
+								}
+								handleRegister();
+							}}
 							disabled={loading}
-							className="px-6 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+							className={`px-6 py-2 text-sm font-medium border rounded disabled:opacity-50 disabled:cursor-not-allowed ${
+								isEditing
+									? 'text-blue-900 bg-blue-200 border-blue-400 hover:bg-blue-300'
+									: 'text-white bg-green-600 border-green-700 hover:bg-green-700'
+							}`}
 						>
-							저장
+							{isEditing ? '저장' : '수정'}
 						</button>
 						<button
 							onClick={handleClose}
@@ -209,11 +351,6 @@ export default function PhysicalTherapyStandardTime() {
 							닫기
 						</button>
 					</div>
-				</div>
-
-				{/* 우측: 수급자 목록 */}
-				<div className="w-1/4">
-					<BeneficiaryListPanel selectedMember={selectedMember} onSelect={setSelectedMember} />
 				</div>
 			</div>
 		</div>
