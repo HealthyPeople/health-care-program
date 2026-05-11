@@ -26,6 +26,7 @@ const PG_GU_OPTIONS: { code: string; label: string }[] = [
 	{ code: '2', label: '신체기능강화' },
 	{ code: '3', label: '사회적응프로그램' },
 	{ code: '4', label: '가족참여프로그램' },
+	{ code: '6', label: '여가프로그램' },
 	{ code: '9', label: '기타' },
 ];
 

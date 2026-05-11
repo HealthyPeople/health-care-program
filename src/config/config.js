@@ -15,7 +15,8 @@ const config = {
       acquireTimeoutMillis: 60000, // 연결 획득 타임아웃 (60초)
     },
     connectionTimeout: 30000,    // 연결 타임아웃 (30초)
-    requestTimeout: 30000,       // 요청 타임아웃 (30초)
+    /** 기간 전체 조회 등 대량 SELECT 대비 (행 수 제한 없음과 함께 사용) */
+    requestTimeout: 120000,      // 요청 타임아웃 (120초)
     options: {
       encrypt: true,
       database: process.env.DB_DEV_DATABASE, 
