@@ -1150,9 +1150,7 @@ export default function ProgramDailyLog() {
 							onChange={(e) => setWorkPeriodEnd(e.target.value)}
 							className="px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 						/>
-						<span className="text-xs text-blue-900/80 max-w-[260px] leading-snug">
-							처음에는 이번 달이 자동 조회됩니다. 기간만 바꾼 경우 목록은 그대로 두고, 새 기간으로 보려면 「검색」을 누릅니다.
-						</span>
+
 					</div>
 					<div className="flex items-center gap-2">
 						<button
@@ -1163,13 +1161,7 @@ export default function ProgramDailyLog() {
 						>
 							검색
 						</button>
-						<button
-							type="button"
-							onClick={() => window.close()}
-							className="px-4 py-1.5 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
-						>
-							닫기
-						</button>
+
 					</div>
 				</div>
 			</div>
