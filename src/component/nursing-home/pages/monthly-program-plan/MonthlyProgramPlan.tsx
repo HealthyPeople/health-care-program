@@ -1,5 +1,11 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+
+/** type="month" 값 — 당월 `YYYY-MM` */
+function getCurrentYearMonth(): string {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 interface Program {
 	id: string;
@@ -8,8 +14,32 @@ interface Program {
 	goals?: string[];
 }
 
+type F14040Row = {
+	ANCD?: number;
+	PGSEQ?: number;
+	PGNM?: string | null;
+	PGOJ?: string | null;
+	PG_GU?: string | number | null;
+	DEL?: string | null;
+};
+
+const PG_GU_LABEL: Record<string, string> = {
+	'1': '인지기능강화',
+	'2': '신체기능강화',
+	'3': '사회적응프로그램',
+	'4': '가족참여프로그램',
+	'6': '여가프로그램',
+	'9': '기타',
+};
+
+function pgGuLabel(value: unknown): string {
+	const code = String(value ?? '').trim().replace(/^0+/, '');
+	if (!code) return '';
+	return PG_GU_LABEL[code] ?? code;
+}
+
 export default function MonthlyProgramPlan() {
-	const [executionYearMonth, setExecutionYearMonth] = useState('2025-12');
+	const [executionYearMonth, setExecutionYearMonth] = useState(() => getCurrentYearMonth());
 	const [availablePrograms, setAvailablePrograms] = useState<Program[]>([]);
 	const [selectedPrograms, setSelectedPrograms] = useState<Program[]>([]);
 	const [selectedAvailableIndex, setSelectedAvailableIndex] = useState<number | null>(null);
@@ -25,30 +55,65 @@ export default function MonthlyProgramPlan() {
 		remarks: ''
 	});
 
-	// 사용 가능한 프로그램 목록 (임시 데이터)
+	// 사용 가능한 프로그램 목록 (F14040: 세션 ANCD 기준)
+	const [availableLoading, setAvailableLoading] = useState(false);
+	const [availableError, setAvailableError] = useState<string | null>(null);
+
 	useEffect(() => {
-		const mockPrograms: Program[] = [
-			{ id: '1', category: '인지기능강화', name: '감각인지활동', goals: ['올록볼록한 고무판, 곡물오재미를 누르며 감각을 인지할 수 있다', '고무판, 곡물오재미를 누르며 소근육을 강화할 수 있다'] },
-			{ id: '2', category: '인지기능강화', name: '감각인지활동 - 만득이 만지기' },
-			{ id: '3', category: '인지기능강화', name: '감각인지활동 - 오재미 주무르기' },
-			{ id: '4', category: '인지기능강화', name: '감각인지활동 - 고무판누르기' },
-			{ id: '5', category: '인지기능강화', name: '게골게임' },
-			{ id: '6', category: '인지기능강화', name: '기억아! 기억아!' },
-			{ id: '7', category: '인지기능강화', name: '꽃꽂이' },
-			{ id: '8', category: '인지기능강화', name: '영화감상' },
-			{ id: '9', category: '인지기능강화', name: '오늘의 방송' },
-			{ id: '10', category: '인지기능강화', name: '워크북' },
-			{ id: '11', category: '인지기능강화', name: '인지강화활동' },
-			{ id: '12', category: '인지기능강화', name: '인지강화활동 - 미로찾기(6-B)' },
-			{ id: '13', category: '인지기능강화', name: '인지강화활동 - 회상하기(6-A)' },
-			{ id: '14', category: '인지기능강화', name: '인지강화활동 - 도형 맞추기/도형찾기' },
-			{ id: '15', category: '인지기능강화', name: '인지강화활동 - 분류화 하기' },
-			{ id: '16', category: '인지기능강화', name: '인지강화활동 - 색종이 찢어 붙이기' },
-			{ id: '17', category: '인지기능강화', name: '인지강화활동 - 색칠하기(6-F)' },
-			{ id: '18', category: '인지기능강화', name: '인지강화활동 - 실 꿰기' }
-		];
-		setAvailablePrograms(mockPrograms);
+		let alive = true;
+		(async () => {
+			setAvailableLoading(true);
+			setAvailableError(null);
+			try {
+				// ANCD는 서버에서 세션으로 필터링하지만, user-info로 선조회해도 OK
+				const ui = await fetch('/api/auth/user-info', { cache: 'no-store' }).then((r) => r.json());
+				const ancd = ui?.success ? ui?.data?.ancd : null;
+				const url = ancd != null && String(ancd).trim() !== '' ? `/api/f14040?ancd=${encodeURIComponent(String(ancd))}` : '/api/f14040';
+				const res = await fetch(url, { cache: 'no-store' });
+				const json = await res.json();
+				if (!res.ok || !json?.success) throw new Error(json?.error || '프로그램 목록 조회에 실패했습니다.');
+				const rows: F14040Row[] = Array.isArray(json.data) ? json.data : [];
+				const mapped: Program[] = rows
+					.filter((r) => String(r.DEL ?? '').trim().toUpperCase() !== 'D')
+					.map((r) => ({
+						id: r.PGSEQ != null ? String(r.PGSEQ) : crypto.randomUUID(),
+						category: pgGuLabel(r.PG_GU) || '기타',
+						name: String(r.PGNM ?? '').trim() || '(프로그램명 없음)',
+						goals: String(r.PGOJ ?? '').trim() ? [String(r.PGOJ ?? '').trim()] : undefined,
+					}));
+				if (!alive) return;
+				setAvailablePrograms(mapped);
+				setSelectedAvailableIndex(null);
+			} catch (e) {
+				if (!alive) return;
+				setAvailablePrograms([]);
+				setSelectedAvailableIndex(null);
+				setAvailableError(e instanceof Error ? e.message : '프로그램 목록 조회 중 오류가 발생했습니다.');
+			} finally {
+				if (alive) setAvailableLoading(false);
+			}
+		})();
+		return () => {
+			alive = false;
+		};
 	}, []);
+
+	// 페이지네이션 (사용 가능한 프로그램: 10개)
+	const AVAILABLE_PAGE_SIZE = 10;
+	const [availablePage, setAvailablePage] = useState(1);
+	const availableTotalPages = useMemo(
+		() => Math.max(1, Math.ceil(availablePrograms.length / AVAILABLE_PAGE_SIZE)),
+		[availablePrograms.length],
+	);
+	useEffect(() => {
+		setAvailablePage((p) => Math.min(p, availableTotalPages));
+	}, [availableTotalPages]);
+
+	const availablePageStart = (availablePage - 1) * AVAILABLE_PAGE_SIZE;
+	const pagedAvailablePrograms = useMemo(
+		() => availablePrograms.slice(availablePageStart, availablePageStart + AVAILABLE_PAGE_SIZE),
+		[availablePrograms, availablePageStart],
+	);
 
 	// 날짜 형식 변환 (YYYY-MM -> YYYY년MM월)
 	const formatYearMonth = (dateStr: string) => {
@@ -143,7 +208,7 @@ export default function MonthlyProgramPlan() {
 		// const response = await fetch(url);
 		// const result = await response.json();
 		
-		alert('계획 검색 기능은 준비 중입니다.');
+		alert('기능 개발 중입니다.');
 	};
 
 	// 전월 수행계획 이관 함수
@@ -153,43 +218,17 @@ export default function MonthlyProgramPlan() {
 		// const response = await fetch(url);
 		// const result = await response.json();
 		
-		alert('전월 수행계획 이관 기능은 준비 중입니다.');
+		alert('기능 개발 중입니다.');
 	};
 
 	// 저장 함수
 	const handleSave = async () => {
-		if (!programConfig.programName) {
-			alert('프로그램명을 입력해주세요.');
-			return;
-		}
-
-		if (!programConfig.executionCount) {
-			alert('시행횟수를 입력해주세요.');
-			return;
-		}
-
-		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = '/api/monthly-program-plan/save';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		yearMonth: executionYearMonth,
-			// 		...programConfig
-			// 	})
-			// });
-
-			alert('프로그램이 저장되었습니다.');
-		} catch (err) {
-			console.error('프로그램 저장 오류:', err);
-			alert('프로그램 저장 중 오류가 발생했습니다.');
-		}
+		alert('기능 개발 중입니다.');
 	};
 
 	// 출력 함수
 	const handlePrint = () => {
-		window.print();
+		alert('기능 개발 중입니다.');
 	};
 
 	return (
@@ -220,12 +259,7 @@ export default function MonthlyProgramPlan() {
 						>
 							전월수행계획이관
 						</button>
-						<button
-							onClick={() => window.close()}
-							className="px-4 py-1.5 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300"
-						>
-							닫기
-						</button>
+
 					</div>
 				</div>
 			</div>
@@ -246,27 +280,85 @@ export default function MonthlyProgramPlan() {
 								</tr>
 							</thead>
 							<tbody>
-								{availablePrograms.length === 0 ? (
+								{availableLoading ? (
+									<tr>
+										<td colSpan={2} className="px-3 py-4 text-center text-blue-900/60">
+											로딩 중...
+										</td>
+									</tr>
+								) : availableError ? (
+									<tr>
+										<td colSpan={2} className="px-3 py-4 text-center text-red-700">
+											{availableError}
+										</td>
+									</tr>
+								) : pagedAvailablePrograms.length === 0 ? (
 									<tr>
 										<td colSpan={2} className="px-3 py-4 text-center text-blue-900/60">프로그램이 없습니다</td>
 									</tr>
 								) : (
-									availablePrograms.map((program, index) => (
+									pagedAvailablePrograms.map((program, index) => {
+										const globalIndex = availablePageStart + index;
+										return (
 										<tr
 											key={program.id}
-											onClick={() => handleSelectAvailable(index)}
+											onClick={() => handleSelectAvailable(globalIndex)}
 											className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-												selectedAvailableIndex === index ? 'bg-blue-100' : ''
+												selectedAvailableIndex === globalIndex ? 'bg-blue-100' : ''
 											}`}
 										>
 											<td className="px-3 py-2 text-center border-r border-blue-100">{program.category}</td>
 											<td className="px-3 py-2 text-center">{program.name}</td>
 										</tr>
-									))
+										);
+									})
 								)}
 							</tbody>
 						</table>
 					</div>
+					{availableTotalPages > 1 ? (
+						<div className="shrink-0 flex items-center justify-center gap-1 px-2 py-2 border-t border-blue-200 bg-blue-50/60">
+							<button
+								type="button"
+								onClick={() => setAvailablePage(1)}
+								disabled={availablePage === 1}
+								className="px-2 py-0.5 text-xs border border-blue-300 rounded disabled:opacity-40 hover:bg-blue-50"
+								aria-label="첫 페이지"
+							>
+								&lt;&lt;
+							</button>
+							<button
+								type="button"
+								onClick={() => setAvailablePage((p) => Math.max(1, p - 1))}
+								disabled={availablePage === 1}
+								className="px-2 py-0.5 text-xs border border-blue-300 rounded disabled:opacity-40 hover:bg-blue-50"
+								aria-label="이전 페이지"
+							>
+								&lt;
+							</button>
+							<span className="text-xs text-blue-900 px-2 tabular-nums">
+								{availablePage} / {availableTotalPages}
+							</span>
+							<button
+								type="button"
+								onClick={() => setAvailablePage((p) => Math.min(availableTotalPages, p + 1))}
+								disabled={availablePage >= availableTotalPages}
+								className="px-2 py-0.5 text-xs border border-blue-300 rounded disabled:opacity-40 hover:bg-blue-50"
+								aria-label="다음 페이지"
+							>
+								&gt;
+							</button>
+							<button
+								type="button"
+								onClick={() => setAvailablePage(availableTotalPages)}
+								disabled={availablePage >= availableTotalPages}
+								className="px-2 py-0.5 text-xs border border-blue-300 rounded disabled:opacity-40 hover:bg-blue-50"
+								aria-label="마지막 페이지"
+							>
+								&gt;&gt;
+							</button>
+						</div>
+					) : null}
 				</div>
 
 				{/* 중간: 버튼 영역 */}
