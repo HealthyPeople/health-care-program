@@ -47,12 +47,12 @@ export const sections3: Sections3 = {
       { name: '간식내역 일괄 등록', link: '/nursingHome/snack-bulk-registration' },
       { name: '외출/외박 처리', link: '/nursingHome/outing-processing' },
     ],
-    '수급자서비스 입력기준 정보 등록': [
+    '수급자서비스 입력기준 정보 등록(설명요청_F30112)': [
       { name: '약물복용시간', link: '/nursingHome/medication-time' },
       { name: '장기요양-신체활동', link: '/nursingHome/longterm-physical-activity' },
-      { name: '장기요양-간호및지시', link: '/nursingHome/longterm-nursing-instruction' },
-      { name: '장기요양-기능및인지관리', link: '/nursingHome/longterm-functional-cognitive' },
-      { name: '장기요양-수급자상태', link: '/nursingHome/longterm-beneficiary-status' },
+      { name: '장기요양-간호및지시(설명요청_F30112)', link: '/nursingHome/longterm-nursing-instruction' },
+      { name: '장기요양-기능및인지관리(설명요청_F30112)', link: '/nursingHome/longterm-functional-cognitive' },
+      { name: '장기요양-수급자상태(설명요청_F30112)', link: '/nursingHome/longterm-beneficiary-status' },
       { name: '장기요양기록양식 출력', link: '/nursingHome/longterm-record-format' },
     ],
     '상담관리': [
@@ -79,14 +79,14 @@ export const sections3: Sections3 = {
     '장기요양제공 관리': [
       { name: '장기요양제공내역 등록', link: '/nursingHome/longterm-care-registration' },
     ],
-    '배설관찰 관리': [
+    '배설관찰 관리(설명요청_F33021)': [
       { name: '배설관찰 등록', link: '/nursingHome/intensive-excretion-observation' },
       { name: '집중배설관찰 등록', link: '/nursingHome/excretion-observation' },
     ],
     '목욕서비스 관리': [
       { name: '목욕서비스제공내역 등록', link: '/nursingHome/bath-service' },
     ],
-    '체위변경 관리': [
+    '체위변경 관리(설명요청_F33040)': [
       { name: '체위변경내역 등록', link: '/nursingHome/position-change-record' },
     ],
   },
@@ -109,7 +109,7 @@ export const sections3: Sections3 = {
     '욕창 관리': [
       { name: '욕창관리내역 등록', link: '/nursingHome/bedsore-management' },
     ],
-    '유치도뇨관 관리': [
+    '유치도뇨관 관리(설명요청_F33050)': [
       { name: '유치도뇨괸리내역 등록', link: '/nursingHome/indwelling-catheter' },
     ],
   },
@@ -132,21 +132,21 @@ export const sections3: Sections3 = {
     '월 프로그램 수행계획': [
       { name: '월 프로그램 수행계획 등록', link: '/nursingHome/monthly-program-plan' },
     ],
-    '프로그램 의견수렴 및 반영': [
-      { name: '프로그램 의견수렴 및 반영', link: '/nursingHome/program-feedback' },
+    '프로그램 의견수렴 및 반영(신규/임의개발)': [
+      { name: '프로그램 의견수렴 및 반영(신규/임의개발)', link: '/nursingHome/program-feedback' },
     ],
   },
   '요구도관리': {
-    '욕구 사정 기록지': [
+    '욕구 사정 기록지(설명요청_F51012)': [
       { name: '욕구 사정 기록지 등록', link: '/nursingHome/needs-assessment-record' },
     ],
-    '욕창 위험도 측정': [
+    '욕창 위험도 측정(설명요청_F51013)': [
       { name: '욕창 위험도 측정내역 등록', link: '/nursingHome/bedsore-risk-measurement' },
     ],
-    '낙상 위험측정(Hnhn)': [
+    '낙상 위험측정(Hnhn)(설명요청_F51014)': [
       { name: '낙상 위험측정(Hnhn) 내역 등록', link: '/nursingHome/fall-risk-measurement' },
     ],
-    '인지상태 평가': [
+    '인지상태 평가(설명요청_F51015)': [
       { name: '인지상태 평가내역 등록', link: '/nursingHome/cognitive-assessment-record' },
     ],
   },

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { formatCareGradeLabel } from "../../utils/careGrade";
 
 interface MemberData {
@@ -11,11 +11,192 @@ interface MemberData {
 	P_GRD: string;
 	P_BRDT: string;
 	P_ST: string;
+	P_YYNO?: string;
+	P_YYDT?: string;
+	P_YYSDT?: string;
+	P_YYEDT?: string;
 	[key: string]: unknown;
+}
+
+function num(v: unknown): number {
+	const n = parseInt(String(v ?? "0").replace(/,/g, ""), 10);
+	return Number.isFinite(n) ? n : 0;
+}
+
+function fmtInt(n: number): string {
+	return String(Math.round(n));
+}
+
+function formatBirthFromDb(v: unknown): string {
+	if (v == null) return "";
+	const s = String(v).trim();
+	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10).replace(/-/g, "");
+	if (/^\d{8}$/.test(s)) return s;
+	return s;
+}
+
+function displayBirth(s: string): string {
+	if (!s) return "";
+	if (s.length === 8 && /^\d{8}$/.test(s)) {
+		return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+	}
+	if (s.includes("-") && s.length >= 10) return s.slice(0, 10);
+	return s;
+}
+
+/** F40100 한 행 → 상단 테이블 행 */
+function mapDbToSalaryRow(r: Record<string, unknown>): SalaryRow {
+	const sal1 = num(r.SAL1);
+	const sal2 = num(r.SAL2);
+	const b1 = num(r.BSAL1);
+	const b2 = num(r.BSAL2);
+	const b3 = num(r.BSAL3);
+	const b4 = num(r.BSAL4);
+	const b6 = num(r.BSAL6);
+	const b7 = num(r.BSAL7);
+	const b8 = num(r.BSAL8);
+	const b9 = num(r.BSAL9);
+	const esal = num(r.ESAL);
+	const sumBs = b1 + b2 + b3 + b4 + b6 + b7 + b8 + b9;
+	const benefitTotal = sal1 + sal2 + sumBs + esal;
+	const recipientTotal = sal2 + sumBs + esal;
+	const half = Math.floor(b9 / 2);
+	return {
+		pnum: String(r.PNUM ?? ""),
+		recipient: String(r.P_NM ?? ""),
+		birthday: displayBirth(formatBirthFromDb(r.P_BRDT)),
+		grade: formatCareGradeLabel(String(r.P_GRD ?? "")),
+		benefitTotal: fmtInt(benefitTotal),
+		nhaContribution: fmtInt(sal1),
+		recipientContribution: fmtInt(sal2),
+		nonBenefitMeal: fmtInt(b1),
+		roomUpgradeFee: fmtInt(b6),
+		outpatientFee: fmtInt(b3),
+		contractedMedical: fmtInt(half),
+		contractedPrescription: fmtInt(b9 - half),
+		otherCosts: fmtInt(esal),
+		recipientContributionTotal: fmtInt(recipientTotal),
+	};
+}
+
+/** F40100 → 하단 상세 */
+function mapDbToDetailForm(r: Record<string, unknown>): SalaryDetailForm {
+	const b9 = num(r.BSAL9);
+	const half = Math.floor(b9 / 2);
+	return {
+		recipient: String(r.P_NM ?? ""),
+		birthday: displayBirth(formatBirthFromDb(r.P_BRDT)),
+		inSper: r.INSPER != null && r.INSPER !== "" ? String(r.INSPER) : "",
+		usrPer: r.USRPER != null && r.USRPER !== "" ? String(r.USRPER) : "",
+		usrGu: String(r.USRGU ?? "1").trim() || "1",
+		nhaContribution: fmtInt(num(r.SAL1)),
+		recipientContribution: fmtInt(num(r.SAL2)),
+		beautyCost: fmtInt(num(r.BSAL4)),
+		nonBenefitMeal: fmtInt(num(r.BSAL1)),
+		nonBenefitSnack: fmtInt(num(r.BSAL2)),
+		otherCosts: fmtInt(num(r.ESAL)),
+		otherCostDesc: String(r.ESALDES ?? ""),
+		premiumRoomFee: fmtInt(num(r.BSAL6)),
+		outpatientFee: fmtInt(num(r.BSAL3)),
+		roomAdjustFee: "",
+		bathFee: fmtInt(num(r.BSAL7)),
+		dementiaFee: fmtInt(num(r.BSAL8)),
+		contractedMedicalFee: fmtInt(half),
+		prescriptionFee: fmtInt(b9 - half),
+	};
+}
+
+function parseAmt(s: string): number {
+	const n = parseInt(String(s ?? "").replace(/,/g, "").trim(), 10);
+	return Number.isFinite(n) ? n : 0;
+}
+
+function toYmd(v: unknown): string | null {
+	if (v == null || v === "") return null;
+	const s = String(v).trim();
+	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+	if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+	return null;
+}
+
+/** 상세 폼 + 수급자 → F40100 MERGE용 row */
+function buildF40100Row(
+	member: MemberData,
+	salmm6: string,
+	form: SalaryDetailForm
+): Record<string, unknown> {
+	const bsal9 =
+		parseAmt(form.roomAdjustFee) +
+		parseAmt(form.contractedMedicalFee) +
+		parseAmt(form.prescriptionFee);
+	return {
+		ANCD: member.ANCD,
+		SALMM: salmm6,
+		PNUM: member.PNUM,
+		INSPER: form.inSper.trim() === "" ? null : Number(form.inSper.replace(",", ".")),
+		USRPER: form.usrPer.trim() === "" ? null : Number(form.usrPer.replace(",", ".")),
+		USRGU: (form.usrGu || "1").trim().slice(0, 1),
+		SAL1: parseAmt(form.nhaContribution),
+		SAL2: parseAmt(form.recipientContribution),
+		BSAL1: parseAmt(form.nonBenefitMeal),
+		BSAL2: parseAmt(form.nonBenefitSnack),
+		BSAL3: parseAmt(form.outpatientFee),
+		BSAL4: parseAmt(form.beautyCost),
+		BSAL6: parseAmt(form.premiumRoomFee),
+		BSAL7: parseAmt(form.bathFee),
+		BSAL8: parseAmt(form.dementiaFee),
+		BSAL9: bsal9,
+		ESAL: parseAmt(form.otherCosts),
+		ESALDES: form.otherCostDesc.trim() || null,
+		SNM: null,
+		S_GU: null,
+		ENM: null,
+		RDES: null,
+		P_GRD: String(member.P_GRD ?? "").trim().slice(0, 2) || null,
+		P_YYNO: member.P_YYNO != null ? String(member.P_YYNO) : null,
+		P_YYDT: toYmd(member.P_YYDT),
+		P_YYSDT: toYmd(member.P_YYSDT),
+		P_YYEDT: toYmd(member.P_YYEDT),
+		ETC: null,
+		P_NM: member.P_NM || null,
+		P_BRDT: member.P_BRDT || null,
+		P_SEX: String(member.P_SEX ?? "").trim().slice(0, 1) || null,
+		P_ST: String(member.P_ST ?? "").trim().slice(0, 1) || null,
+		ANGH: null,
+		ANNM: null,
+		ANADD: null,
+		TAXNUM: null,
+		TAXOWN: null,
+		ANTEL: null,
+	};
+}
+
+/** 급여 그리드(F40100) 행 → 저장용 수급자 스텁 (좌측 목록 제거 후 행 선택 시 사용) */
+function salaryRecordToMemberData(r: Record<string, unknown>): MemberData {
+	return {
+		ANCD: String(r.ANCD ?? ""),
+		PNUM: String(r.PNUM ?? ""),
+		P_NM: String(r.P_NM ?? ""),
+		P_SEX: String(r.P_SEX ?? ""),
+		P_GRD: String(r.P_GRD ?? ""),
+		P_BRDT: String(r.P_BRDT ?? ""),
+		P_ST: String(r.P_ST ?? ""),
+		P_YYNO: r.P_YYNO != null ? String(r.P_YYNO) : undefined,
+		P_YYDT: r.P_YYDT != null ? String(r.P_YYDT) : undefined,
+		P_YYSDT: r.P_YYSDT != null ? String(r.P_YYSDT) : undefined,
+		P_YYEDT: r.P_YYEDT != null ? String(r.P_YYEDT) : undefined,
+	};
+}
+
+function payYearMonthToSalmm(ym: string): string | null {
+	const d = String(ym || "").replace(/\D/g, "");
+	if (d.length === 6) return d;
+	return null;
 }
 
 // 급여 발생 행 타입 (테이블용)
 interface SalaryRow {
+	pnum: string;
 	recipient: string;
 	birthday: string;
 	grade: string;
@@ -31,19 +212,25 @@ interface SalaryRow {
 	recipientContributionTotal: string;
 }
 
-// 하단 상세 폼 데이터
+// 하단 상세 폼 데이터 (F40100 매핑)
 interface SalaryDetailForm {
 	recipient: string;
 	birthday: string;
+	inSper: string;
+	usrPer: string;
+	usrGu: string;
 	nhaContribution: string;
 	recipientContribution: string;
 	beautyCost: string;
 	nonBenefitMeal: string;
 	nonBenefitSnack: string;
 	otherCosts: string;
+	otherCostDesc: string;
 	premiumRoomFee: string;
 	outpatientFee: string;
 	roomAdjustFee: string;
+	bathFee: string;
+	dementiaFee: string;
 	contractedMedicalFee: string;
 	prescriptionFee: string;
 }
@@ -51,361 +238,127 @@ interface SalaryDetailForm {
 const initialDetailForm: SalaryDetailForm = {
 	recipient: "",
 	birthday: "",
+	inSper: "",
+	usrPer: "",
+	usrGu: "1",
 	nhaContribution: "",
 	recipientContribution: "",
 	beautyCost: "",
 	nonBenefitMeal: "",
 	nonBenefitSnack: "",
 	otherCosts: "",
+	otherCostDesc: "",
 	premiumRoomFee: "",
 	outpatientFee: "",
 	roomAdjustFee: "",
+	bathFee: "",
+	dementiaFee: "",
 	contractedMedicalFee: "",
 	prescriptionFee: "",
 };
 
 export default function MonthlySalaryData() {
-	// 수급자 목록 (좌측)
-	const [memberList, setMemberList] = useState<MemberData[]>([]);
-	const [loading, setLoading] = useState(false);
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
-	const [selectedStatus, setSelectedStatus] = useState<string>("입소");
-	const [selectedGrade, setSelectedGrade] = useState<string>("");
-	const [selectedFloor, setSelectedFloor] = useState<string>("");
-	const [searchTerm, setSearchTerm] = useState("");
-	const [currentPage, setCurrentPage] = useState(1);
-	const itemsPerPage = 10;
 
-	// 급여발생자료 (우측)
+	// 급여발생자료 (우측) — F40100
 	const [payYearMonth, setPayYearMonth] = useState("2026-01");
-	const [payCalcUnit, setPayCalcUnit] = useState(true); // true: 십미만절사
-	const [salaryRows, setSalaryRows] = useState<SalaryRow[]>([]);
+	const [payCalcUnit, setPayCalcUnit] = useState(true); // true: 십미만절사 (추후 계산로직 연동)
+	const [salaryRecords, setSalaryRecords] = useState<Record<string, unknown>[]>([]);
+	const [salaryLoading, setSalaryLoading] = useState(false);
 	const [detailForm, setDetailForm] = useState<SalaryDetailForm>(initialDetailForm);
 
-	const fetchMembers = async (nameSearch?: string) => {
-		setLoading(true);
+	const salaryRows: SalaryRow[] = salaryRecords.map(mapDbToSalaryRow);
+
+	const fetchSalaryList = async () => {
+		const salmm = payYearMonthToSalmm(payYearMonth);
+		if (!salmm) {
+			alert("급여년월을 선택해 주세요.");
+			return;
+		}
+		setSalaryLoading(true);
 		try {
-			const url =
-				nameSearch && nameSearch.trim() !== ""
-					? `/api/f10010?name=${encodeURIComponent(nameSearch.trim())}`
-					: "/api/f10010";
-			const response = await fetch(url);
-			const result = await response.json();
-			if (result.success) {
-				setMemberList(result.data || []);
+			const res = await fetch(`/api/f40100?salmm=${encodeURIComponent(salmm)}`);
+			const result = await res.json();
+			if (result.success && Array.isArray(result.data)) {
+				setSalaryRecords(result.data);
+			} else {
+				setSalaryRecords([]);
+				if (!result.success) alert(result.error || "급여 데이터 조회에 실패했습니다.");
 			}
 		} catch (err) {
-			console.error("수급자 목록 조회 오류:", err);
+			console.error("F40100 조회 오류:", err);
+			setSalaryRecords([]);
+			alert("급여 데이터 조회 중 오류가 발생했습니다.");
 		} finally {
-			setLoading(false);
+			setSalaryLoading(false);
 		}
 	};
 
-	const calculateAge = (birthDate: string) => {
-		if (!birthDate) return "-";
-		try {
-			const year = parseInt(birthDate.substring(0, 4), 10);
-			const currentYear = new Date().getFullYear();
-			return (currentYear - year).toString();
-		} catch {
-			return "-";
-		}
-	};
-
-	const formatBirthday = (dateStr: string) => {
-		if (!dateStr) return "";
-		if (dateStr.length >= 8) {
-			return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-		}
-		return dateStr;
-	};
-
-	const filteredMembers = memberList
-		.filter((member) => {
-			if (selectedStatus) {
-				const memberStatus = String(member.P_ST || "").trim();
-				if (selectedStatus === "입소" && memberStatus !== "1") return false;
-				if (selectedStatus === "퇴소" && memberStatus !== "9") return false;
-			}
-			if (selectedGrade) {
-				const memberGrade = String(member.P_GRD || "").trim();
-				if (memberGrade !== String(selectedGrade).trim()) return false;
-			}
-			if (selectedFloor) {
-				const memberFloor = String(member.P_FLOOR || "").trim();
-				if (memberFloor !== String(selectedFloor).trim()) return false;
-			}
-			if (searchTerm && searchTerm.trim() !== "") {
-				if (!member.P_NM?.toLowerCase().includes(searchTerm.toLowerCase().trim())) return false;
-			}
-			return true;
-		})
-		.sort((a, b) => (a.P_NM || "").trim().localeCompare((b.P_NM || "").trim(), "ko"));
-
-	const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
-	const startIndex = (currentPage - 1) * itemsPerPage;
-	const endIndex = startIndex + itemsPerPage;
-	const currentMembers = filteredMembers.slice(startIndex, endIndex);
-
-	useEffect(() => {
-		fetchMembers();
-	}, []);
-
-	useEffect(() => {
-		const timer = setTimeout(() => {
-			setCurrentPage(1);
-			fetchMembers(searchTerm);
-		}, 300);
-		return () => clearTimeout(timer);
-	}, [searchTerm]);
-
-	useEffect(() => {
-		setCurrentPage(1);
-	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
-
-	const handleSelectMember = (member: MemberData) => {
-		setSelectedMember(member);
-		setDetailForm((prev) => ({
-			...prev,
-			recipient: member.P_NM || "",
-			birthday: formatBirthday(member.P_BRDT || ""),
-		}));
-		// TODO: 선택 수급자 급여 데이터 로드 시 salaryRows/ detailForm 연동
+	const handleRowClick = (row: SalaryRow) => {
+		const rec = salaryRecords.find((r) => String(r.PNUM ?? "").trim() === row.pnum.trim());
+		if (!rec) return;
+		setSelectedMember(salaryRecordToMemberData(rec));
+		setDetailForm(mapDbToDetailForm(rec));
 	};
 
 	const handleSearch = () => {
-		// TODO: 급여년월 기준 검색 API
-		setSalaryRows([]);
+		void fetchSalaryList();
 	};
 
 	const handleCalcAll = () => {
-		// TODO: 전체급여계산
+		alert("전체 급여계산은 배치/별도 모듈에서 처리됩니다. (십미만절사 옵션은 추후 반영)");
 	};
 
 	const handleCalcIndividual = () => {
-		// TODO: 개별계산
+		alert("개별 급여계산은 추후 연동 예정입니다.");
 	};
 
 	const handleClose = () => {
-		// TODO: 닫기 (뒤로가기 또는 모달 닫기)
+		if (typeof window !== "undefined" && window.history.length > 1) {
+			window.history.back();
+		}
 	};
 
 	const handleDetailHistory = () => {
-		// TODO: 상세내역
+		alert("상세내역 화면은 추후 연동 예정입니다.");
 	};
 
-	const handleSave = () => {
-		// TODO: 저장
+	const handleSave = async () => {
+		if (!selectedMember) {
+			alert("상단 급여 목록에서 수급자 행을 선택한 뒤 저장해 주세요.");
+			return;
+		}
+		const salmm = payYearMonthToSalmm(payYearMonth);
+		if (!salmm) {
+			alert("급여년월을 선택해 주세요.");
+			return;
+		}
+		setSalaryLoading(true);
+		try {
+			const row = buildF40100Row(selectedMember, salmm, detailForm);
+			const res = await fetch("/api/f40100", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ row }),
+			});
+			const result = await res.json();
+			if (!res.ok || !result.success) {
+				alert(result.error || "저장에 실패했습니다.");
+				return;
+			}
+			alert("저장되었습니다.");
+			await fetchSalaryList();
+		} catch (err) {
+			console.error("F40100 저장 오류:", err);
+			alert("저장 중 오류가 발생했습니다.");
+		} finally {
+			setSalaryLoading(false);
+		}
 	};
 
 	return (
 		<div className="flex flex-col min-h-screen text-black bg-white">
 			<div className="flex h-[calc(100vh-56px)]">
-				{/* 좌측 패널: 수급자 목록 (CognitiveAssessmentRecord와 동일) */}
-				<div className="flex flex-col w-1/4 p-4 bg-white border-r border-blue-200">
-					<div className="mb-3">
-						<h3 className="mb-2 text-sm font-semibold text-blue-900">수급자 목록</h3>
-						<div className="space-y-2">
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">이름 검색</div>
-								<input
-									className="w-full px-2 py-1 text-xs bg-white border border-blue-300 rounded"
-									placeholder="예) 홍길동"
-									value={searchTerm}
-									onChange={(e) => setSearchTerm(e.target.value)}
-								/>
-							</div>
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">현황</div>
-								<select
-									value={selectedStatus}
-									onChange={(e) => setSelectedStatus(e.target.value)}
-									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">현황 전체</option>
-									<option value="입소">입소</option>
-									<option value="퇴소">퇴소</option>
-								</select>
-							</div>
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">등급</div>
-								<select
-									value={selectedGrade}
-									onChange={(e) => setSelectedGrade(e.target.value)}
-									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">등급 전체</option>
-									<option value="1">1등급</option>
-									<option value="2">2등급</option>
-									<option value="3">3등급</option>
-									<option value="4">4등급</option>
-									<option value="5">5등급</option>
-									<option value="9">인지지원</option>
-								</select>
-							</div>
-							<div className="space-y-1">
-								<div className="text-xs text-blue-900/80">층수</div>
-								<select
-									value={selectedFloor}
-									onChange={(e) => setSelectedFloor(e.target.value)}
-									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">층수 전체</option>
-									{Array.from(
-										new Set(
-											memberList
-												.map((m) => m.P_FLOOR)
-												.filter((f) => f != null && f !== "")
-										)
-									)
-										.sort((a, b) => Number(a) - Number(b))
-										.map((floor) => {
-											const f = String(floor);
-											return (
-												<option key={f} value={f}>
-													{f}층
-												</option>
-											);
-										})}
-								</select>
-							</div>
-						</div>
-					</div>
-
-					<div className="flex flex-col overflow-hidden bg-white border border-blue-300 rounded-lg">
-						<div className="overflow-y-auto">
-							<table className="w-full text-xs">
-								<thead className="sticky top-0 border-b border-blue-200 bg-blue-50">
-									<tr>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">
-											연번
-										</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">
-											현황
-										</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">
-											수급자명
-										</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">
-											성별
-										</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">
-											등급
-										</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900">
-											나이
-										</th>
-									</tr>
-								</thead>
-								<tbody>
-									{loading ? (
-										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">
-												로딩 중...
-											</td>
-										</tr>
-									) : filteredMembers.length === 0 ? (
-										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">
-												수급자 데이터가 없습니다
-											</td>
-										</tr>
-									) : (
-										currentMembers.map((member, index) => (
-											<tr
-												key={`${member.ANCD}-${member.PNUM}-${index}`}
-												onClick={() => handleSelectMember(member)}
-												className={`border-b border-blue-50 cursor-pointer hover:bg-blue-50 ${
-													selectedMember?.ANCD === member.ANCD &&
-													selectedMember?.PNUM === member.PNUM
-														? "bg-blue-100"
-														: ""
-												}`}
-											>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{startIndex + index + 1}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_ST === "1" ? "입소" : member.P_ST === "9" ? "퇴소" : "-"}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_NM || "-"}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_SEX === "1" ? "남" : member.P_SEX === "2" ? "여" : "-"}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{formatCareGradeLabel(member.P_GRD)}
-												</td>
-												<td className="px-2 py-1.5 text-center">
-													{calculateAge(member.P_BRDT)}
-												</td>
-											</tr>
-										))
-									)}
-								</tbody>
-							</table>
-						</div>
-						{totalPages > 1 && (
-							<div className="border-t border-blue-200 bg-white p-2">
-								<div className="flex items-center justify-center gap-1">
-									<button
-										type="button"
-										onClick={() => setCurrentPage(1)}
-										disabled={currentPage === 1}
-										className="rounded border border-blue-300 px-2 py-1 text-xs hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										&lt;&lt;
-									</button>
-									<button
-										type="button"
-										onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-										disabled={currentPage === 1}
-										className="rounded border border-blue-300 px-2 py-1 text-xs hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										&lt;
-									</button>
-									{Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-										const pageNum =
-											Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
-										return (
-											<button
-												type="button"
-												key={pageNum}
-												onClick={() => setCurrentPage(pageNum)}
-												className={`rounded border px-2 py-1 text-xs ${
-													currentPage === pageNum
-														? "border-blue-500 bg-blue-500 text-white"
-														: "border-blue-300 hover:bg-blue-50"
-												}`}
-											>
-												{pageNum}
-											</button>
-										);
-									})}
-									<button
-										type="button"
-										onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-										disabled={currentPage === totalPages}
-										className="rounded border border-blue-300 px-2 py-1 text-xs hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										&gt;
-									</button>
-									<button
-										type="button"
-										onClick={() => setCurrentPage(totalPages)}
-										disabled={currentPage === totalPages}
-										className="rounded border border-blue-300 px-2 py-1 text-xs hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										&gt;&gt;
-									</button>
-								</div>
-							</div>
-						)}
-					</div>
-				</div>
-
-				{/* 우측 패널: 수급자급여발생자료 */}
 				<div className="flex flex-1 flex-col overflow-hidden bg-white">
 					{/* 상단: 제목 + 급여년월/계산단위 + 버튼 */}
 					<div className="flex flex-wrap items-center gap-4 border-b border-blue-200 bg-blue-50/50 p-4">
@@ -511,20 +464,32 @@ export default function MonthlySalaryData() {
 									</tr>
 								</thead>
 								<tbody>
-									{salaryRows.length === 0 ? (
+									{salaryLoading ? (
+										<tr>
+											<td colSpan={13} className="px-2 py-8 text-center text-blue-900/60">
+												로딩 중...
+											</td>
+										</tr>
+									) : salaryRows.length === 0 ? (
 										<tr>
 											<td
 												colSpan={13}
 												className="px-2 py-8 text-center text-blue-900/60"
 											>
-												급여 데이터가 없습니다. 검색 또는 수급자를 선택해 주세요.
+												급여 데이터가 없습니다. 급여년월을 선택한 뒤 검색해 주세요.
 											</td>
 										</tr>
 									) : (
 										salaryRows.map((row, idx) => (
 											<tr
-												key={idx}
-												className="border-b border-blue-50 hover:bg-blue-50/50"
+												key={`${row.pnum}-${idx}`}
+												onClick={() => handleRowClick(row)}
+												className={`cursor-pointer border-b border-blue-50 hover:bg-blue-50/50 ${
+													selectedMember &&
+													String(selectedMember.PNUM).trim() === row.pnum.trim()
+														? "bg-blue-100"
+														: ""
+												}`}
 											>
 												<td className="border-r border-blue-100 px-2 py-1.5 text-center">
 													{row.recipient}
@@ -601,6 +566,50 @@ export default function MonthlySalaryData() {
 									}
 									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
 								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
+									보험자부담율%
+								</label>
+								<input
+									type="text"
+									value={detailForm.inSper}
+									onChange={(e) =>
+										setDetailForm((prev) => ({ ...prev, inSper: e.target.value }))
+									}
+									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									placeholder="INSPER"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
+									수급자부담율%
+								</label>
+								<input
+									type="text"
+									value={detailForm.usrPer}
+									onChange={(e) =>
+										setDetailForm((prev) => ({ ...prev, usrPer: e.target.value }))
+									}
+									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									placeholder="USRPER"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
+									부담구분
+								</label>
+								<select
+									value={detailForm.usrGu}
+									onChange={(e) =>
+										setDetailForm((prev) => ({ ...prev, usrGu: e.target.value }))
+									}
+									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								>
+									<option value="1">1 일반</option>
+									<option value="2">2 50%경감</option>
+									<option value="3">3 기초생활</option>
+								</select>
 							</div>
 							<div className="flex items-center gap-2">
 								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
@@ -681,6 +690,34 @@ export default function MonthlySalaryData() {
 							</div>
 							<div className="flex items-center gap-2">
 								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
+									목욕비
+								</label>
+								<input
+									type="text"
+									value={detailForm.bathFee}
+									onChange={(e) =>
+										setDetailForm((prev) => ({ ...prev, bathFee: e.target.value }))
+									}
+									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									placeholder="BSAL7"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
+									치매지원
+								</label>
+								<input
+									type="text"
+									value={detailForm.dementiaFee}
+									onChange={(e) =>
+										setDetailForm((prev) => ({ ...prev, dementiaFee: e.target.value }))
+									}
+									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									placeholder="BSAL8"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">
 									기타비용
 								</label>
 								<input
@@ -690,6 +727,20 @@ export default function MonthlySalaryData() {
 										setDetailForm((prev) => ({ ...prev, otherCosts: e.target.value }))
 									}
 									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+							<div className="col-span-2 flex items-start gap-2 md:col-span-4">
+								<label className="w-24 shrink-0 pt-1.5 text-sm font-medium text-blue-900">
+									기타내역
+								</label>
+								<textarea
+									value={detailForm.otherCostDesc}
+									onChange={(e) =>
+										setDetailForm((prev) => ({ ...prev, otherCostDesc: e.target.value }))
+									}
+									rows={2}
+									className="min-h-[52px] flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									placeholder="ESALDES"
 								/>
 							</div>
 							<div className="flex items-center gap-2">

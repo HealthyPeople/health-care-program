@@ -1,6 +1,20 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import {
+	NO_ROOM_VALUE,
+	attachLatestRoomNoByPnum,
+	availableFloorsFromMembers,
+} from '../../utils/roomNoFloor';
+import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
+import {
+	emptySnapshot,
+	hydrateFromF51012Row,
+	buildF51012RowPayload,
+	collectUiSnapshot,
+	type ActivityAssessment,
+	type F51012UiSnapshot,
+} from './f51012Mapper';
 
 interface MemberData {
 	ANCD: string;
@@ -10,12 +24,8 @@ interface MemberData {
 	P_GRD: string;
 	P_BRDT: string;
 	P_ST: string;
+	ROOM_NO?: string | null;
 	[key: string]: any;
-}
-
-interface ActivityAssessment {
-	activity: string;
-	value: '○' | '△' | 'X' | '';
 }
 
 export default function NeedsAssessmentRecord() {
@@ -75,14 +85,14 @@ export default function NeedsAssessmentRecord() {
 		'순환기계-기타': true,
 		'근골격계-관절염': true,
 		'근골격계-요통,좌골통': false,
-		'근골격계-기타척추질환': false,
+		'근골격계-기타 척추질환': false,
 		'근골격계-골다공증': false,
 		'근골격계-기타': false,
 		'신경계-치매': true,
 		'신경계-뇌경색': false,
 		'신경계-파킨슨병': false,
 		'신경계-두통': false,
-		'신경계-두통외통증': false,
+		'신경계-두통외 통증': false,
 		'신경계-기타': false,
 		'정신.행동-신경증': false,
 		'정신.행동-우울증': false,
@@ -241,6 +251,26 @@ export default function NeedsAssessmentRecord() {
 		content: '상체 기능은 양호하나 신체 활용에 대한 인지 저하로 인해 의복 착?탈의 시 부분적 도움이 필요함.\n양치질은 스스로 가능하나 마무리 과정에서 약간의 도움이 요구됨.\n식사 시에는 도구 사용에 어려움이 없으나 식사량이 적으며, 입소 전부터 지속된 소식 경향을 보이심.\n반찬을 한 그릇에 모으는 등 반복적 정리 행동이 관찰됨.\n배뇨?배변 감각과 표현은 가능하며, 전적인 도움을 통해 화장실 이용이 가능하고 배설 상태는 양호하심\n\n과거 고관절 수술 및 골절 시술 이력이 있으며 고관절과 무릎 관절 상태가 악화되지 않고 유지되기를 희망하심.\n상지 기능은 비교적 양호하나 청력은 좌측 위주로 소통이 가능하고 치아는 아래 앞니 두 개가 임플란트이며 대부분 자연치를 유지하고 있음.\n\n치매로 인한 지남력, 기억력, 계산능력, 시공간 구성 능력 등 전반적 인지 기능이 심하게 저하되어 있으며, 인지검사에서는 질문에 적절한 답을 하지 못하고 동문서답을 지속해 4점으로 평가되었음.\n평소에도 대화가 본인의 하고 싶은 말 위주로 이어지며, 혼잣말이 많고 의사소통의 일관성이 떨어진 상태이나 간혹 질문을 이해하고 의사를 표현할 때도 있으나 그 빈도는 낮은 편'
 	});
 
+	const applyF51012Snapshot = (s: F51012UiSnapshot) => {
+		setFormData(s.formData);
+		setActivities(s.activities);
+		setDisease1Data(s.disease1Data);
+		setDisease2Data(s.disease2Data);
+		setDiseaseFormData(s.diseaseFormData);
+		setRehabilitationData(s.rehabilitationData);
+		setRehabilitationJudgmentBasis(s.rehabilitationJudgmentBasis);
+		setNursingData(s.nursingData);
+		setNursingJudgmentBasis(s.nursingJudgmentBasis);
+		setCognitionData(s.cognitionData);
+		setCognitionJudgmentBasis(s.cognitionJudgmentBasis);
+		setCommunicationData(s.communicationData);
+		setNutritionData(s.nutritionData);
+		setFamilyEnvironmentData(s.familyEnvironmentData);
+		setResourceUtilizationData(s.resourceUtilizationData);
+		setIndividualNeedsData(s.individualNeedsData);
+		setOverallAssessmentData(s.overallAssessmentData);
+	};
+
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -250,6 +280,8 @@ export default function NeedsAssessmentRecord() {
 	const [searchTerm, setSearchTerm] = useState('');
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
+
+	const availableFloors = availableFloorsFromMembers(memberList);
 
 	// 수급자 목록 조회
 	const fetchMembers = async (nameSearch?: string) => {
@@ -263,7 +295,10 @@ export default function NeedsAssessmentRecord() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMemberList(result.data || []);
+				const raw = Array.isArray(result.data) ? result.data : [];
+				// F10010에는 ROOM_NO가 없음 — MemberInfoView와 동일하게 F14090에서 병합
+				const merged = await attachLatestRoomNoByPnum<MemberData>(raw as MemberData[]);
+				setMemberList(merged);
 			}
 		} catch (err) {
 			console.error('수급자 목록 조회 오류:', err);
@@ -304,12 +339,8 @@ export default function NeedsAssessmentRecord() {
 			}
 		}
 		
-		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
-			}
+		if (!matchesSelectedFloorByRoomNo(member.ROOM_NO, selectedFloor)) {
+			return false;
 		}
 		
 		if (searchTerm && searchTerm.trim() !== '') {
@@ -355,25 +386,27 @@ export default function NeedsAssessmentRecord() {
 		setCurrentPage(1);
 	}, [selectedStatus, selectedGrade, selectedFloor, searchTerm]);
 
-	// 작성일자 목록 조회
-	const fetchRecordDates = async (ancd: string, pnum: string) => {
+	// 작성일자(RQDT) 목록 조회 — F51012
+	const fetchRecordDates = async (ancd: string, pnum: string): Promise<string[]> => {
 		if (!ancd || !pnum) {
 			setRecordDates([]);
-			return;
+			return [];
 		}
 
 		setLoadingDates(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/needs-assessment-record/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시 데이터
-			const mockDates = ['2025-11-05', '2025-04-07', '2024-10-02', '2024-04-05'];
-			setRecordDates(mockDates);
+			const res = await fetch(`/api/f51012?pnum=${encodeURIComponent(String(pnum).trim())}`);
+			const result = await res.json();
+			if (result.success && Array.isArray(result.data)) {
+				setRecordDates(result.data);
+				return result.data;
+			}
+			setRecordDates([]);
+			return [];
 		} catch (err) {
 			console.error('작성일자 조회 오류:', err);
+			setRecordDates([]);
+			return [];
 		} finally {
 			setLoadingDates(false);
 		}
@@ -382,16 +415,38 @@ export default function NeedsAssessmentRecord() {
 	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
-		fetchRecordDates(member.ANCD, member.PNUM);
+		setSelectedDateIndex(null);
+		applyF51012Snapshot(emptySnapshot(member.P_NM || '', ''));
+		void fetchRecordDates(member.ANCD, member.PNUM);
 	};
 
-	// 작성일자 선택 함수
-	const handleSelectDate = (index: number) => {
+	// 작성일자(RQDT) 선택 — 해당 일자 F51012 상세 조회
+	const handleSelectDate = async (index: number) => {
+		if (!selectedMember) return;
+		const rqdtRaw = recordDates[index];
+		if (rqdtRaw == null) return;
+
 		setSelectedDateIndex(index);
-		const selectedDate = recordDates[index];
-		setFormData(prev => ({ ...prev, creationDate: selectedDate || '' }));
-		// TODO: 선택한 날짜의 기록 데이터 조회
+		const rqdt = formatDateDisplay(String(rqdtRaw));
+		setFormData((prev) => ({ ...prev, creationDate: rqdt }));
+
+		setLoadingDates(true);
+		try {
+			const res = await fetch(
+				`/api/f51012?pnum=${encodeURIComponent(String(selectedMember.PNUM).trim())}&rqdt=${encodeURIComponent(rqdt)}`
+			);
+			const result = await res.json();
+			if (result.success && result.data) {
+				applyF51012Snapshot(hydrateFromF51012Row(result.data as Record<string, unknown>, selectedMember.P_NM || ''));
+			} else {
+				applyF51012Snapshot(emptySnapshot(selectedMember.P_NM || '', rqdt));
+			}
+		} catch (err) {
+			console.error('욕구사정 기록 조회 오류:', err);
+			alert('기록을 불러오는 중 오류가 발생했습니다.');
+		} finally {
+			setLoadingDates(false);
+		}
 	};
 
 	// 날짜 형식 변환 함수
@@ -416,39 +471,60 @@ export default function NeedsAssessmentRecord() {
 		setActivities(updatedActivities);
 	};
 
-	// 저장 함수
+	// 저장 — F51012 MERGE (작성일자 RQDT 기준)
 	const handleSave = async () => {
 		if (!selectedMember) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
 
-		if (!formData.creationDate) {
-			alert('작성일자를 입력해주세요.');
+		const rqdt = formatDateDisplay(formData.creationDate.trim());
+		if (!rqdt) {
+			alert('작성일자(RQDT)를 YYYY-MM-DD 형식으로 입력해주세요.');
 			return;
 		}
 
 		setLoadingDates(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedDateIndex !== null ? '/api/needs-assessment-record/update' : '/api/needs-assessment-record/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData,
-			// 		activities
-			// 	})
-			// });
-
-			alert(selectedDateIndex !== null ? '욕구 사정 기록지가 수정되었습니다.' : '욕구 사정 기록지가 저장되었습니다.');
-			
-			// 데이터 다시 조회
-			if (selectedMember) {
-				await fetchRecordDates(selectedMember.ANCD, selectedMember.PNUM);
+			const snap = collectUiSnapshot({
+				formData: {
+					...formData,
+					beneficiary: selectedMember.P_NM || '',
+					creationDate: rqdt,
+				},
+				activities,
+				disease1Data,
+				disease2Data,
+				diseaseFormData,
+				rehabilitationData,
+				rehabilitationJudgmentBasis,
+				nursingData,
+				nursingJudgmentBasis,
+				cognitionData,
+				cognitionJudgmentBasis,
+				communicationData,
+				nutritionData,
+				familyEnvironmentData,
+				resourceUtilizationData,
+				individualNeedsData,
+				overallAssessmentData,
+			});
+			const row = buildF51012RowPayload(snap, selectedMember.ANCD, selectedMember.PNUM, rqdt);
+			const response = await fetch('/api/f51012', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ row }),
+			});
+			const result = await response.json();
+			if (!response.ok || !result.success) {
+				alert(result.error || '욕구 사정 기록지 저장에 실패했습니다.');
+				return;
 			}
+
+			alert('욕구 사정 기록지가 저장되었습니다.');
+			const dates = await fetchRecordDates(selectedMember.ANCD, selectedMember.PNUM);
+			const idx = dates.findIndex((d) => formatDateDisplay(d) === rqdt);
+			if (idx >= 0) setSelectedDateIndex(idx);
 		} catch (err) {
 			console.error('욕구 사정 기록지 저장 오류:', err);
 			alert('욕구 사정 기록지 저장 중 오류가 발생했습니다.');
@@ -457,15 +533,16 @@ export default function NeedsAssessmentRecord() {
 		}
 	};
 
-	// 삭제 함수
+	// 삭제 — F51012 (ANCD, PNUM, RQDT)
 	const handleDelete = async () => {
 		if (!selectedMember) {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
 
-		if (selectedDateIndex === null) {
-			alert('삭제할 기록을 선택해주세요.');
+		const rqdt = formatDateDisplay(formData.creationDate.trim());
+		if (!rqdt) {
+			alert('삭제할 작성일자(RQDT)를 입력하거나 목록에서 선택해주세요.');
 			return;
 		}
 
@@ -475,29 +552,20 @@ export default function NeedsAssessmentRecord() {
 
 		setLoadingDates(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/needs-assessment-record/${selectedDateIndex}`, {
-			// 	method: 'DELETE'
-			// });
+			const response = await fetch(
+				`/api/f51012?pnum=${encodeURIComponent(String(selectedMember.PNUM).trim())}&rqdt=${encodeURIComponent(rqdt)}`,
+				{ method: 'DELETE' }
+			);
+			const result = await response.json();
+			if (!response.ok || !result.success) {
+				alert(result.error || '삭제에 실패했습니다.');
+				return;
+			}
 
 			alert('욕구 사정 기록지가 삭제되었습니다.');
-			
-			// 데이터 다시 조회
-			if (selectedMember) {
-				await fetchRecordDates(selectedMember.ANCD, selectedMember.PNUM);
-			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				creationDate: '',
-				creator: '',
-				height: '0.0',
-				weight: '0.0',
-				judgmentBasis: ''
-			}));
-			setActivities(activities.map(a => ({ ...a, value: '' })));
+			await fetchRecordDates(selectedMember.ANCD, selectedMember.PNUM);
 			setSelectedDateIndex(null);
+			applyF51012Snapshot(emptySnapshot(selectedMember.P_NM || '', ''));
 		} catch (err) {
 			console.error('욕구 사정 기록지 삭제 오류:', err);
 			alert('욕구 사정 기록지 삭제 중 오류가 발생했습니다.');
@@ -562,12 +630,18 @@ export default function NeedsAssessmentRecord() {
 								<div className="text-xs text-blue-900/80">층수</div>
 								<select
 									value={selectedFloor}
-									onChange={(e) => setSelectedFloor(e.target.value)}
+									onChange={(e) => {
+										setSelectedFloor(e.target.value);
+										setCurrentPage(1);
+									}}
 									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
 								>
 									<option value="">층수 전체</option>
-									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-										<option key={floor} value={String(floor)}>{floor}층</option>
+									<option value={NO_ROOM_VALUE}>방번호 없음</option>
+									{availableFloors.map((floor) => (
+										<option key={floor} value={String(floor)}>
+											{floor}층
+										</option>
 									))}
 								</select>
 							</div>
@@ -763,6 +837,7 @@ export default function NeedsAssessmentRecord() {
 											value={formData.creator}
 											onChange={(e) => setFormData(prev => ({ ...prev, creator: e.target.value }))}
 											className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[120px]"
+											placeholder="면접사원번호(RQEMP, 숫자)"
 										/>
 									</div>
 								</div>
