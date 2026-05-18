@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+	buildMonthlyAttendancePrintHtml,
+	classifyAttendanceDisplay,
+	getDayOfWeekKo,
+	openPrintPreviewWindow,
+	type AttendancePrintRow,
+} from "../employee-attendance/employeeAttendancePrint";
 
 interface Employee {
 	ANCD: number;
@@ -16,6 +23,16 @@ interface AttendanceRow {
 	WDT: string;
 	WGU?: string;
 	HODES?: string;
+	STM?: string;
+	ETM?: string;
+	JOBADD?: string;
+	JOBSH?: string;
+}
+
+interface F02010ApiRow extends AttendanceRow {
+	ANCD?: number;
+	EMPNO?: number;
+	EMPNM?: string;
 }
 
 export default function EmployeeAttendanceMonthly() {
@@ -87,22 +104,8 @@ export default function EmployeeAttendanceMonthly() {
 		}
 	};
 
-	// 근무구분 텍스트
-	const getWorkClassificationText = (wgu?: string): string => {
-		if (!wgu || String(wgu).trim() === "") return "근무";
-		switch (String(wgu).trim()) {
-			case "4":
-				return "정기휴일";
-			case "5":
-				return "연월차";
-			case "6":
-				return "결근";
-			case "9":
-				return "기타";
-			default:
-				return "근무";
-		}
-	};
+	const getWorkClassificationText = (row: AttendanceRow): string =>
+		classifyAttendanceDisplay(row);
 
 	// 필터링된 사원 목록 (EmployeeBasicInfo와 동일 로직)
 	const filteredEmployees = employeeList.filter((employee) => {
@@ -146,39 +149,44 @@ export default function EmployeeAttendanceMonthly() {
 		setCurrentPage(1);
 	};
 
-	// 사원 선택 시 해당 기간 근태 조회 (간단히 일별 API 호출 또는 별도 월별 API 있으면 연동)
+	const mapApiRowToAttendance = (row: F02010ApiRow): AttendanceRow => ({
+		WDT: String(row.WDT ?? "").slice(0, 10),
+		WGU: row.WGU,
+		HODES: row.HODES,
+		STM: row.STM,
+		ETM: row.ETM,
+		JOBADD: row.JOBADD,
+		JOBSH: row.JOBSH,
+	});
+
+	const fetchAttendanceForEmployee = useCallback(
+		async (employee: Employee, start: string, end: string): Promise<AttendanceRow[]> => {
+			const url = `/api/f02010?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&empno=${employee.EMPNO}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			if (!result.success || !Array.isArray(result.data)) return [];
+			return (result.data as F02010ApiRow[]).map(mapApiRowToAttendance);
+		},
+		[],
+	);
+
+	const loadEmployeeAttendance = useCallback(
+		async (employee: Employee) => {
+			setLoadingAttendance(true);
+			try {
+				const list = await fetchAttendanceForEmployee(employee, startDateStr, endDateStr);
+				setAttendanceList(list);
+			} catch {
+				setAttendanceList([]);
+			} finally {
+				setLoadingAttendance(false);
+			}
+		},
+		[startDateStr, endDateStr, fetchAttendanceForEmployee],
+	);
+
 	const handleSelectEmployee = (employee: Employee) => {
 		setSelectedEmployee(employee);
-		// 선택 사원의 해당 기간 근태 목록 조회 (F02010 기간 조회가 있으면 사용, 없으면 빈 배열)
-		setLoadingAttendance(true);
-		const start = startDateStr;
-		const end = endDateStr;
-		// 월별 근태 API가 없다면 일별로 묶어서 조회하거나, 추후 API 추가 시 교체
-		fetch(`/api/f02010?workDate=${start}`)
-			.then((res) => res.json())
-			.then((result) => {
-				if (result.success && Array.isArray(result.data)) {
-					const list = (result.data as { WDT?: string; WGU?: string; HODES?: string; ANCD?: number; EMPNO?: number }[])
-						.filter(
-							(row) => {
-								const wdt = row.WDT;
-								return (
-									row.ANCD === employee.ANCD &&
-									row.EMPNO === employee.EMPNO &&
-									wdt != null &&
-									wdt >= start &&
-									wdt <= end
-								);
-							}
-						)
-						.map((row) => ({ WDT: row.WDT || "", WGU: row.WGU, HODES: row.HODES }));
-					setAttendanceList(list);
-				} else {
-					setAttendanceList([]);
-				}
-			})
-			.catch(() => setAttendanceList([]))
-			.finally(() => setLoadingAttendance(false));
 	};
 
 	// 검색
@@ -187,9 +195,75 @@ export default function EmployeeAttendanceMonthly() {
 		fetchEmployees(searchTerm.trim() !== "" ? searchTerm : undefined);
 	};
 
-	// 근태 출력 (인쇄)
-	const handlePrint = () => {
-		window.print();
+	const [printing, setPrinting] = useState(false);
+
+	const handlePrint = async () => {
+		if (startDateStr > endDateStr) {
+			alert("시작일이 종료일보다 늦을 수 없습니다.");
+			return;
+		}
+		setPrinting(true);
+		try {
+			const url = `/api/f02010?startDate=${encodeURIComponent(startDateStr)}&endDate=${encodeURIComponent(endDateStr)}`;
+			const response = await fetch(url);
+			const result = await response.json();
+			if (!result.success || !Array.isArray(result.data)) {
+				alert(result.error || "근태 데이터를 불러오지 못했습니다.");
+				return;
+			}
+			const allRows = result.data as F02010ApiRow[];
+			const byEmployee = new Map<string, { empnm: string; rows: AttendancePrintRow[] }>();
+			for (const row of allRows) {
+				const key = `${row.ANCD}-${row.EMPNO}`;
+				if (!byEmployee.has(key)) {
+					byEmployee.set(key, {
+						empnm: String(row.EMPNM ?? "").trim() || "-",
+						rows: [],
+					});
+				}
+				const bucket = byEmployee.get(key)!;
+				bucket.rows.push({
+					WDT: String(row.WDT ?? "").slice(0, 10),
+					WGU: row.WGU,
+					HODES: row.HODES,
+					STM: row.STM,
+					ETM: row.ETM,
+					JOBADD: row.JOBADD,
+					JOBSH: row.JOBSH,
+				});
+			}
+			const filteredKeys = new Set(
+				filteredEmployees.map((e) => `${e.ANCD}-${e.EMPNO}`),
+			);
+			const sections = filteredEmployees
+				.map((emp) => {
+					const key = `${emp.ANCD}-${emp.EMPNO}`;
+					const bucket = byEmployee.get(key);
+					if (!bucket || bucket.rows.length === 0) return null;
+					return {
+						empnm: String(emp.EMPNM ?? bucket.empnm).trim() || "-",
+						rows: bucket.rows,
+					};
+				})
+				.filter((s): s is NonNullable<typeof s> => s != null);
+			if (sections.length === 0) {
+				const hasAny = allRows.some((r) =>
+					filteredKeys.has(`${r.ANCD}-${r.EMPNO}`),
+				);
+				if (!hasAny && allRows.length > 0) {
+					alert("현재 필터 조건에 해당하는 사원의 근태 데이터가 없습니다.");
+				} else {
+					alert("출력할 근태 데이터가 없습니다.");
+				}
+				return;
+			}
+			const html = buildMonthlyAttendancePrintHtml(startDateStr, endDateStr, sections);
+			openPrintPreviewWindow(html);
+		} catch {
+			alert("근태 출력 중 오류가 발생했습니다.");
+		} finally {
+			setPrinting(false);
+		}
 	};
 
 	// 닫기 (이전 페이지 또는 모달 닫기)
@@ -215,14 +289,13 @@ export default function EmployeeAttendanceMonthly() {
 		return () => clearTimeout(timer);
 	}, [searchTerm, selectedJob, selectedWorkStatus]);
 
-	// 선택 사원이 바뀌거나 기간이 바뀌면 근태 다시 조회
 	useEffect(() => {
 		if (selectedEmployee) {
-			handleSelectEmployee(selectedEmployee);
+			loadEmployeeAttendance(selectedEmployee);
 		} else {
 			setAttendanceList([]);
 		}
-	}, [startDateStr, endDateStr]);
+	}, [selectedEmployee, startDateStr, endDateStr, loadEmployeeAttendance]);
 
 	return (
 		<div className="flex flex-col min-h-screen bg-white text-black">
@@ -285,19 +358,20 @@ export default function EmployeeAttendanceMonthly() {
 					</select>
 				</div>
 				<div className="ml-auto flex items-end gap-2">
-					<button
+					{/* <button
 						type="button"
 						onClick={handleSearch}
 						className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
 					>
 						검색
-					</button>
+					</button> */}
 					<button
 						type="button"
 						onClick={handlePrint}
-						className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+						disabled={printing}
+						className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						근태출력
+						{printing ? "출력 준비중..." : "근태출력"}
 					</button>
 					{/* <button
 						type="button"
@@ -469,7 +543,19 @@ export default function EmployeeAttendanceMonthly() {
 										근무일자
 									</th>
 									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
+										요일
+									</th>
+									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
 										근무구분
+									</th>
+									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
+										출근시간
+									</th>
+									<th className="border-r border-blue-200 px-2 py-2 text-center font-semibold text-blue-900 w-8">
+										~
+									</th>
+									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
+										퇴근시간
 									</th>
 									<th className="px-3 py-2 text-center font-semibold text-blue-900">
 										휴무사유
@@ -479,24 +565,26 @@ export default function EmployeeAttendanceMonthly() {
 							<tbody>
 								{!selectedEmployee ? (
 									<tr>
-										<td colSpan={3} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={7} className="px-3 py-8 text-center text-blue-900/60">
 											좌측에서 사원을 선택하세요
 										</td>
 									</tr>
 								) : loadingAttendance ? (
 									<tr>
-										<td colSpan={3} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={7} className="px-3 py-8 text-center text-blue-900/60">
 											로딩 중...
 										</td>
 									</tr>
 								) : attendanceList.length === 0 ? (
 									<tr>
-										<td colSpan={3} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={7} className="px-3 py-8 text-center text-blue-900/60">
 											근태 데이터가 없습니다
 										</td>
 									</tr>
 								) : (
-									attendanceList.map((row, idx) => (
+									[...attendanceList]
+										.sort((a, b) => String(a.WDT).localeCompare(String(b.WDT)))
+										.map((row, idx) => (
 										<tr
 											key={`${row.WDT ?? ""}-${idx}`}
 											className="border-b border-blue-50 hover:bg-blue-50/50"
@@ -505,10 +593,22 @@ export default function EmployeeAttendanceMonthly() {
 												{row.WDT ?? "-"}
 											</td>
 											<td className="border-r border-blue-100 px-3 py-2 text-center">
-												{getWorkClassificationText(row.WGU)}
+												{getDayOfWeekKo(row.WDT) || "-"}
+											</td>
+											<td className="border-r border-blue-100 px-3 py-2 text-center">
+												{getWorkClassificationText(row)}
+											</td>
+											<td className="border-r border-blue-100 px-3 py-2 text-center">
+												{row.STM?.trim() || "-"}
+											</td>
+											<td className="border-r border-blue-100 px-2 py-2 text-center text-blue-900/70">
+												~
+											</td>
+											<td className="border-r border-blue-100 px-3 py-2 text-center">
+												{row.ETM?.trim() || "-"}
 											</td>
 											<td className="px-3 py-2 text-center">
-												{row.HODES || "-"}
+												{row.HODES?.trim() || "-"}
 											</td>
 										</tr>
 									))

@@ -25,24 +25,15 @@ export async function GET(req) {
 
     const searchParams = req.nextUrl.searchParams;
     const workDate = searchParams.get('workDate') || '';
+    const startDate = searchParams.get('startDate') || '';
+    const endDate = searchParams.get('endDate') || '';
+    const empnoParam = searchParams.get('empno');
 
-    if (!workDate) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: '근무일자(workDate) 파라미터가 필요합니다'
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // F02010 테이블에서 근무일자에 맞는 근태 데이터 조회
-    // F01010과 조인하여 사원명 가져오기
-    let query = `
+    const baseSelect = `
       SELECT 
         f02010.[ANCD],
         f02010.[EMPNO],
-        f02010.[WDT],
+        CONVERT(varchar(10), f02010.[WDT], 23) AS [WDT],
         f02010.[JOBADD],
         f02010.[JOBSH],
         f02010.[WGU],
@@ -55,13 +46,39 @@ export async function GET(req) {
       LEFT JOIN [돌봄시설DB].[dbo].[F01010] f01010
         ON f02010.[ANCD] = f01010.[ANCD]
         AND f02010.[EMPNO] = f01010.[EMPNO]
-      WHERE f02010.[WDT] = @workDate AND f02010.[ANCD] = @sessionAncd
-      ORDER BY f01010.[EMPNM]
     `;
 
     const request = pool.request();
-    request.input('workDate', workDate);
     request.input('sessionAncd', sessionAncd);
+
+    let query = '';
+
+    if (startDate && endDate) {
+      request.input('startDate', startDate);
+      request.input('endDate', endDate);
+      query = `${baseSelect}
+      WHERE f02010.[ANCD] = @sessionAncd
+        AND f02010.[WDT] >= @startDate
+        AND f02010.[WDT] <= @endDate`;
+      if (empnoParam != null && String(empnoParam).trim() !== '') {
+        request.input('empno', parseInt(String(empnoParam).trim(), 10));
+        query += ` AND f02010.[EMPNO] = @empno`;
+      }
+      query += ` ORDER BY f01010.[EMPNM], f02010.[WDT]`;
+    } else if (workDate) {
+      request.input('workDate', workDate);
+      query = `${baseSelect}
+      WHERE f02010.[WDT] = @workDate AND f02010.[ANCD] = @sessionAncd
+      ORDER BY f01010.[EMPNM]`;
+    } else {
+      return new Response(JSON.stringify({
+        success: false,
+        error: '근무일자(workDate) 또는 기간(startDate, endDate) 파라미터가 필요합니다'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
 
     const result = await request.query(query);
 
