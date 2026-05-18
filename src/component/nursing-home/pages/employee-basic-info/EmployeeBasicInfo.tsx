@@ -26,6 +26,7 @@ interface Employee {
 interface EmployeeForm {
 	name: string;
 	yearsOfService: string;
+	job: string;
 	workLocation: string;
 	workType: string;
 	hireDate: string;
@@ -43,6 +44,7 @@ interface EmployeeForm {
 const initialForm: EmployeeForm = {
 	name: "",
 	yearsOfService: "",
+	job: "",
 	workLocation: "",
 	workType: "",
 	hireDate: "",
@@ -57,6 +59,63 @@ const initialForm: EmployeeForm = {
 	notes: "",
 };
 
+interface EmployeeCreateForm {
+	name: string;
+	yearsOfService: string;
+	job: string;
+	workStatus: string;
+	hireDate: string;
+	leaveStartDate: string;
+	retirementDate: string;
+	attendanceManagement: boolean;
+	annualLeaveStandardDate: string;
+	workLocation: string;
+	workType: string;
+	salaryBank: string;
+	bankAccount: string;
+	mobilePhone: string;
+	homePhone: string;
+	zipCode: string;
+	homeAddress: string;
+	notes: string;
+}
+
+function todayYmd(): string {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function parseIntOrZero(v: string): number {
+	const n = parseInt(String(v).replace(/,/g, ""), 10);
+	return Number.isFinite(n) ? n : 0;
+}
+
+const initialCreateForm = (): EmployeeCreateForm => ({
+	name: "",
+	yearsOfService: "",
+	job: "",
+	workStatus: "1",
+	hireDate: todayYmd(),
+	leaveStartDate: "",
+	retirementDate: "",
+	attendanceManagement: true,
+	annualLeaveStandardDate: "",
+	workLocation: "",
+	workType: "",
+	salaryBank: "",
+	bankAccount: "",
+	mobilePhone: "",
+	homePhone: "",
+	zipCode: "",
+	homeAddress: "",
+	notes: "",
+});
+
+const modalLabelCls =
+	"w-28 shrink-0 bg-blue-100 border border-blue-300 px-2 py-1.5 text-sm font-medium text-blue-900 text-center";
+const modalFieldCls =
+	"flex-1 min-w-0 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none";
+
 export default function EmployeeBasicInfo() {
 	const [employeeList, setEmployeeList] = useState<Employee[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -67,6 +126,17 @@ export default function EmployeeBasicInfo() {
 	const [formData, setFormData] = useState<EmployeeForm>(initialForm);
 	const [currentPage, setCurrentPage] = useState(1);
 	const itemsPerPage = 10;
+	const [createModalOpen, setCreateModalOpen] = useState(false);
+	const [createForm, setCreateForm] = useState<EmployeeCreateForm>(() => initialCreateForm());
+	const [createSaveLoading, setCreateSaveLoading] = useState(false);
+	const [createSaveError, setCreateSaveError] = useState<string | null>(null);
+	const [userEmp, setUserEmp] = useState<{ empno?: number | string; empnm?: string }>({});
+	const [isEditMode, setIsEditMode] = useState(false);
+	const [editSaveLoading, setEditSaveLoading] = useState(false);
+
+	const formLocked = !isEditMode;
+	const fieldCls = (cls: string) =>
+		`${cls}${formLocked ? " bg-blue-50/70 cursor-default" : ""}`;
 
 	// 사원 목록 조회
 	const fetchEmployees = async (nameSearch?: string) => {
@@ -115,25 +185,29 @@ export default function EmployeeBasicInfo() {
 		}
 	};
 
+	const employeeToForm = (employee: Employee): EmployeeForm => ({
+		name: employee.EMPNM || "",
+		yearsOfService: employee.YRNT ? String(employee.YRNT) : "",
+		job: employee.JOB || "",
+		workLocation: employee.JOBADD || "",
+		workType: employee.JOBSH || "",
+		hireDate: formatDate(employee.SDT),
+		retirementDate: formatDate(employee.EDT),
+		leaveStartDate: formatDate(employee.HSDT),
+		leaveEndDate: formatDate(employee.HEDT),
+		homePhone: employee.EMPTEL || "",
+		mobilePhone: employee.EMPHP || "",
+		homeAddress: employee.EMPADD || "",
+		attendanceManagement: employee.MNG_GU === "Y",
+		annualLeaveStandardDate: formatDate(employee.BASE_DT),
+		notes: employee.ETC || "",
+	});
+
 	// 사원 선택 핸들러
 	const handleSelectEmployee = (employee: Employee) => {
 		setSelectedEmployee(employee);
-		setFormData({
-			name: employee.EMPNM || "",
-			yearsOfService: employee.YRNT ? String(employee.YRNT) : "",
-			workLocation: employee.JOBADD || "",
-			workType: employee.JOBSH || "",
-			hireDate: formatDate(employee.SDT),
-			retirementDate: formatDate(employee.EDT),
-			leaveStartDate: formatDate(employee.HSDT),
-			leaveEndDate: formatDate(employee.HEDT),
-			homePhone: employee.EMPTEL || "",
-			mobilePhone: employee.EMPHP || "",
-			homeAddress: employee.EMPADD || "",
-			attendanceManagement: employee.MNG_GU === "Y",
-			annualLeaveStandardDate: formatDate(employee.BASE_DT),
-			notes: employee.ETC || "",
-		});
+		setFormData(employeeToForm(employee));
+		setIsEditMode(false);
 	};
 
 	// 검색 핸들러
@@ -185,6 +259,17 @@ export default function EmployeeBasicInfo() {
 	// 초기 로드
 	useEffect(() => {
 		fetchEmployees();
+		(async () => {
+			try {
+				const res = await fetch("/api/auth/user-info", { credentials: "include", cache: "no-store" });
+				const json = await res.json();
+				if (json?.success && json?.data) {
+					setUserEmp({ empno: json.data.empno, empnm: json.data.empnm });
+				}
+			} catch {
+				// ignore
+			}
+		})();
 	}, []);
 
 	// 검색어 변경 시 실시간 검색 (디바운싱)
@@ -209,20 +294,172 @@ export default function EmployeeBasicInfo() {
 		setCurrentPage(1);
 	}, [selectedJob, selectedWorkStatus]);
 
-	// 추가 버튼 핸들러
-	const handleAdd = () => {
-		setSelectedEmployee(null);
-		setFormData(initialForm);
+	const openCreateModal = () => {
+		setIsEditMode(false);
+		setCreateForm(initialCreateForm());
+		setCreateSaveError(null);
+		setCreateModalOpen(true);
 	};
 
-	// 수정 버튼 핸들러
-	const handleModify = async () => {
-		if (!selectedEmployee) {
-			alert("수정할 사원을 선택해주세요.");
+	const closeCreateModal = () => {
+		if (createSaveLoading) return;
+		setCreateModalOpen(false);
+		setCreateSaveError(null);
+	};
+
+	const handleCreateSave = async () => {
+		if (!createForm.name.trim()) {
+			setCreateSaveError("사원명을 입력해 주세요.");
 			return;
 		}
-		// TODO: 수정 API 호출
-		console.log("수정 데이터:", formData);
+		setCreateSaveLoading(true);
+		setCreateSaveError(null);
+		try {
+			const res = await fetch("/api/f01010", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					EMPNM: createForm.name.trim(),
+					YRNT: createForm.yearsOfService,
+					JOB: createForm.job,
+					JOBST: createForm.workStatus,
+					JOBADD: createForm.workLocation,
+					JOBSH: createForm.workType,
+					BK: createForm.salaryBank,
+					BKNO: createForm.bankAccount,
+					SDT: createForm.hireDate,
+					EDT: createForm.retirementDate,
+					HSDT: createForm.leaveStartDate,
+					EMPHP: createForm.mobilePhone,
+					EMPTEL: createForm.homePhone,
+					EMPZIP: createForm.zipCode,
+					EMPADD: createForm.homeAddress,
+					ETC: createForm.notes,
+					MNG_GU: createForm.attendanceManagement ? "Y" : "N",
+					BASE_DT: createForm.annualLeaveStandardDate,
+					INEMPNO: userEmp.empno ?? null,
+					INEMPNM: userEmp.empnm ?? null,
+				}),
+			});
+			const json = await res.json();
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || "사원 등록에 실패했습니다.");
+			}
+			setCreateModalOpen(false);
+			await fetchEmployees(searchTerm.trim() !== "" ? searchTerm : undefined);
+			const newEmp: Employee = {
+				ANCD: json.ancd,
+				EMPNO: json.empno,
+				EMPNM: json.EMPNM || createForm.name.trim(),
+				JOB: createForm.job,
+				JOBST: createForm.workStatus,
+				JOBADD: createForm.workLocation,
+				JOBSH: createForm.workType,
+				YRNT: parseIntOrZero(createForm.yearsOfService),
+				SDT: createForm.hireDate,
+				EDT: createForm.retirementDate,
+				HSDT: createForm.leaveStartDate,
+				EMPHP: createForm.mobilePhone,
+				EMPTEL: createForm.homePhone,
+				EMPADD: createForm.homeAddress,
+				MNG_GU: createForm.attendanceManagement ? "Y" : "N",
+				BASE_DT: createForm.annualLeaveStandardDate,
+				ETC: createForm.notes,
+				BK: createForm.salaryBank,
+				BKNO: createForm.bankAccount,
+			};
+			handleSelectEmployee(newEmp);
+			alert("사원정보가 등록되었습니다.");
+		} catch (e) {
+			setCreateSaveError(e instanceof Error ? e.message : "사원 등록 중 오류가 발생했습니다.");
+		} finally {
+			setCreateSaveLoading(false);
+		}
+	};
+
+	const handleSignRegister = () => {
+		alert("기능 준비중입니다");
+	};
+
+	const handleStartEdit = () => {
+		if (!selectedEmployee) return;
+		setIsEditMode(true);
+	};
+
+	const handleCancelEdit = () => {
+		if (selectedEmployee) {
+			setFormData(employeeToForm(selectedEmployee));
+		}
+		setIsEditMode(false);
+	};
+
+	const buildUpdatePayload = () => ({
+		action: "update",
+		EMPNO: selectedEmployee!.EMPNO,
+		EMPNM: formData.name.trim(),
+		YRNT: formData.yearsOfService,
+		JOB: formData.job,
+		JOBADD: formData.workLocation,
+		JOBSH: formData.workType,
+		SDT: formData.hireDate,
+		EDT: formData.retirementDate,
+		HSDT: formData.leaveStartDate,
+		HEDT: formData.leaveEndDate,
+		EMPTEL: formData.homePhone,
+		EMPHP: formData.mobilePhone,
+		EMPADD: formData.homeAddress,
+		MNG_GU: formData.attendanceManagement ? "Y" : "N",
+		BASE_DT: formData.annualLeaveStandardDate,
+		ETC: formData.notes,
+	});
+
+	const handleSaveEdit = async () => {
+		if (!selectedEmployee) return;
+		if (!formData.name.trim()) {
+			alert("사원명을 입력해 주세요.");
+			return;
+		}
+		setEditSaveLoading(true);
+		try {
+			const res = await fetch("/api/f01010", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(buildUpdatePayload()),
+			});
+			const json = await res.json();
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || "수정에 실패했습니다.");
+			}
+			await fetchEmployees(searchTerm.trim() !== "" ? searchTerm : undefined);
+			const updated: Employee = {
+				...selectedEmployee,
+				EMPNM: formData.name.trim(),
+				YRNT: parseIntOrZero(formData.yearsOfService),
+				JOB: formData.job,
+				JOBADD: formData.workLocation,
+				JOBSH: formData.workType,
+				SDT: formData.hireDate,
+				EDT: formData.retirementDate,
+				HSDT: formData.leaveStartDate,
+				HEDT: formData.leaveEndDate,
+				EMPTEL: formData.homePhone,
+				EMPHP: formData.mobilePhone,
+				EMPADD: formData.homeAddress,
+				MNG_GU: formData.attendanceManagement ? "Y" : "N",
+				BASE_DT: formData.annualLeaveStandardDate,
+				ETC: formData.notes,
+			};
+			setSelectedEmployee(updated);
+			setFormData(employeeToForm(updated));
+			setIsEditMode(false);
+			alert("사원정보가 수정되었습니다.");
+		} catch (e) {
+			alert(e instanceof Error ? e.message : "수정 중 오류가 발생했습니다.");
+		} finally {
+			setEditSaveLoading(false);
+		}
 	};
 	return (
 		<div className="min-h-screen bg-white text-black">
@@ -380,6 +617,45 @@ export default function EmployeeBasicInfo() {
 
 					{/* 우측: 사원정보 상세 영역 */}
 					<section className="flex-1">
+						<div className="mb-2 flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={openCreateModal}
+								disabled={isEditMode}
+								className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								추가
+							</button>
+							{!isEditMode ? (
+								<button
+									type="button"
+									onClick={handleStartEdit}
+									disabled={!selectedEmployee}
+									className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									수정
+								</button>
+							) : (
+								<>
+									<button
+										type="button"
+										onClick={handleCancelEdit}
+										disabled={editSaveLoading}
+										className="rounded border border-blue-400 bg-white px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-100 disabled:opacity-50"
+									>
+										취소
+									</button>
+									<button
+										type="button"
+										onClick={() => void handleSaveEdit()}
+										disabled={editSaveLoading}
+										className="rounded border border-blue-500 bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+									>
+										{editSaveLoading ? "저장 중…" : "저장"}
+									</button>
+								</>
+							)}
+						</div>
 						<div className="border border-blue-300 rounded-lg bg-white shadow-sm">
 							{/* 상단 헤더: 사원정보 탭 + 근태관리구분/년차기준일 */}
 							<div className="flex items-center justify-between border-b border-blue-200 bg-blue-50/50 p-4">
@@ -394,13 +670,14 @@ export default function EmployeeBasicInfo() {
 										<input
 											type="checkbox"
 											checked={formData.attendanceManagement}
+											disabled={formLocked}
 											onChange={(e) =>
 												setFormData((prev) => ({
 													...prev,
 													attendanceManagement: e.target.checked,
 												}))
 											}
-											className="rounded border-blue-300 text-blue-600"
+											className="rounded border-blue-300 text-blue-600 disabled:cursor-not-allowed"
 										/>
 										<span className="text-sm text-blue-900">관리</span>
 									</div>
@@ -409,20 +686,23 @@ export default function EmployeeBasicInfo() {
 										<input
 											type="date"
 											value={formData.annualLeaveStandardDate}
+											disabled={formLocked}
 											onChange={(e) =>
 												setFormData((prev) => ({
 													...prev,
 													annualLeaveStandardDate: e.target.value,
 												}))
 											}
-											className="rounded border border-blue-300 bg-white px-2 py-1 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+											className={fieldCls(
+												"rounded border border-blue-300 bg-white px-2 py-1 text-sm text-blue-900 focus:border-blue-500 focus:outline-none disabled:opacity-100",
+											)}
 										/>
 									</div>
 								</div>
 							</div>
 
-							{/* 메인 폼 영역 */}
-							<div className="p-4 space-y-3">
+							{/* 메인 폼 영역 (수정 모드에서만 편집 가능) */}
+							<fieldset disabled={formLocked} className="min-w-0 space-y-3 border-0 p-4 disabled:opacity-100">
 								{/* Row 1: 사원명/년차 + 근무위치 */}
 								<div className="flex items-center gap-2">
 									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
@@ -467,7 +747,22 @@ export default function EmployeeBasicInfo() {
 									/>
 								</div>
 
-								{/* Row 2: 근무형태 + 취업일자 + 퇴직일자 */}
+								{/* Row 2: 직위/직책 */}
+								<div className="flex items-center gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										직위/직책
+									</label>
+									<input
+										type="text"
+										value={formData.job}
+										onChange={(e) =>
+											setFormData((prev) => ({ ...prev, job: e.target.value }))
+										}
+										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									/>
+								</div>
+
+								{/* Row 3: 근무형태 + 취업일자 + 퇴직일자 */}
 								<div className="flex items-center gap-2">
 									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
 										근무형태
@@ -586,44 +881,274 @@ export default function EmployeeBasicInfo() {
 									/>
 								</div>
 
-								{/* 하단: 비고 영역 + 추가/수정 버튼 */}
-								<div className="mt-4 flex items-start gap-4">
-									<div className="flex flex-col gap-2 flex-1">
-										<label className="w-24 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
-											비고
-										</label>
-										<textarea
-											value={formData.notes}
-											onChange={(e) =>
-												setFormData((prev) => ({ ...prev, notes: e.target.value }))
-											}
-											rows={4}
-											className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none resize-y"
-											placeholder="비고를 입력하세요"
-										/>
-									</div>
-									<div className="flex flex-col gap-2 pt-7">
-										<button
-											type="button"
-											onClick={handleAdd}
-											className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 whitespace-nowrap"
-										>
-											추가
-										</button>
-										<button
-											type="button"
-											onClick={handleModify}
-											className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 whitespace-nowrap"
-										>
-											수정
-										</button>
-									</div>
+								{/* 하단: 비고 */}
+								<div className="mt-4 flex items-start gap-2">
+									<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										비고
+									</label>
+									<textarea
+										value={formData.notes}
+										disabled={formLocked}
+										onChange={(e) =>
+											setFormData((prev) => ({ ...prev, notes: e.target.value }))
+										}
+										rows={4}
+										className={fieldCls(
+											"flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none resize-y disabled:opacity-100",
+										)}
+										placeholder="비고를 입력하세요"
+									/>
 								</div>
-							</div>
+							</fieldset>
 						</div>
 					</section>
 				</div>
 			</div>
+
+			{createModalOpen ? (
+				<div
+					className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4"
+					role="presentation"
+					onClick={closeCreateModal}
+				>
+					<div
+						className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border-2 border-blue-300 bg-white shadow-xl"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="employee-create-title"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="border-b border-blue-200 bg-blue-50 px-4 py-3">
+							<h2 id="employee-create-title" className="text-center text-lg font-semibold text-blue-900">
+								사원정보 등록
+							</h2>
+						</div>
+
+						<div className="overflow-y-auto space-y-2 p-4">
+							{createSaveError ? (
+								<div className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+									{createSaveError}
+								</div>
+							) : null}
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>사원명</label>
+								<input
+									type="text"
+									value={createForm.name}
+									onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>연차일수</label>
+								<input
+									type="text"
+									value={createForm.yearsOfService}
+									onChange={(e) => setCreateForm((f) => ({ ...f, yearsOfService: e.target.value }))}
+									className="w-24 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>직위/직책</label>
+								<input
+									type="text"
+									value={createForm.job}
+									onChange={(e) => setCreateForm((f) => ({ ...f, job: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>근무상태</label>
+								<div className="flex flex-wrap items-center gap-4 px-2 py-1.5">
+									{[
+										{ value: "1", label: "근무" },
+										{ value: "2", label: "휴직" },
+										{ value: "9", label: "퇴직" },
+									].map((opt) => (
+										<label key={opt.value} className="flex items-center gap-1.5 text-sm text-blue-900">
+											<input
+												type="radio"
+												name="createWorkStatus"
+												value={opt.value}
+												checked={createForm.workStatus === opt.value}
+												onChange={() => setCreateForm((f) => ({ ...f, workStatus: opt.value }))}
+												className="text-blue-600"
+											/>
+											{opt.label}
+										</label>
+									))}
+								</div>
+							</div>
+
+							<div className="flex flex-wrap items-center gap-2">
+								<label className={modalLabelCls}>취업일자</label>
+								<input
+									type="date"
+									value={createForm.hireDate}
+									onChange={(e) => setCreateForm((f) => ({ ...f, hireDate: e.target.value }))}
+									className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+								<label className={`${modalLabelCls} w-24`}>휴직시작일</label>
+								<input
+									type="date"
+									value={createForm.leaveStartDate}
+									onChange={(e) => setCreateForm((f) => ({ ...f, leaveStartDate: e.target.value }))}
+									className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+								<label className={`${modalLabelCls} w-24`}>퇴직일자</label>
+								<input
+									type="date"
+									value={createForm.retirementDate}
+									onChange={(e) => setCreateForm((f) => ({ ...f, retirementDate: e.target.value }))}
+									className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex flex-wrap items-center gap-2">
+								<label className={modalLabelCls}>근태관리구분</label>
+								<label className="flex items-center gap-1.5 px-2 text-sm text-blue-900">
+									<input
+										type="checkbox"
+										checked={createForm.attendanceManagement}
+										onChange={(e) =>
+											setCreateForm((f) => ({ ...f, attendanceManagement: e.target.checked }))
+										}
+										className="rounded border-blue-300 text-blue-600"
+									/>
+									관리
+								</label>
+								<label className={`${modalLabelCls} w-24`}>연차기준일</label>
+								<input
+									type="date"
+									value={createForm.annualLeaveStandardDate}
+									onChange={(e) =>
+										setCreateForm((f) => ({ ...f, annualLeaveStandardDate: e.target.value }))
+									}
+									className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>근무위치</label>
+								<input
+									type="text"
+									value={createForm.workLocation}
+									onChange={(e) => setCreateForm((f) => ({ ...f, workLocation: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>근무형태</label>
+								<input
+									type="text"
+									value={createForm.workType}
+									onChange={(e) => setCreateForm((f) => ({ ...f, workType: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>급여이체은행</label>
+								<input
+									type="text"
+									value={createForm.salaryBank}
+									onChange={(e) => setCreateForm((f) => ({ ...f, salaryBank: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>통장계좌번호</label>
+								<input
+									type="text"
+									value={createForm.bankAccount}
+									onChange={(e) => setCreateForm((f) => ({ ...f, bankAccount: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>핸드폰번호</label>
+								<input
+									type="text"
+									value={createForm.mobilePhone}
+									onChange={(e) => setCreateForm((f) => ({ ...f, mobilePhone: e.target.value }))}
+									className="w-44 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+								<label className={`${modalLabelCls} w-24`}>집전화번호</label>
+								<input
+									type="text"
+									value={createForm.homePhone}
+									onChange={(e) => setCreateForm((f) => ({ ...f, homePhone: e.target.value }))}
+									className="flex-1 min-w-0 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>우편번호</label>
+								<input
+									type="text"
+									value={createForm.zipCode}
+									onChange={(e) => setCreateForm((f) => ({ ...f, zipCode: e.target.value }))}
+									className="w-32 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>주소</label>
+								<input
+									type="text"
+									value={createForm.homeAddress}
+									onChange={(e) => setCreateForm((f) => ({ ...f, homeAddress: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>비고</label>
+								<input
+									type="text"
+									value={createForm.notes}
+									onChange={(e) => setCreateForm((f) => ({ ...f, notes: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+						</div>
+
+						<div className="flex border-t border-blue-200">
+							<button
+								type="button"
+								disabled={createSaveLoading}
+								onClick={() => void handleCreateSave()}
+								className="flex-1 border-r border-blue-200 bg-blue-100 py-3 text-sm font-semibold text-blue-900 hover:bg-blue-200 disabled:opacity-50"
+							>
+								{createSaveLoading ? "저장 중…" : "저장"}
+							</button>
+							<button
+								type="button"
+								disabled={createSaveLoading}
+								onClick={handleSignRegister}
+								className="w-28 border-r border-blue-200 bg-white py-3 text-sm font-medium text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+							>
+								Sign등록
+							</button>
+							<button
+								type="button"
+								disabled={createSaveLoading}
+								onClick={closeCreateModal}
+								className="w-28 bg-white py-3 text-sm font-medium text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+							>
+								닫기
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 		</div>
     );
 }

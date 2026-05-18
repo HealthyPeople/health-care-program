@@ -1,6 +1,67 @@
 import { connPool } from '../../../config/server';
-import { NextRequest } from 'next/server';
 import { assertAnCdMatchesSession } from '../../../config/sessionServer';
+
+const sql = require('mssql');
+
+const TABLE = '[돌봄시설DB].[dbo].[F01010]';
+
+function normalizeYmd(v) {
+	if (v == null || v === '') return null;
+	if (v instanceof Date && !Number.isNaN(v.getTime())) {
+		const y = v.getFullYear();
+		const m = String(v.getMonth() + 1).padStart(2, '0');
+		const d = String(v.getDate()).padStart(2, '0');
+		return `${y}-${m}-${d}`;
+	}
+	const s = String(v).trim();
+	if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+	if (s.includes('T')) return s.split('T')[0];
+	if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+	const head = s.slice(0, 10);
+	if (/^\d{4}-\d{2}-\d{2}$/.test(head)) return head;
+	return null;
+}
+
+function inputDate(request, name, ymd) {
+	const n = normalizeYmd(ymd);
+	if (n === null) {
+		request.input(name, sql.Date, null);
+	} else {
+		request.input(name, sql.Date, new Date(`${n}T00:00:00`));
+	}
+}
+
+function truncNullable(v, max) {
+	if (v == null || v === '') return null;
+	const s = String(v).trim();
+	if (!s) return null;
+	return s.length <= max ? s : s.slice(0, max);
+}
+
+function parseIntOrZero(v) {
+	if (v == null || v === '') return 0;
+	const n = parseInt(String(v).replace(/,/g, ''), 10);
+	return Number.isFinite(n) ? n : 0;
+}
+
+function parseIntOrNull(v) {
+	if (v == null || v === '') return null;
+	const n = parseInt(String(v), 10);
+	return Number.isFinite(n) ? n : null;
+}
+
+function pickJobst(body) {
+	const v = body.JOBST ?? body.jobst ?? body.workStatus;
+	const s = String(v ?? '1').trim();
+	if (s === '2' || s === '9') return s;
+	return '1';
+}
+
+function pickMngGu(body) {
+	const raw = body.MNG_GU ?? body.mngGu ?? body.attendanceManagement;
+	if (raw === 'N' || raw === false || raw === 'false') return 'N';
+	return 'Y';
+}
 
 export async function GET(req) {
   try {
@@ -53,7 +114,7 @@ export async function GET(req) {
         [SGN_IMG],
         [MNG_GU],
         [BASE_DT]
-      FROM [돌봄시설DB].[dbo].[F01010]
+      FROM ${TABLE}
       WHERE 1=1
     `;
 
@@ -115,3 +176,168 @@ export async function GET(req) {
   }
 }
 
+function bindEmployeeInputs(rq, body) {
+	const empNm = truncNullable(body.EMPNM ?? body.empNm ?? body.name, 100);
+	rq.input('EMPNM', sql.VarChar(100), empNm);
+	rq.input('JMNO', sql.VarChar(20), truncNullable(body.JMNO ?? body.jmno, 20));
+	rq.input('YRNT', sql.Int, parseIntOrZero(body.YRNT ?? body.yrnt ?? body.yearsOfService));
+	rq.input('JOB', sql.VarChar(20), truncNullable(body.JOB ?? body.job, 20));
+	rq.input('JOBST', sql.Char(1), pickJobst(body));
+	rq.input('JOBADD', sql.VarChar(50), truncNullable(body.JOBADD ?? body.jobadd ?? body.workLocation, 50));
+	rq.input('JOBSH', sql.VarChar(50), truncNullable(body.JOBSH ?? body.jobsh ?? body.workType, 50));
+	rq.input('BK', sql.VarChar(50), truncNullable(body.BK ?? body.bk ?? body.salaryBank, 50));
+	rq.input('BKNO', sql.VarChar(20), truncNullable(body.BKNO ?? body.bkno ?? body.bankAccount, 20));
+	inputDate(rq, 'SDT', body.SDT ?? body.sdt ?? body.hireDate);
+	inputDate(rq, 'EDT', body.EDT ?? body.edt ?? body.retirementDate);
+	inputDate(rq, 'HSDT', body.HSDT ?? body.hsdt ?? body.leaveStartDate);
+	inputDate(rq, 'HEDT', body.HEDT ?? body.hedt ?? body.leaveEndDate);
+	rq.input('EMPHP', sql.VarChar(15), truncNullable(body.EMPHP ?? body.emphp ?? body.mobilePhone, 15));
+	rq.input('EMPTEL', sql.VarChar(15), truncNullable(body.EMPTEL ?? body.emptel ?? body.homePhone, 15));
+	rq.input('EMPZIP', sql.VarChar(10), truncNullable(body.EMPZIP ?? body.empzip ?? body.zipCode, 10));
+	rq.input('EMPADD', sql.VarChar(100), truncNullable(body.EMPADD ?? body.empadd ?? body.homeAddress, 100));
+	rq.input('ETC', sql.VarChar(100), truncNullable(body.ETC ?? body.etc ?? body.notes, 100));
+	rq.input('MNG_GU', sql.Char(1), pickMngGu(body));
+	inputDate(rq, 'BASE_DT', body.BASE_DT ?? body.baseDt ?? body.annualLeaveStandardDate);
+	return empNm;
+}
+
+/** POST — 신규 등록 | action:'update' 수정 (ANCD=세션) */
+export async function POST(req) {
+	try {
+		const gate = assertAnCdMatchesSession(req, null);
+		if (!gate.ok) return gate.response;
+
+		const body = await req.json().catch(() => ({}));
+		const isUpdate = body.action === 'update';
+
+		const pool = await connPool;
+		if (!pool) {
+			return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		if (isUpdate) {
+			const empno = parseInt(String(body.EMPNO ?? body.empno ?? ''), 10);
+			if (Number.isNaN(empno)) {
+				return new Response(JSON.stringify({ success: false, error: '사원번호(EMPNO)가 필요합니다.' }), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			const rq = pool.request();
+			rq.input('ANCD', gate.sessionAncd);
+			rq.input('EMPNO', sql.Int, empno);
+			const boundName = bindEmployeeInputs(rq, body);
+			if (!boundName) {
+				return new Response(JSON.stringify({ success: false, error: '사원명을 입력해 주세요.' }), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			const upd = await rq.query(`
+        UPDATE ${TABLE} SET
+          [EMPNM] = @EMPNM,
+          [JMNO] = @JMNO,
+          [YRNT] = @YRNT,
+          [JOB] = @JOB,
+          [JOBST] = @JOBST,
+          [JOBADD] = @JOBADD,
+          [JOBSH] = @JOBSH,
+          [BK] = @BK,
+          [BKNO] = @BKNO,
+          [SDT] = @SDT,
+          [EDT] = @EDT,
+          [HSDT] = @HSDT,
+          [HEDT] = @HEDT,
+          [EMPHP] = @EMPHP,
+          [EMPTEL] = @EMPTEL,
+          [EMPZIP] = @EMPZIP,
+          [EMPADD] = @EMPADD,
+          [ETC] = @ETC,
+          [MNG_GU] = @MNG_GU,
+          [BASE_DT] = @BASE_DT
+        WHERE [ANCD] = @ANCD AND [EMPNO] = @EMPNO
+      `);
+			if (!upd.rowsAffected?.[0]) {
+				return new Response(JSON.stringify({ success: false, error: '수정할 사원 정보가 없습니다.' }), {
+					status: 404,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			return new Response(
+				JSON.stringify({ success: true, action: 'update', ancd: gate.sessionAncd, empno, EMPNM: boundName }),
+				{ status: 200, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		const empNm = truncNullable(body.EMPNM ?? body.empNm ?? body.name, 100);
+		if (!empNm) {
+			return new Response(JSON.stringify({ success: false, error: '사원명을 입력해 주세요.' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const maxR = await pool
+			.request()
+			.input('ANCD', gate.sessionAncd)
+			.query(`SELECT ISNULL(MAX([EMPNO]), 0) + 1 AS NEXTEMPNO FROM ${TABLE} WHERE [ANCD] = @ANCD`);
+		const empno = maxR.recordset?.[0]?.NEXTEMPNO;
+		if (empno == null) {
+			return new Response(JSON.stringify({ success: false, error: '사원번호 채번에 실패했습니다.' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		let inempno = body.INEMPNO ?? body.inempno;
+		if (inempno !== null && inempno !== undefined && inempno !== '') {
+			const n = parseInt(String(inempno), 10);
+			inempno = Number.isNaN(n) ? null : n;
+		} else {
+			inempno = null;
+		}
+		const rawInempnm = body.INEMPNM ?? body.inempnm;
+		const inempnm =
+			rawInempnm != null && String(rawInempnm).trim() !== ''
+				? String(rawInempnm).trim().slice(0, 100)
+				: null;
+
+		const rq = pool.request();
+		rq.input('ANCD', gate.sessionAncd);
+		rq.input('EMPNO', sql.Int, empno);
+		bindEmployeeInputs(rq, body);
+		rq.input('INEMPNO', sql.Int, inempno);
+		rq.input('INEMPNM', sql.VarChar(100), inempnm);
+
+		await rq.query(`
+      INSERT INTO ${TABLE} (
+        [ANCD], [EMPNO], [EMPNM], [JMNO], [YRNT], [JOB], [JOBST], [JOBADD], [JOBSH],
+        [BK], [BKNO], [SDT], [EDT], [HSDT], [HEDT], [EMPHP], [EMPTEL], [EMPZIP], [EMPADD],
+        [INDT], [ETC], [INEMPNO], [INEMPNM], [MNG_GU], [BASE_DT]
+      ) VALUES (
+        @ANCD, @EMPNO, @EMPNM, @JMNO, @YRNT, @JOB, @JOBST, @JOBADD, @JOBSH,
+        @BK, @BKNO, @SDT, @EDT, @HSDT, @HEDT, @EMPHP, @EMPTEL, @EMPZIP, @EMPADD,
+        GETDATE(), @ETC, @INEMPNO, @INEMPNM, @MNG_GU, @BASE_DT
+      )
+    `);
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				ancd: gate.sessionAncd,
+				empno,
+				EMPNM: empNm,
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } }
+		);
+	} catch (err) {
+		console.error('F01010 사원 등록 오류:', err);
+		return new Response(
+			JSON.stringify({ success: false, error: err.message, details: err.toString() }),
+			{ status: 500, headers: { 'Content-Type': 'application/json' } }
+		);
+	}
+}
