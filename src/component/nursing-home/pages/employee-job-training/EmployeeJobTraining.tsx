@@ -1,32 +1,40 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import {
+	buildJobTrainingPrintHtml,
+	openPrintPreviewWindow,
+} from "./employeeJobTrainingPrint";
 
-interface JobTrainingItem {
-	id: string;
-	trainingDate: string; // YYYY-MM-DD
-	title: string;
-	instructor: string;
-	place: string;
-	startTime: string; // HH:mm
-	endTime: string; // HH:mm
-	content: string;
-	attendees: string;
-	evaluation: string;
+interface JobTrainingRow {
+	ANCD?: string | number;
+	MDT: string;
+	STM?: string;
+	ETM?: string;
+	MPL?: string;
+	MDOC?: string;
+	MDES?: string;
+	MNM?: string;
+	MIMG?: string;
+	MODES?: string;
+	ETC?: string;
+	URDT?: string;
+	INEMPNO?: string | number;
+	INEMPNM?: string;
+	TRAINER_NM?: string;
+	[key: string]: unknown;
 }
 
-const emptyForm: JobTrainingItem = {
-	id: "",
-	trainingDate: "",
-	title: "",
-	instructor: "",
-	place: "",
-	startTime: "",
-	endTime: "",
-	content: "",
-	attendees: "",
-	evaluation: "",
+type UserInfo = {
+	ancd?: string | number;
+	uid?: string;
+	empno?: string | number;
+	empnm?: string;
+	[key: string]: unknown;
 };
+
+const ITEMS_PER_PAGE = 10;
+const PROGRAM_ID = "F60060";
 
 function formatDate(date: Date): string {
 	const y = date.getFullYear();
@@ -35,8 +43,65 @@ function formatDate(date: Date): string {
 	return `${y}-${m}-${d}`;
 }
 
+function toText(value: unknown): string {
+	if (value == null) return "";
+	return String(value).trim();
+}
+
+function formatDateYmd(value: unknown): string {
+	if (value == null || value === "") return "";
+	if (value instanceof Date && !Number.isNaN(value.getTime())) {
+		return formatDate(value);
+	}
+	const s = String(value).trim();
+	if (!s) return "";
+	if (s.includes("T")) {
+		const parsed = new Date(s);
+		if (!Number.isNaN(parsed.getTime())) return formatDate(parsed);
+		return s.split("T")[0].slice(0, 10);
+	}
+	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+	if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+	const d = new Date(s);
+	if (!Number.isNaN(d.getTime())) return formatDate(d);
+	return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function normalizeTime(t: string): string {
+	if (!t) return "";
+	const s = String(t).trim();
+	if (/^\d{2}:\d{2}/.test(s)) return s.slice(0, 5);
+	return s;
+}
+
+const emptyForm = {
+	trainingDate: "",
+	startTime: "",
+	endTime: "",
+	instructor: "",
+	place: "",
+	title: "",
+	content: "",
+	attendees: "",
+	evaluation: "",
+};
+
+const emptyModalForm = { ...emptyForm };
+
+const modalLabelCls =
+	"w-28 shrink-0 bg-blue-100 border border-blue-300 px-2 py-1.5 text-sm font-medium text-blue-900 text-center";
+const modalFieldCls =
+	"flex-1 min-w-0 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none";
+const modalTimeCls =
+	"w-28 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none";
+const readOnlyCls =
+	"flex-1 rounded border border-blue-200 bg-gray-50 px-3 py-2 text-sm text-blue-900 min-h-[38px]";
+const readOnlyTextareaCls =
+	"flex-1 rounded border border-blue-200 bg-gray-50 px-3 py-2 text-sm text-blue-900 whitespace-pre-wrap resize-none min-h-[120px]";
+const inputCls =
+	"flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none";
+
 export default function EmployeeJobTraining() {
-	// 기간 필터
 	const [periodStart, setPeriodStart] = useState(() => {
 		const d = new Date();
 		d.setFullYear(d.getFullYear() - 1);
@@ -44,118 +109,443 @@ export default function EmployeeJobTraining() {
 	});
 	const [periodEnd, setPeriodEnd] = useState(() => formatDate(new Date()));
 
-	// 목록/선택/폼 (추후 API 연동)
-	const [list, setList] = useState<JobTrainingItem[]>([]);
-	const [selectedId, setSelectedId] = useState<string>("");
-	const [form, setForm] = useState<JobTrainingItem>(emptyForm);
+	const [trainingList, setTrainingList] = useState<JobTrainingRow[]>([]);
+	const [selectedTraining, setSelectedTraining] = useState<JobTrainingRow | null>(null);
+	const [isEditMode, setIsEditMode] = useState(false);
+	const [form, setForm] = useState(emptyForm);
+	const [loading, setLoading] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
+	const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+	const [hasProgramAccess, setHasProgramAccess] = useState(true);
+	const [createModalOpen, setCreateModalOpen] = useState(false);
+	const [modalForm, setModalForm] = useState(emptyModalForm);
+	const [modalSaveLoading, setModalSaveLoading] = useState(false);
 
-	const filteredList = useMemo(() => {
-		const start = periodStart ? new Date(periodStart) : null;
-		const end = periodEnd ? new Date(periodEnd) : null;
-		return list.filter((m) => {
-			const md = new Date(m.trainingDate);
-			if (start && !isNaN(start.getTime()) && md < start) return false;
-			if (end && !isNaN(end.getTime())) {
-				const endPlus = new Date(end);
-				endPlus.setHours(23, 59, 59, 999);
-				if (md > endPlus) return false;
+	const fetchUserAndPermission = async () => {
+		try {
+			const res = await fetch("/api/auth/user-info", { method: "GET" });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || "사용자 정보 조회 실패");
 			}
-			return true;
-		});
-	}, [list, periodStart, periodEnd]);
+			const u = (result.data || {}) as UserInfo;
+			setUserInfo(u);
+
+			const ancd = u?.ancd;
+			const uid = u?.uid;
+			if (!ancd || !uid) {
+				setHasProgramAccess(true);
+				return;
+			}
+
+			const permRes = await fetch(
+				`/api/f00131?ancd=${encodeURIComponent(String(ancd))}&uid=${encodeURIComponent(
+					String(uid)
+				)}&pgmid=${encodeURIComponent(PROGRAM_ID)}`,
+				{ method: "GET" }
+			);
+			const perm = await permRes.json().catch(() => ({}));
+			if (!permRes.ok || !perm?.success) {
+				setHasProgramAccess(true);
+				return;
+			}
+			if (typeof perm.allowed === "boolean") {
+				setHasProgramAccess(perm.allowed !== false);
+				return;
+			}
+			setHasProgramAccess(true);
+		} catch (e) {
+			console.error("사용자/권한 조회 오류:", e);
+			setHasProgramAccess(true);
+		}
+	};
+
+	const fetchTrainings = async (): Promise<JobTrainingRow[]> => {
+		setLoading(true);
+		try {
+			const ancd = userInfo?.ancd;
+			if (!ancd) {
+				setTrainingList([]);
+				return [];
+			}
+			const url = `/api/f60060?ancd=${encodeURIComponent(String(ancd))}&startDate=${encodeURIComponent(
+				periodStart
+			)}&endDate=${encodeURIComponent(periodEnd)}`;
+			const response = await fetch(url, { method: "GET" });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || "직무교육 목록 조회 실패");
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const mapped = list.map((r: JobTrainingRow) => ({
+				...r,
+				MDT: formatDateYmd(r?.MDT ?? (r as Record<string, unknown>)?.mdt),
+				URDT: formatDateYmd(r?.URDT),
+				STM: normalizeTime(toText(r?.STM)),
+				ETM: normalizeTime(toText(r?.ETM)),
+				MPL: toText(r?.MPL),
+				MDOC: toText(r?.MDOC),
+				MDES: toText(r?.MDES),
+				MNM: toText(r?.MNM),
+				MODES: toText(r?.MODES),
+				TRAINER_NM: toText(r?.TRAINER_NM),
+			}));
+			setTrainingList(mapped);
+			return mapped;
+		} catch (err) {
+			console.error("직무교육 목록 조회 오류:", err);
+			setTrainingList([]);
+			return [];
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	useEffect(() => {
-		// 데모 데이터
-		setList([
-			{
-				id: "1",
-				trainingDate: formatDate(new Date()),
-				title: "직무교육",
-				instructor: "",
-				place: "",
-				startTime: "09:00",
-				endTime: "10:00",
-				content: "",
-				attendees: "",
-				evaluation: "",
-			},
-		]);
+		fetchUserAndPermission();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	useEffect(() => {
-		const selected = list.find((m) => m.id === selectedId);
-		if (selected) setForm(selected);
-	}, [selectedId, list]);
+		if (!userInfo?.ancd) return;
+		if (!periodStart || !periodEnd) return;
+		fetchTrainings();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [periodStart, periodEnd, userInfo?.ancd]);
+
+	const totalPages = Math.max(1, Math.ceil(trainingList.length / ITEMS_PER_PAGE));
+	const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+	const pagedList = trainingList.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+	const selectedKey = selectedTraining ? formatDateYmd(selectedTraining.MDT) : "";
+	const hasSelectedTraining = Boolean(selectedKey);
+
+	const mapRowToForm = (row: JobTrainingRow) => ({
+		trainingDate: formatDateYmd(row.MDT),
+		startTime: normalizeTime(toText(row.STM)),
+		endTime: normalizeTime(toText(row.ETM)),
+		instructor: toText(row.TRAINER_NM),
+		place: toText(row.MPL),
+		title: toText(row.MDOC),
+		content: toText(row.MDES),
+		attendees: toText(row.MNM),
+		evaluation: toText(row.MODES),
+	});
+
+	const handleSelectTraining = (row: JobTrainingRow) => {
+		const normalized = { ...row, MDT: formatDateYmd(row.MDT) };
+		setSelectedTraining(normalized);
+		setIsEditMode(false);
+		setForm(mapRowToForm(normalized));
+	};
+
+	const handleModify = () => {
+		if (!hasProgramAccess) {
+			alert("프로그램 사용 권한이 없습니다.");
+			return;
+		}
+		if (!selectedTraining?.MDT) {
+			alert("수정할 직무교육을 선택해주세요.");
+			return;
+		}
+		setIsEditMode(true);
+	};
+
+	const handleCancelEdit = () => {
+		setIsEditMode(false);
+		if (selectedTraining) {
+			setForm(mapRowToForm(selectedTraining));
+		} else {
+			setForm(emptyForm);
+		}
+	};
 
 	const handleSearch = () => {
-		// TODO: API 연동 시 기간으로 조회
+		setCurrentPage(1);
+		fetchTrainings();
 	};
 
 	const handleClose = () => {
 		if (typeof window !== "undefined" && window.history.length > 1) window.history.back();
 	};
 
-	const handleAdd = () => {
-		setSelectedId("");
-		setForm({
-			...emptyForm,
+	const openCreateModal = () => {
+		setModalForm({
+			...emptyModalForm,
 			trainingDate: formatDate(new Date()),
 		});
+		setCreateModalOpen(true);
 	};
 
-	const handleEdit = () => {
-		if (!selectedId) return;
-		// TODO: 수정 모드(현재 폼은 항상 편집 가능)
+	const closeCreateModal = () => {
+		if (modalSaveLoading) return;
+		setCreateModalOpen(false);
+		setModalForm(emptyModalForm);
 	};
 
-	const handleDelete = () => {
-		if (!selectedId) return;
-		if (!confirm("선택한 교육 내역을 삭제하시겠습니까?")) return;
-		setList((prev) => prev.filter((m) => m.id !== selectedId));
-		setSelectedId("");
-		setForm(emptyForm);
+	const persistTraining = async (
+		data: typeof emptyForm,
+		options: { oldMdt?: string; isNew: boolean }
+	) => {
+		const ancd = userInfo?.ancd;
+		if (!ancd) throw new Error("기관정보(ANCD)를 확인할 수 없습니다.");
+
+		const newMdt = formatDateYmd(data.trainingDate);
+		if (!newMdt) throw new Error("교육일자(MDT)를 확인할 수 없습니다.");
+
+		const oldMdt = options.oldMdt ? formatDateYmd(options.oldMdt) : "";
+		if (!options.isNew && oldMdt && oldMdt !== newMdt) {
+			const delRes = await fetch(
+				`/api/f60060?ancd=${encodeURIComponent(String(ancd))}&mdt=${encodeURIComponent(oldMdt)}`,
+				{ method: "DELETE" }
+			);
+			const delResult = await delRes.json().catch(() => ({}));
+			if (!delRes.ok || !delResult?.success) {
+				throw new Error(delResult?.error || "기존 직무교육 삭제에 실패했습니다.");
+			}
+		}
+
+		const payload: Record<string, unknown> = {
+			ANCD: ancd,
+			MDT: newMdt,
+			STM: data.startTime || null,
+			ETM: data.endTime || null,
+			MPL: data.place || null,
+			MDOC: data.title || null,
+			MDES: data.content || null,
+			MNM: data.attendees || null,
+			MODES: data.evaluation || null,
+			TRAINER_NM: data.instructor || null,
+			INEMPNO: userInfo?.empno != null ? String(userInfo.empno) : null,
+			INEMPNM: userInfo?.empnm != null ? String(userInfo.empnm) : null,
+		};
+
+		const res = await fetch(`/api/f60060?ancd=${encodeURIComponent(String(ancd))}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		});
+		const result = await res.json().catch(() => ({}));
+		if (!res.ok || !result?.success) {
+			throw new Error(result?.error || "직무교육 저장에 실패했습니다.");
+		}
+		return newMdt;
+	};
+
+	const handleModalSave = async () => {
+		if (!hasProgramAccess) {
+			alert("프로그램 사용 권한이 없습니다.");
+			return;
+		}
+		if (!modalForm.trainingDate) {
+			alert("교육일자를 입력해주세요.");
+			return;
+		}
+
+		setModalSaveLoading(true);
+		try {
+			const newMdt = await persistTraining(modalForm, { isNew: true });
+			alert("직무교육이 등록되었습니다.");
+			closeCreateModal();
+			const refreshed = await fetchTrainings();
+			const saved = refreshed.find((m) => formatDateYmd(m.MDT) === newMdt);
+			if (saved) {
+				setSelectedTraining(saved);
+				setIsEditMode(false);
+				setForm(mapRowToForm(saved));
+			}
+		} catch (err) {
+			console.error("직무교육 등록 오류:", err);
+			alert(err instanceof Error ? err.message : "직무교육 등록 중 오류가 발생했습니다.");
+		} finally {
+			setModalSaveLoading(false);
+		}
+	};
+
+	const handlePhotoRegister = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		alert("기능개발중입니다");
+	};
+
+	const handleSave = async () => {
+		if (!hasProgramAccess) {
+			alert("프로그램 사용 권한이 없습니다.");
+			return;
+		}
+		if (!isEditMode) {
+			alert("수정 버튼을 눌러 편집 모드로 전환한 후 저장해주세요.");
+			return;
+		}
+		if (!selectedTraining?.MDT) {
+			alert("저장할 직무교육을 선택해주세요.");
+			return;
+		}
+		if (!form.trainingDate) {
+			alert("교육일자를 입력해주세요.");
+			return;
+		}
+
+		setLoading(true);
+		try {
+			const newMdt = await persistTraining(form, {
+				oldMdt: selectedTraining.MDT,
+				isNew: false,
+			});
+
+			alert("직무교육이 수정되었습니다.");
+			setIsEditMode(false);
+			const refreshed = await fetchTrainings();
+			const saved = refreshed.find((m) => formatDateYmd(m.MDT) === newMdt);
+			if (saved) {
+				setSelectedTraining(saved);
+				setForm(mapRowToForm(saved));
+			} else {
+				setSelectedTraining({ MDT: newMdt });
+				setForm({ ...form, trainingDate: newMdt });
+			}
+		} catch (err) {
+			console.error("직무교육 저장 오류:", err);
+			alert(err instanceof Error ? err.message : "직무교육 저장 중 오류가 발생했습니다.");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleDelete = async () => {
+		if (!hasProgramAccess) {
+			alert("프로그램 사용 권한이 없습니다.");
+			return;
+		}
+		if (!selectedTraining?.MDT) {
+			alert("삭제할 직무교육을 선택해주세요.");
+			return;
+		}
+		if (!confirm("선택한 직무교육을 삭제하시겠습니까?")) return;
+		if (!confirm("정말 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.")) return;
+
+		setLoading(true);
+		try {
+			const ancd = userInfo?.ancd;
+			if (!ancd) throw new Error("기관정보(ANCD)를 확인할 수 없습니다.");
+			const mdt = formatDateYmd(selectedTraining.MDT);
+			if (!mdt) throw new Error("교육일자(MDT)를 확인할 수 없습니다.");
+
+			const res = await fetch(
+				`/api/f60060?ancd=${encodeURIComponent(String(ancd))}&mdt=${encodeURIComponent(mdt)}`,
+				{ method: "DELETE" }
+			);
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || "직무교육 삭제에 실패했습니다.");
+			}
+
+			alert("직무교육이 삭제되었습니다.");
+			setSelectedTraining(null);
+			setIsEditMode(false);
+			setForm(emptyForm);
+			await fetchTrainings();
+		} catch (err) {
+			console.error("직무교육 삭제 오류:", err);
+			alert(err instanceof Error ? err.message : "직무교육 삭제 중 오류가 발생했습니다.");
+		} finally {
+			setLoading(false);
+		}
 	};
 
 	const handlePrint = () => {
-		window.print();
+		if (!form.trainingDate && !selectedTraining?.MDT) {
+			alert("출력할 직무교육을 선택해주세요.");
+			return;
+		}
+
+		const mdt = formatDateYmd(form.trainingDate || selectedTraining?.MDT || "");
+		const html = buildJobTrainingPrintHtml({
+			trainingDate: mdt,
+			startTime: form.startTime,
+			endTime: form.endTime,
+			instructor: form.instructor,
+			place: form.place,
+			title: form.title,
+			content: form.content,
+			attendees: form.attendees,
+			evaluation: form.evaluation,
+		});
+		openPrintPreviewWindow(html);
 	};
 
+	const pageNumbers = useMemo(() => {
+		const maxButtons = 5;
+		let start = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+		const end = Math.min(totalPages, start + maxButtons - 1);
+		start = Math.max(1, end - maxButtons + 1);
+		const pages: number[] = [];
+		for (let i = start; i <= end; i++) pages.push(i);
+		return pages;
+	}, [currentPage, totalPages]);
+
 	const leftPager = (
-		<div className="flex items-center justify-center gap-2 px-3 py-3 border-t border-blue-200 bg-white">
-			<button
-				type="button"
-				className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50"
-				aria-label="처음"
-			>
-				«
-			</button>
-			<button
-				type="button"
-				className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50"
-				aria-label="이전"
-			>
-				‹
-			</button>
-			<button
-				type="button"
-				className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50"
-				aria-label="다음"
-			>
-				›
-			</button>
-			<button
-				type="button"
-				className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50"
-				aria-label="마지막"
-			>
-				»
-			</button>
+		<div className="flex items-center justify-between gap-3 px-3 py-3 border-t border-blue-200 bg-white">
+			<div className="flex gap-2">
+				<button
+					type="button"
+					disabled={currentPage <= 1}
+					onClick={() => setCurrentPage(1)}
+					className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50 disabled:opacity-40"
+					aria-label="처음"
+				>
+					«
+				</button>
+				<button
+					type="button"
+					disabled={currentPage <= 1}
+					onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+					className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50 disabled:opacity-40"
+					aria-label="이전"
+				>
+					‹
+				</button>
+			</div>
+			<div className="flex gap-1">
+				{pageNumbers.map((p) => (
+					<button
+						key={p}
+						type="button"
+						onClick={() => setCurrentPage(p)}
+						className={`h-10 min-w-10 px-2 rounded border text-sm ${
+							p === currentPage
+								? "border-blue-500 bg-blue-200 text-blue-900 font-semibold"
+								: "border-blue-300 bg-white text-blue-900 hover:bg-blue-50"
+						}`}
+					>
+						{p}
+					</button>
+				))}
+			</div>
+			<div className="flex gap-2">
+				<button
+					type="button"
+					disabled={currentPage >= totalPages}
+					onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+					className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50 disabled:opacity-40"
+					aria-label="다음"
+				>
+					›
+				</button>
+				<button
+					type="button"
+					disabled={currentPage >= totalPages}
+					onClick={() => setCurrentPage(totalPages)}
+					className="h-10 w-10 rounded border border-blue-300 bg-white text-blue-900 hover:bg-blue-50 disabled:opacity-40"
+					aria-label="마지막"
+				>
+					»
+				</button>
+			</div>
 		</div>
 	);
 
 	return (
 		<div className="min-h-screen bg-white text-black">
-			{/* 상단 바 */}
 			<div className="flex flex-wrap items-center gap-4 border-b border-blue-200 bg-blue-50/50 p-4">
 				<h1 className="rounded border border-blue-300 bg-blue-100 px-4 py-2 text-base font-semibold text-blue-900">
 					직원 직무교육
@@ -181,26 +571,19 @@ export default function EmployeeJobTraining() {
 				</div>
 
 				<div className="ml-auto flex gap-2">
+
 					<button
 						type="button"
-						onClick={handleSearch}
+						onClick={openCreateModal}
 						className="rounded border border-blue-400 bg-blue-200 px-6 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
 					>
-						검색
+						신규생성
 					</button>
-					<button
-						type="button"
-						onClick={handleClose}
-						className="rounded border border-blue-400 bg-blue-200 px-6 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-					>
-						닫기
-					</button>
+
 				</div>
 			</div>
 
-			{/* 본문 */}
 			<div className="flex gap-4 p-4 min-h-[calc(100vh-76px)]">
-				{/* 좌측 목록 */}
 				<aside className="w-[420px] shrink-0 flex flex-col overflow-hidden rounded-lg border border-blue-300 bg-white">
 					<div className="flex-1 overflow-auto min-h-0">
 						<table className="w-full text-sm">
@@ -213,25 +596,32 @@ export default function EmployeeJobTraining() {
 								</tr>
 							</thead>
 							<tbody>
-								{filteredList.length === 0 ? (
+								{loading && pagedList.length === 0 ? (
+									<tr>
+										<td colSpan={2} className="px-3 py-10 text-center text-blue-900/60">
+											조회 중...
+										</td>
+									</tr>
+								) : pagedList.length === 0 ? (
 									<tr>
 										<td colSpan={2} className="px-3 py-10 text-center text-blue-900/60">
 											데이터가 없습니다.
 										</td>
 									</tr>
 								) : (
-									filteredList.map((m) => {
-										const isSelected = m.id === selectedId;
+									pagedList.map((m) => {
+										const rowMdt = formatDateYmd(m.MDT);
+										const isSelected = rowMdt === selectedKey && selectedKey !== "";
 										return (
 											<tr
-												key={m.id}
-												onClick={() => setSelectedId(m.id)}
+												key={rowMdt || `row-${m.MDOC}`}
+												onClick={() => handleSelectTraining(m)}
 												className={`cursor-pointer border-b border-blue-50 hover:bg-blue-50/60 ${
 													isSelected ? "bg-blue-100" : ""
 												}`}
 											>
-												<td className="border-r border-blue-100 px-3 py-2">{m.trainingDate}</td>
-												<td className="px-3 py-2">{m.title}</td>
+												<td className="border-r border-blue-100 px-3 py-2">{rowMdt || "-"}</td>
+												<td className="px-3 py-2">{m.MDOC || "-"}</td>
 											</tr>
 										);
 									})
@@ -239,163 +629,393 @@ export default function EmployeeJobTraining() {
 							</tbody>
 						</table>
 					</div>
-					{leftPager}
+					{trainingList.length > 0 && leftPager}
 				</aside>
 
-				{/* 우측 입력 폼 */}
 				<section className="flex-1 min-w-0 flex flex-col rounded-lg border border-blue-300 bg-white overflow-hidden">
 					<div className="flex-1 overflow-auto p-4">
-						<div className="grid grid-cols-12 gap-3">
-							{/* 교육일자 */}
-							<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육일자
-								</label>
-								<input
-									type="date"
-									value={form.trainingDate}
-									onChange={(e) => setForm((p) => ({ ...p, trainingDate: e.target.value }))}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
-								/>
-							</div>
+						{!selectedTraining ? (
+							<p className="py-16 text-center text-sm text-blue-900/60">
+								왼쪽 목록에서 직무교육을 선택하세요.
+							</p>
+						) : (
+							<div className="grid grid-cols-12 gap-3">
+								<div className="col-span-12 md:col-span-6 flex items-center gap-2">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육일자
+									</label>
+									{isEditMode ? (
+										<input
+											type="date"
+											value={form.trainingDate}
+											onChange={(e) =>
+												setForm((p) => ({ ...p, trainingDate: e.target.value }))
+											}
+											className={inputCls}
+										/>
+									) : (
+										<span className={readOnlyCls}>{form.trainingDate || "-"}</span>
+									)}
+								</div>
 
-							{/* 교육시간 */}
-							<div className="col-span-12 md:col-span-6 flex items-center gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육시간
-								</label>
-								<input
-									type="time"
-									value={form.startTime}
-									onChange={(e) => setForm((p) => ({ ...p, startTime: e.target.value }))}
-									className="w-36 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
-								/>
-								<span className="text-sm text-blue-900">~</span>
-								<input
-									type="time"
-									value={form.endTime}
-									onChange={(e) => setForm((p) => ({ ...p, endTime: e.target.value }))}
-									className="w-36 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
-								/>
-							</div>
+								<div className="col-span-12 md:col-span-6 flex items-center gap-2 flex-wrap">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육시간
+									</label>
+									{isEditMode ? (
+										<>
+											<input
+												type="time"
+												value={form.startTime}
+												onChange={(e) =>
+													setForm((p) => ({ ...p, startTime: e.target.value }))
+												}
+												className="w-36 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+											/>
+											<span className="text-sm text-blue-900">~</span>
+											<input
+												type="time"
+												value={form.endTime}
+												onChange={(e) =>
+													setForm((p) => ({ ...p, endTime: e.target.value }))
+												}
+												className="w-36 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+											/>
+											<label className="w-20 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900 text-center">
+												강사명
+											</label>
+											<input
+												type="text"
+												value={form.instructor}
+												onChange={(e) =>
+													setForm((p) => ({ ...p, instructor: e.target.value }))
+												}
+												className="w-40 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+											/>
+										</>
+									) : (
+										<>
+											<span className={readOnlyCls}>
+												{form.startTime || "-"} ~ {form.endTime || "-"}
+											</span>
+											<label className="w-20 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900 text-center">
+												강사명
+											</label>
+											<span className={`${readOnlyCls} max-w-[200px]`}>
+												{form.instructor || "-"}
+											</span>
+										</>
+									)}
+								</div>
 
-							{/* 강사명 */}
-							<div className="col-span-12 flex items-center gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									강사명
-								</label>
-								<input
-									type="text"
-									value={form.instructor}
-									onChange={(e) => setForm((p) => ({ ...p, instructor: e.target.value }))}
-									className="w-64 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
-								/>
-							</div>
+								<div className="col-span-12 flex items-center gap-2">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육장소
+									</label>
+									{isEditMode ? (
+										<input
+											type="text"
+											value={form.place}
+											onChange={(e) => setForm((p) => ({ ...p, place: e.target.value }))}
+											className={inputCls}
+										/>
+									) : (
+										<span className={readOnlyCls}>{form.place || "-"}</span>
+									)}
+								</div>
 
-							{/* 교육장소 */}
-							<div className="col-span-12 flex items-center gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육장소
-								</label>
-								<input
-									type="text"
-									value={form.place}
-									onChange={(e) => setForm((p) => ({ ...p, place: e.target.value }))}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
-								/>
-							</div>
+								<div className="col-span-12 flex items-center gap-2">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육제목
+									</label>
+									{isEditMode ? (
+										<input
+											type="text"
+											value={form.title}
+											onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+											className={inputCls}
+										/>
+									) : (
+										<span className={readOnlyCls}>{form.title || "-"}</span>
+									)}
+								</div>
 
-							{/* 교육제목 */}
-							<div className="col-span-12 flex items-center gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육제목
-								</label>
-								<input
-									type="text"
-									value={form.title}
-									onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
-								/>
-							</div>
+								<div className="col-span-12 flex items-start gap-2">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육내용
+									</label>
+									{isEditMode ? (
+										<textarea
+											value={form.content}
+											onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
+											rows={10}
+											className={`${inputCls} resize-y min-h-[200px]`}
+										/>
+									) : (
+										<div className={`${readOnlyTextareaCls} min-h-[200px]`}>
+											{form.content || "-"}
+										</div>
+									)}
+								</div>
 
-							{/* 교육내용 */}
-							<div className="col-span-12 flex items-start gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육내용
-								</label>
-								<textarea
-									value={form.content}
-									onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
-									rows={10}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none resize-y"
-								/>
-							</div>
+								<div className="col-span-12 flex items-start gap-2">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육참석자
+									</label>
+									{isEditMode ? (
+										<textarea
+											value={form.attendees}
+											onChange={(e) =>
+												setForm((p) => ({ ...p, attendees: e.target.value }))
+											}
+											rows={3}
+											className={`${inputCls} resize-y`}
+										/>
+									) : (
+										<div className={readOnlyTextareaCls}>{form.attendees || "-"}</div>
+									)}
+								</div>
 
-							{/* 교육참석자 */}
-							<div className="col-span-12 flex items-start gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육참석자
-								</label>
-								<textarea
-									value={form.attendees}
-									onChange={(e) => setForm((p) => ({ ...p, attendees: e.target.value }))}
-									rows={3}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none resize-y"
-								/>
+								<div className="col-span-12 flex items-start gap-2">
+									<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
+										교육평가
+									</label>
+									{isEditMode ? (
+										<textarea
+											value={form.evaluation}
+											onChange={(e) =>
+												setForm((p) => ({ ...p, evaluation: e.target.value }))
+											}
+											rows={6}
+											className={`${inputCls} resize-y min-h-[120px]`}
+										/>
+									) : (
+										<div className={`${readOnlyTextareaCls} min-h-[120px]`}>
+											{form.evaluation || "-"}
+										</div>
+									)}
+								</div>
 							</div>
-
-							{/* 교육평가 */}
-							<div className="col-span-12 flex items-start gap-2">
-								<label className="w-24 shrink-0 rounded border border-blue-300 bg-blue-100 px-2 py-2 text-sm font-medium text-blue-900">
-									교육평가
-								</label>
-								<textarea
-									value={form.evaluation}
-									onChange={(e) => setForm((p) => ({ ...p, evaluation: e.target.value }))}
-									rows={6}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none resize-y"
-								/>
-							</div>
-						</div>
+						)}
 					</div>
 
-					{/* 하단 버튼 */}
 					<div className="border-t border-blue-200 bg-blue-50/50 p-3">
-						<div className="flex flex-wrap items-center justify-end gap-3">
-							<button
-								type="button"
-								onClick={handleAdd}
-								className="min-w-28 rounded border border-blue-400 bg-blue-200 px-10 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-							>
-								추가
-							</button>
-							<button
-								type="button"
-								onClick={handleEdit}
-								disabled={!selectedId}
-								className="min-w-28 rounded border border-blue-400 bg-blue-200 px-10 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
-							>
-								수정
-							</button>
-							<button
-								type="button"
-								onClick={handleDelete}
-								disabled={!selectedId}
-								className="min-w-28 rounded border border-blue-400 bg-blue-200 px-10 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
-							>
-								삭제
-							</button>
-							<button
-								type="button"
-								onClick={handlePrint}
-								className="min-w-28 rounded border border-blue-400 bg-blue-200 px-10 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-							>
-								출력
-							</button>
+						<div className="flex flex-wrap items-center justify-center gap-3">
+							{!isEditMode ? (
+								<>
+									<button
+										type="button"
+										onClick={handleModify}
+										disabled={!hasSelectedTraining}
+										className="min-w-28 rounded border border-blue-400 bg-blue-200 px-8 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										수정
+									</button>
+									<button
+										type="button"
+										onClick={() => void handleDelete()}
+										disabled={!hasSelectedTraining}
+										className="min-w-28 rounded border border-blue-400 bg-blue-200 px-8 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										삭제
+									</button>
+									<button
+										type="button"
+										onClick={handlePrint}
+										disabled={!hasSelectedTraining}
+										className="min-w-28 rounded border border-blue-400 bg-blue-200 px-8 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										출력
+									</button>
+								</>
+							) : (
+								<>
+									<button
+										type="button"
+										onClick={handleCancelEdit}
+										disabled={loading}
+										className="min-w-28 rounded border border-gray-400 bg-gray-100 px-8 py-2 text-sm font-medium text-gray-900 hover:bg-gray-200 disabled:opacity-50"
+									>
+										취소
+									</button>
+									<button
+										type="button"
+										onClick={() => void handleSave()}
+										disabled={!hasProgramAccess || loading}
+										className="min-w-28 rounded border border-blue-500 bg-blue-500 px-8 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+									>
+										저장
+									</button>
+								</>
+							)}
 						</div>
 					</div>
 				</section>
 			</div>
+
+			{createModalOpen ? (
+				<div
+					className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4"
+					role="presentation"
+					onClick={closeCreateModal}
+				>
+					<div
+						className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border-2 border-blue-300 bg-white shadow-xl"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="job-training-create-title"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="border-b border-blue-200 bg-blue-50 px-4 py-3">
+							<h2
+								id="job-training-create-title"
+								className="text-center text-lg font-semibold text-blue-900"
+							>
+								직원 직무교육
+							</h2>
+						</div>
+
+						<div className="overflow-y-auto space-y-2 p-4">
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>교육일자</label>
+								<input
+									type="date"
+									value={modalForm.trainingDate}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, trainingDate: e.target.value }))
+									}
+									className="w-44 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex flex-wrap items-center gap-2">
+								<label className={modalLabelCls}>교육시간</label>
+								<input
+									type="time"
+									value={modalForm.startTime}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, startTime: e.target.value }))
+									}
+									className={modalTimeCls}
+								/>
+								<span className="text-sm text-blue-900">~</span>
+								<input
+									type="time"
+									value={modalForm.endTime}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, endTime: e.target.value }))
+									}
+									className={modalTimeCls}
+								/>
+								<label className={`${modalLabelCls} w-20`}>강사명</label>
+								<input
+									type="text"
+									value={modalForm.instructor}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, instructor: e.target.value }))
+									}
+									className="w-40 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>교육장소</label>
+								<input
+									type="text"
+									value={modalForm.place}
+									onChange={(e) => setModalForm((f) => ({ ...f, place: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-center gap-2">
+								<label className={modalLabelCls}>교육제목</label>
+								<input
+									type="text"
+									value={modalForm.title}
+									onChange={(e) => setModalForm((f) => ({ ...f, title: e.target.value }))}
+									className={modalFieldCls}
+								/>
+							</div>
+
+							<div className="flex items-start gap-2">
+								<label
+									className={`${modalLabelCls} self-stretch flex items-center justify-center`}
+								>
+									교육내용
+								</label>
+								<textarea
+									value={modalForm.content}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, content: e.target.value }))
+									}
+									rows={10}
+									className={`${modalFieldCls} resize-y min-h-[200px]`}
+								/>
+							</div>
+
+							<div className="flex items-start gap-2">
+								<label
+									className={`${modalLabelCls} self-stretch flex items-center justify-center`}
+								>
+									교육참석자
+								</label>
+								<textarea
+									value={modalForm.attendees}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, attendees: e.target.value }))
+									}
+									rows={3}
+									className={`${modalFieldCls} resize-y min-h-[72px]`}
+								/>
+							</div>
+
+							<div className="flex items-start gap-2">
+								<label
+									className={`${modalLabelCls} self-stretch flex items-center justify-center`}
+								>
+									교육평가
+								</label>
+								<textarea
+									value={modalForm.evaluation}
+									onChange={(e) =>
+										setModalForm((f) => ({ ...f, evaluation: e.target.value }))
+									}
+									rows={6}
+									className={`${modalFieldCls} resize-y min-h-[120px]`}
+								/>
+							</div>
+						</div>
+
+						<div className="flex border-t border-blue-200">
+							<button
+								type="button"
+								disabled={modalSaveLoading}
+								onClick={() => void handleModalSave()}
+								className="flex-1 border-r border-blue-200 bg-blue-100 py-3 text-sm font-semibold text-blue-900 hover:bg-blue-200 disabled:opacity-50"
+							>
+								{modalSaveLoading ? "저장 중…" : "저장"}
+							</button>
+							<button
+								type="button"
+								disabled={modalSaveLoading}
+								onClick={(e) => handlePhotoRegister(e)}
+								className="w-32 border-r border-blue-200 bg-white py-3 text-sm font-medium text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+							>
+								사진등록
+							</button>
+							<button
+								type="button"
+								disabled={modalSaveLoading}
+								onClick={closeCreateModal}
+								className="w-28 bg-white py-3 text-sm font-medium text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+							>
+								닫기
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 		</div>
 	);
 }
