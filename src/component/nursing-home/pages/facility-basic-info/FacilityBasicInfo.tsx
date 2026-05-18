@@ -634,13 +634,13 @@ export default function FacilityBasicInfo() {
 					>
 						사용자(ID)계정
 					</button>
-					<button
+					{/* <button
 						type="button"
 						onClick={handleClose}
 						className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
 					>
 						닫기
-					</button>
+					</button> */}
 				</div>
 			</div>
 
