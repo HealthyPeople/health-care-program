@@ -37,6 +37,7 @@ export function classifyAttendanceDisplay(row: AttendancePrintRow): string {
 	if (!wgu) return "근무";
 	if (wgu === "4") return "정기휴일";
 	if (wgu === "6") return "결근";
+	if (wgu === "2") return hodes.includes("월") ? "월차" : "년차";
 	if (wgu === "5") return hodes.includes("월") ? "월차" : "년차";
 	if (wgu === "9") {
 		if (/병/.test(hodes)) return "병가";
