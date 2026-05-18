@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { getCookie } from "@/utils/auth";
+import {
+	buildDailyAttendancePrintHtml,
+	openPrintPreviewWindow,
+} from "./employeeAttendancePrint";
 
 interface Employee {
 	ANCD: number;
@@ -558,14 +562,33 @@ export default function EmployeeAttendance() {
 		fetchAttendanceData(formatDate(workDate));
 	};
 
-	const handleCreate = () => {
-		// 모달을 먼저 열고, useEffect에서 값을 설정하도록 함
-		// 모달이 열릴 때 현재 날짜를 기본값으로 설정
-		setCreateFormData({
-			...initialForm,
-			workDate: formatDate(workDate),
-		});
-		setIsCreateModalOpen(true);
+	const handleCreate = async () => {
+		const dateStr = formatDate(workDate);
+		if (
+			!confirm(
+				`${dateStr} 근태를 근무 중인 사원 전원에게 일괄 생성하시겠습니까?\n(이미 등록된 사원은 건너뜁니다.)`,
+			)
+		) {
+			return;
+		}
+		try {
+			const response = await fetch("/api/f02010", {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ action: "bulkCreate", workDate: dateStr }),
+			});
+			const result = await response.json();
+			if (!response.ok || !result.success) {
+				throw new Error(result.error || "근태 일괄 생성에 실패했습니다.");
+			}
+			alert(
+				`근태 일괄 생성이 완료되었습니다.\n신규: ${result.created ?? 0}명\n건너뜀(기존): ${result.skipped ?? 0}명\n대상(근무): ${result.total ?? 0}명`,
+			);
+			await fetchAttendanceData(dateStr);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : "근태 일괄 생성 중 오류가 발생했습니다.");
+		}
 	};
 
 	const handleCloseModal = () => {
@@ -646,8 +669,16 @@ export default function EmployeeAttendance() {
 	};
 
 	const handlePrint = () => {
-		// TODO: 출력 기능
-		window.print();
+		if (attendanceData.length === 0) {
+			alert("출력할 근태 데이터가 없습니다. 먼저 검색하거나 생성해 주세요.");
+			return;
+		}
+		const html = buildDailyAttendancePrintHtml(
+			formatDate(workDate),
+			getDayOfWeek(workDate),
+			attendanceData,
+		);
+		openPrintPreviewWindow(html);
 	};
 
 	const handleClose = () => {
@@ -734,13 +765,13 @@ export default function EmployeeAttendance() {
 					</button> */}
 				</div>
 				<div className="ml-auto flex gap-2">
-					<button
+					{/* <button
 						type="button"
 						onClick={handleSearch}
 						className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
 					>
 						검색
-					</button>
+					</button> */}
 					<button
 						type="button"
 						onClick={handleCreate}
@@ -762,13 +793,13 @@ export default function EmployeeAttendance() {
 					>
 						출력
 					</button>
-					<button
+					{/* <button
 						type="button"
 						onClick={handleClose}
 						className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
 					>
 						닫기
-					</button>
+					</button> */}
 				</div>
 			</div>
 

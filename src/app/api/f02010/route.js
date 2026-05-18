@@ -109,6 +109,89 @@ export async function POST(req) {
     }
 
     const body = await req.json();
+
+    /** 근무상태(JOBST)=1(근무) 사원 전원 — 해당 일자 근태 일괄 생성 */
+    if (body.action === 'bulkCreate') {
+      const workDate = String(body.workDate || body.WDT || '').trim();
+      if (!workDate) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: '근무일자(workDate)가 필요합니다'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const empResult = await pool.request()
+        .input('sessionAncd', sessionAncd)
+        .query(`
+          SELECT [ANCD], [EMPNO], [EMPNM], [JOBADD], [JOBSH]
+          FROM [돌봄시설DB].[dbo].[F01010]
+          WHERE [ANCD] = @sessionAncd
+            AND LTRIM(RTRIM(CAST([JOBST] AS VARCHAR(10)))) = '1'
+            AND LTRIM(RTRIM([EMPNM])) <> ''
+          ORDER BY [EMPNM]
+        `);
+
+      const existingResult = await pool.request()
+        .input('sessionAncd', sessionAncd)
+        .input('workDate', workDate)
+        .query(`
+          SELECT [EMPNO]
+          FROM [돌봄시설DB].[dbo].[F02010]
+          WHERE [ANCD] = @sessionAncd AND [WDT] = @workDate
+        `);
+
+      const existingSet = new Set(
+        (existingResult.recordset || []).map((r) => Number(r.EMPNO))
+      );
+
+      const employees = empResult.recordset || [];
+      let created = 0;
+      let skipped = 0;
+
+      for (const emp of employees) {
+        const empno = Number(emp.EMPNO);
+        if (existingSet.has(empno)) {
+          skipped += 1;
+          continue;
+        }
+
+        const ins = pool.request();
+        ins.input('ANCD', sessionAncd);
+        ins.input('EMPNO', empno);
+        ins.input('WDT', workDate);
+        ins.input('JOBADD', emp.JOBADD || '');
+        ins.input('JOBSH', emp.JOBSH || '');
+        ins.input('WGU', '');
+        ins.input('HODES', '');
+        ins.input('STM', '');
+        ins.input('ETM', '');
+
+        await ins.query(`
+          INSERT INTO [돌봄시설DB].[dbo].[F02010]
+            ([ANCD], [EMPNO], [WDT], [JOBADD], [JOBSH], [WGU], [HODES], [STM], [ETM], [INDT])
+          VALUES
+            (@ANCD, @EMPNO, @WDT, @JOBADD, @JOBSH, @WGU, @HODES, @STM, @ETM, GETDATE())
+        `);
+        existingSet.add(empno);
+        created += 1;
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        action: 'bulkCreate',
+        workDate,
+        created,
+        skipped,
+        total: employees.length
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     const { ANCD, EMPNO, WDT, JOBADD, JOBSH, WGU, HODES, STM, ETM } = body;
 
     if (!ancdEquals(ANCD, sessionAncd)) {
