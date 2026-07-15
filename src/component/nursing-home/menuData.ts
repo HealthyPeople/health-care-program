@@ -109,7 +109,7 @@ export const sections3: Sections3 = {
     '욕창 관리': [
       { name: '욕창관리내역 등록', link: '/nursingHome/bedsore-management' },
     ],
-    '유치도뇨관 관리(설명요청_F33050)': [
+    '유치도뇨관 관리': [
       { name: '유치도뇨괸리내역 등록', link: '/nursingHome/indwelling-catheter' },
     ],
   },
