@@ -37,31 +37,50 @@ export default function LongtermPhysicalActivity() {
 	const MEAL_KIND_TO_LABEL: Record<string, string> = {
 		'1': '일반식',
 		'2': '죽',
-		'3': '유동식(미음)',
-		'4': '경관식',
-		'5': '일반식(당뇨)',
-		'6': '일반식(저염식)',
-		'7': '다진식'
+		'3': '유동식(미음)'
 	};
 	const MEAL_KIND_LABEL_TO_CODE: Record<string, string> = {
 		'일반식': '1',
 		'죽': '2',
 		'유동식(미음)': '3',
-		'경관식': '4',
-		'일반식(당뇨)': '5',
-		'일반식(저염식)': '6',
-		'다진식': '7'
+		'경관식': '3',
+		'일반식(당뇨)': '1',
+		'일반식(저염식)': '1',
+		'다진식': '2'
+	};
+	const LEGACY_MEAL_KIND_CODE: Record<string, '1' | '2' | '3'> = {
+		'4': '3',
+		'5': '1',
+		'6': '1',
+		'7': '2'
+	};
+
+	const BATH_METH_TO_LABEL: Record<string, string> = {
+		'1': '전신입욕',
+		'2': '샤워식',
+		'3': '침상목욕'
+	};
+	const BATH_METH_LABEL_TO_CODE: Record<string, string> = {
+		'전신입욕': '1',
+		'샤워식': '2',
+		'침상목욕': '3',
+		'샤워식-목욕의자': '2',
+		'욕조식': '1',
+		'수건목욕': '3',
+		'입욕': '1',
+		'목욕의자': '2',
+		'기타': '3'
 	};
 
 	// 식사 정보 관련 state
-	const [mealType, setMealType] = useState<'1' | '2' | '3' | '4' | '5' | '6' | '7'>('1'); // PH_MEAL_KIND
+	const [mealType, setMealType] = useState<'1' | '2' | '3'>('1'); // PH_MEAL_KIND
 	const [mealIntake, setMealIntake] = useState('1');
 	const [mealClassification, setMealClassification] = useState(''); // 식사구분 (ST_KIND)
 	const [mealLocation, setMealLocation] = useState('지층 생활실');
 	const [mealConfirmer, setMealConfirmer] = useState('');
 
 	// 목욕 정보 관련 state
-	const [bathMethod, setBathMethod] = useState('샤워식-목욕의자');
+	const [bathMethod, setBathMethod] = useState<'1' | '2' | '3'>('2');
 	const [bathTimeRequired, setBathTimeRequired] = useState('40');
 	const [bathTime, setBathTime] = useState('');
 	const [bathDay1, setBathDay1] = useState('2 월요일');
@@ -106,7 +125,8 @@ export default function LongtermPhysicalActivity() {
 		ST_PLAC: mealLocation,
 		ST_CONF: mealConfirmer,
 		// 목욕
-		PH_BATH_METH_NM: bathMethod,
+		PH_BATH_METH: bathMethod,
+		PH_BATH_METH_NM: BATH_METH_TO_LABEL[bathMethod] ?? '',
 		PH_BATH_TM: bathTimeRequired,
 		BATH_SPV_TM: bathTime,
 		PH_BATH_WK1: String(bathDay1 || '').trim().split(/\s+/)[0] || '',
@@ -145,10 +165,12 @@ export default function LongtermPhysicalActivity() {
 		{
 			const code = String(d?.PH_MEAL_KIND ?? '').trim();
 			const label = String(d?.PH_MEAL_KIND_NM ?? '').trim();
-			if (code && /^[1-7]$/.test(code)) {
-				setMealType(code as '1' | '2' | '3' | '4' | '5' | '6' | '7');
-			} else if (label && MEAL_KIND_LABEL_TO_CODE[label] && /^[1-7]$/.test(MEAL_KIND_LABEL_TO_CODE[label])) {
-				setMealType(MEAL_KIND_LABEL_TO_CODE[label] as '1' | '2' | '3' | '4' | '5' | '6' | '7');
+			if (code && MEAL_KIND_TO_LABEL[code]) {
+				setMealType(code as '1' | '2' | '3');
+			} else if (code && LEGACY_MEAL_KIND_CODE[code]) {
+				setMealType(LEGACY_MEAL_KIND_CODE[code]);
+			} else if (label && MEAL_KIND_LABEL_TO_CODE[label]) {
+				setMealType(MEAL_KIND_LABEL_TO_CODE[label] as '1' | '2' | '3');
 			}
 		}
 		{
@@ -160,7 +182,15 @@ export default function LongtermPhysicalActivity() {
 		setMealLocation(String(d?.ST_PLAC ?? mealLocation));
 		setMealConfirmer(String(d?.ST_CONF ?? mealConfirmer));
 
-		setBathMethod(String(d?.PH_BATH_METH_NM ?? d?.PH_BATH_METH ?? bathMethod));
+		{
+			const code = String(d?.PH_BATH_METH ?? '').trim();
+			const label = String(d?.PH_BATH_METH_NM ?? '').trim();
+			if (code && BATH_METH_TO_LABEL[code]) {
+				setBathMethod(code as '1' | '2' | '3');
+			} else if (label && BATH_METH_LABEL_TO_CODE[label]) {
+				setBathMethod(BATH_METH_LABEL_TO_CODE[label] as '1' | '2' | '3');
+			}
+		}
 		setBathTimeRequired(String(d?.PH_BATH_TM ?? bathTimeRequired));
 		setBathTime(String(d?.BATH_SPV_TM ?? bathTime));
 		setBathDay1(toWeekdayOption(d?.PH_BATH_WK1, bathDay1));
@@ -200,6 +230,7 @@ export default function LongtermPhysicalActivity() {
 				PH_MEAL_WT_NM: row.PH_MEAL_WT_NM ?? '',
 				ST_PLAC: row.ST_PLAC ?? '',
 				ST_CONF: row.ST_CONF ?? '',
+				PH_BATH_METH: row.PH_BATH_METH ?? '',
 				PH_BATH_METH_NM: row.PH_BATH_METH_NM ?? row.PH_BATH_METH ?? '',
 				PH_BATH_TM: row.PH_BATH_TM ?? '',
 				BATH_SPV_TM: row.BATH_SPV_TM ?? '',
@@ -369,6 +400,18 @@ export default function LongtermPhysicalActivity() {
 		'5 목요일', '6 금요일', '7 토요일'
 	];
 
+	const mealIntakeOptions = ['1', '1/2이상', '1/2미만'] as const;
+
+	const selectClass = isEditing
+		? 'flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded'
+		: 'flex-1 px-2 py-1 text-sm border border-blue-300 rounded pointer-events-none text-blue-800 font-semibold bg-blue-50';
+
+	const readLabelClass = (active: boolean) =>
+		`text-sm ${!isEditing && active ? 'font-semibold text-blue-800' : 'text-blue-900'}`;
+
+	const radioInputClass = 'w-4 h-4 border border-blue-300 shrink-0 accent-blue-700';
+	const checkboxInputClass = 'w-4 h-4 border border-blue-300 rounded shrink-0 accent-blue-700';
+
 	return (
 		<div className="min-h-screen text-black bg-white">
 			<div className="mx-auto max-w-[1400px] p-4">
@@ -440,17 +483,13 @@ export default function LongtermPhysicalActivity() {
 											</label>
 											<select
 												value={mealType}
-												onChange={(e) => setMealType(e.target.value as '1' | '2' | '3' | '4' | '5' | '6' | '7')}
-												disabled={!isEditing}
-												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+												onChange={(e) => setMealType(e.target.value as '1' | '2' | '3')}
+												className={selectClass}
+												tabIndex={isEditing ? 0 : -1}
 											>
 												<option value="1">일반식</option>
 												<option value="2">죽</option>
 												<option value="3">유동식(미음)</option>
-												<option value="4">경관식</option>
-												<option value="5">일반식(당뇨)</option>
-												<option value="6">일반식(저염식)</option>
-												<option value="7">다진식</option>
 											</select>
 										</div>
 										{/* 식사섭취량 */}
@@ -459,42 +498,26 @@ export default function LongtermPhysicalActivity() {
 												식사섭취량
 											</label>
 											<div className="flex items-center gap-3">
-												<label className="flex items-center gap-1 cursor-pointer">
-													<input
-														type="radio"
-														name="mealIntake"
-														value="1"
-														checked={mealIntake === '1'}
-														onChange={(e) => setMealIntake(e.target.value)}
-														disabled={!isEditing}
-														className="w-4 h-4 border border-blue-300"
-													/>
-													<span className="text-sm text-blue-900">1</span>
-												</label>
-												<label className="flex items-center gap-1 cursor-pointer">
-													<input
-														type="radio"
-														name="mealIntake"
-														value="1/2이상"
-														checked={mealIntake === '1/2이상'}
-														onChange={(e) => setMealIntake(e.target.value)}
-														disabled={!isEditing}
-														className="w-4 h-4 border border-blue-300"
-													/>
-													<span className="text-sm text-blue-900">1/2이상</span>
-												</label>
-												<label className="flex items-center gap-1 cursor-pointer">
-													<input
-														type="radio"
-														name="mealIntake"
-														value="1/2미만"
-														checked={mealIntake === '1/2미만'}
-														onChange={(e) => setMealIntake(e.target.value)}
-														disabled={!isEditing}
-														className="w-4 h-4 border border-blue-300"
-													/>
-													<span className="text-sm text-blue-900">1/2미만</span>
-												</label>
+												{mealIntakeOptions.map((option) => {
+													const isChecked = mealIntake === option;
+													return (
+														<label
+															key={option}
+															className={`flex items-center gap-1 shrink-0 ${isEditing ? 'cursor-pointer' : 'cursor-default pointer-events-none'}`}
+														>
+															<input
+																type="radio"
+																name="mealIntake"
+																value={option}
+																checked={isChecked}
+																onChange={(e) => isEditing && setMealIntake(e.target.value)}
+																className={radioInputClass}
+																tabIndex={isEditing ? 0 : -1}
+															/>
+															<span className={readLabelClass(isChecked)}>{option}</span>
+														</label>
+													);
+												})}
 											</div>
 										</div>
 										{/* 식사구분 */}
@@ -589,14 +612,13 @@ export default function LongtermPhysicalActivity() {
 											</label>
 											<select
 												value={bathMethod}
-												onChange={(e) => setBathMethod(e.target.value)}
-												disabled={!isEditing}
-												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+												onChange={(e) => setBathMethod(e.target.value as '1' | '2' | '3')}
+												className={selectClass}
+												tabIndex={isEditing ? 0 : -1}
 											>
-												<option value="샤워식-목욕의자">샤워식-목욕의자</option>
-												<option value="샤워식">샤워식</option>
-												<option value="욕조식">욕조식</option>
-												<option value="수건목욕">수건목욕</option>
+												<option value="1">전신입욕</option>
+												<option value="2">샤워식</option>
+												<option value="3">침상목욕</option>
 											</select>
 										</div>
 										{/* 소요시간(분) */}
@@ -633,8 +655,8 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={bathDay1}
 												onChange={(e) => setBathDay1(e.target.value)}
-												disabled={!isEditing}
-												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+												className={selectClass}
+												tabIndex={isEditing ? 0 : -1}
 											>
 												{weekDays.map(day => (
 													<option key={day} value={day}>{day}</option>
@@ -698,8 +720,8 @@ export default function LongtermPhysicalActivity() {
 											<select
 												value={bathDay2}
 												onChange={(e) => setBathDay2(e.target.value)}
-												disabled={!isEditing}
-												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+												className={selectClass}
+												tabIndex={isEditing ? 0 : -1}
 											>
 												{weekDays.map(day => (
 													<option key={day} value={day}>{day}</option>
@@ -779,59 +801,59 @@ export default function LongtermPhysicalActivity() {
 									</div>
 									<div className="p-4 space-y-3">
 										{/* 신체활동 체크박스들 */}
-										<div className="flex items-center gap-2">
+										<div className={`flex items-center gap-2 ${!isEditing ? 'pointer-events-none' : ''}`}>
 											<input
 												type="checkbox"
 												checked={faceWashing}
-												onChange={(e) => setFaceWashing(e.target.checked)}
-												disabled={!isEditing}
-												className="w-4 h-4 border border-blue-300 rounded"
+												onChange={(e) => isEditing && setFaceWashing(e.target.checked)}
+												className={checkboxInputClass}
+												tabIndex={isEditing ? 0 : -1}
 											/>
-											<label className="text-sm text-blue-900">세면, 구강, 머리감기</label>
+											<label className={readLabelClass(faceWashing)}>세면, 구강, 머리감기</label>
 											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
-										<div className="flex items-center gap-2">
+										<div className={`flex items-center gap-2 ${!isEditing ? 'pointer-events-none' : ''}`}>
 											<input
 												type="checkbox"
 												checked={grooming}
-												onChange={(e) => setGrooming(e.target.checked)}
-												disabled={!isEditing}
-												className="w-4 h-4 border border-blue-300 rounded"
+												onChange={(e) => isEditing && setGrooming(e.target.checked)}
+												className={checkboxInputClass}
+												tabIndex={isEditing ? 0 : -1}
 											/>
-											<label className="text-sm text-blue-900">몸단장, 옷갈아입히기</label>
+											<label className={readLabelClass(grooming)}>몸단장, 옷갈아입히기</label>
 											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
-										<div className="flex items-center gap-2">
+										<div className={`flex items-center gap-2 ${!isEditing ? 'pointer-events-none' : ''}`}>
 											<input
 												type="checkbox"
 												checked={movementAssistance}
-												onChange={(e) => setMovementAssistance(e.target.checked)}
-												disabled={!isEditing}
-												className="w-4 h-4 border border-blue-300 rounded"
+												onChange={(e) => isEditing && setMovementAssistance(e.target.checked)}
+												className={checkboxInputClass}
+												tabIndex={isEditing ? 0 : -1}
 											/>
-											<label className="text-sm text-blue-900">이동도움 및 신체 기능유지. 증진</label>
+											<label className={readLabelClass(movementAssistance)}>이동도움 및 신체 기능유지. 증진</label>
 											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
-										<div className="flex items-center gap-2">
+										<div className={`flex items-center gap-2 ${!isEditing ? 'pointer-events-none' : ''}`}>
 											<input
 												type="checkbox"
 												checked={positionChange}
-												onChange={(e) => setPositionChange(e.target.checked)}
-												disabled={!isEditing}
-												className="w-4 h-4 border border-blue-300 rounded"
+												onChange={(e) => isEditing && setPositionChange(e.target.checked)}
+												className={checkboxInputClass}
+												tabIndex={isEditing ? 0 : -1}
 											/>
-											<label className="text-sm text-blue-900">체위변경(2시간마다)</label>
+											<label className={readLabelClass(positionChange)}>체위변경(2시간마다)</label>
 											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
-										<div className="flex items-center gap-2">
+										<div className={`flex items-center gap-2 ${!isEditing ? 'pointer-events-none' : ''}`}>
 											<input
 												type="checkbox"
 												checked={walkAccompany}
-												onChange={(e) => setWalkAccompany(e.target.checked)}
-												disabled={!isEditing}
-												className="w-4 h-4 border border-blue-300 rounded"
+												onChange={(e) => isEditing && setWalkAccompany(e.target.checked)}
+												className={checkboxInputClass}
+												tabIndex={isEditing ? 0 : -1}
 											/>
-											<label className="text-sm text-blue-900">산책동행</label>
+											<label className={readLabelClass(walkAccompany)}>산책동행</label>
 											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										{/* 화장실이용하기 */}
@@ -845,15 +867,15 @@ export default function LongtermPhysicalActivity() {
 												className="w-20 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											/>
 										</div>
-										<div className="flex items-center gap-2">
+										<div className={`flex items-center gap-2 ${!isEditing ? 'pointer-events-none' : ''}`}>
 											<input
 												type="checkbox"
 												checked={outingAccompany}
-												onChange={(e) => setOutingAccompany(e.target.checked)}
-												disabled={!isEditing}
-												className="w-4 h-4 border border-blue-300 rounded"
+												onChange={(e) => isEditing && setOutingAccompany(e.target.checked)}
+												className={checkboxInputClass}
+												tabIndex={isEditing ? 0 : -1}
 											/>
-											<label className="text-sm text-blue-900">외출동행</label>
+											<label className={readLabelClass(outingAccompany)}>외출동행</label>
 											{/* <span className="text-sm text-blue-900/70">실시</span> */}
 										</div>
 										{/* 작성자성명 */}
