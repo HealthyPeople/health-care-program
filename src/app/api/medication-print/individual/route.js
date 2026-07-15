@@ -10,14 +10,6 @@ function json(data, status = 200) {
   });
 }
 
-function ymdToDate(ymd) {
-  if (!ymd) return null;
-  const s = String(ymd).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  const d = new Date(`${s}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 function monthStartEnd(month) {
   const m = String(month || "").trim();
   if (!/^\d{4}-\d{2}$/.test(m)) return null;
@@ -34,10 +26,27 @@ function monthStartEnd(month) {
 }
 
 function markTime(status, time) {
+  const s = String(status || "").trim();
   const t = String(time || "").trim();
-  if (status === "1") return `○ ${t}`.trim();
-  if (status === "2") return `× ${t}`.trim();
-  return ""; // 9: 약없음
+  if (s === "1") return `○ ${t}`.trim();
+  if (s === "2") return `× ${t}`.trim();
+  if (s === "9") return "-";
+  if (s) return `(${s})`;
+  return "";
+}
+
+function buildCalendarRow(r) {
+  return {
+    EADT: String(r.EADT || "").trim(),
+    아침식전: markTime(r.MOIN, r.MOIN_TIME),
+    아침식후: markTime(r.MOOUT, r.MOOUT_TIME),
+    점심식전: markTime(r.AFIN, r.AFIN_TIME),
+    점심식후: markTime(r.AFOUT, r.AFOUT_TIME),
+    저녁식전: markTime(r.EVIN, r.EVIN_TIME),
+    저녁식후: markTime(r.EVOUT, r.EVOUT_TIME),
+    취침복용: markTime(r.SLIN, r.SLIN_TIME),
+    확인자: String(r.CONF_NAME || "").trim(),
+  };
 }
 
 export async function GET(req) {
@@ -56,23 +65,31 @@ export async function GET(req) {
     const monthRange = monthStartEnd(month);
     if (!monthRange) return json({ success: false, error: "month(YYYY-MM)가 필요합니다" }, 400);
 
-    const pnum = parseInt(String(pnumRaw).trim(), 10);
-    if (!Number.isFinite(pnum)) return json({ success: false, error: "pnum이 필요합니다" }, 400);
+    const pnum = String(pnumRaw || "").trim();
+    if (!pnum) return json({ success: false, error: "pnum이 필요합니다" }, 400);
 
-    const request = pool.request();
-    request.input("ANCD", gate.sessionAncd);
-    request.input("PNUM", pnum);
-    request.input("MONTH_START", monthRange.startYmd);
-    request.input("MONTH_END", monthRange.endYmd);
+    const bindCommon = (req) => {
+      req.input("ANCD", gate.sessionAncd);
+      req.input("PNUM", pnum);
+      req.input("MONTH_START", monthRange.startYmd);
+      req.input("MONTH_END", monthRange.endYmd);
+      return req;
+    };
 
-    const facility = await request.query(`
+    const facilityReq = bindCommon(pool.request());
+    const memberReq = bindCommon(pool.request());
+    const diseasesReq = bindCommon(pool.request());
+    const medsReq = bindCommon(pool.request());
+    const logsReq = bindCommon(pool.request());
+
+    const facility = await facilityReq.query(`
       SELECT TOP 1
         [ANCD],[ANNM],[ANGH],[ANTEL],[ANADD]
       FROM [돌봄시설DB].[dbo].[F00110]
       WHERE [ANCD] = @ANCD
     `);
 
-    const member = await request.query(`
+    const member = await memberReq.query(`
       SELECT TOP 1
         [ANCD],[PNUM],[P_NM],[P_BRDT],[P_SEX],[P_GRD],[P_YYNO],[P_YYDT]
       FROM [돌봄시설DB].[dbo].[F10010]
@@ -80,7 +97,7 @@ export async function GET(req) {
       ORDER BY [INDT] DESC
     `);
 
-    const diseases = await request.query(`
+    const diseases = await diseasesReq.query(`
       SELECT TOP 5
         [JDES]
       FROM [돌봄시설DB].[dbo].[F30030]
@@ -89,7 +106,7 @@ export async function GET(req) {
       ORDER BY [INDT] DESC
     `);
 
-    const meds = await request.query(`
+    const meds = await medsReq.query(`
       SELECT
         [MENM],[INQNT],[INCNT],[METM],[CAPDES]
       FROM [돌봄시설DB].[dbo].[F30110]
@@ -100,50 +117,31 @@ export async function GET(req) {
       ORDER BY [INDT] DESC
     `);
 
-    const logs = await request.query(`
+    const logs = await logsReq.query(`
       SELECT
         CONVERT(varchar(10), [EADT], 120) as EADT,
         [MOIN],[MOOUT],[AFIN],[AFOUT],[EVIN],[EVOUT],[SLIN],
         [MOIN_TIME],[MOOUT_TIME],[AFIN_TIME],[AFOUT_TIME],[EVIN_TIME],[EVOUT_TIME],[SLIN_TIME],
-        [CONF_NAME]
+        [CONF_NAME],
+        [INDT]
       FROM [돌봄시설DB].[dbo].[F30111]
       WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
         AND CONVERT(varchar(10), [EADT], 120) >= @MONTH_START
         AND CONVERT(varchar(10), [EADT], 120) <= @MONTH_END
-      ORDER BY [EADT] ASC
+      ORDER BY [EADT] ASC, [INDT] DESC
     `);
 
     const rows = Array.isArray(logs.recordset) ? logs.recordset : [];
     const byDate = new Map();
     rows.forEach((r) => {
       const e = String(r.EADT || "").trim();
-      if (!e) return;
+      if (!e || byDate.has(e)) return;
       byDate.set(e, r);
     });
 
-    const start = ymdToDate(monthRange.startYmd);
-    const end = ymdToDate(monthRange.endYmd);
-    const calendar = [];
-    if (start && end) {
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const yyyy = String(d.getFullYear()).padStart(4, "0");
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const ymd = `${yyyy}-${mm}-${dd}`;
-        const r = byDate.get(ymd);
-        calendar.push({
-          EADT: ymd,
-          아침식전: r ? markTime(String(r.MOIN || "").trim(), r.MOIN_TIME) : "",
-          아침식후: r ? markTime(String(r.MOOUT || "").trim(), r.MOOUT_TIME) : "",
-          점심식전: r ? markTime(String(r.AFIN || "").trim(), r.AFIN_TIME) : "",
-          점심식후: r ? markTime(String(r.AFOUT || "").trim(), r.AFOUT_TIME) : "",
-          저녁식전: r ? markTime(String(r.EVIN || "").trim(), r.EVIN_TIME) : "",
-          저녁식후: r ? markTime(String(r.EVOUT || "").trim(), r.EVOUT_TIME) : "",
-          취침복용: r ? markTime(String(r.SLIN || "").trim(), r.SLIN_TIME) : "",
-          확인자: r ? String(r.CONF_NAME || "").trim() : "",
-        });
-      }
-    }
+    const calendar = Array.from(byDate.values())
+      .sort((a, b) => String(a.EADT).localeCompare(String(b.EADT)))
+      .map(buildCalendarRow);
 
     return json({
       success: true,

@@ -215,19 +215,25 @@ export default function MedicationPrintIndividualPage() {
           </tr>
         </thead>
         <tbody>
-          {data.calendar.map((r, idx) => (
-            <tr key={`${r.EADT}-${idx}`}>
-              <td className="center">{r.EADT}</td>
-              <td className="center">{r["아침식전"]}</td>
-              <td className="center">{r["아침식후"]}</td>
-              <td className="center">{r["점심식전"]}</td>
-              <td className="center">{r["점심식후"]}</td>
-              <td className="center">{r["저녁식전"]}</td>
-              <td className="center">{r["저녁식후"]}</td>
-              <td className="center">{r["취침복용"]}</td>
-              <td className="center">{r["확인자"]}</td>
+          {data.calendar.length === 0 ? (
+            <tr>
+              <td className="center" colSpan={9}>해당 월 복용 기록 없음</td>
             </tr>
-          ))}
+          ) : (
+            data.calendar.map((r, idx) => (
+              <tr key={`${r.EADT}-${idx}`}>
+                <td className="center">{r.EADT}</td>
+                <td className="center">{r["아침식전"]}</td>
+                <td className="center">{r["아침식후"]}</td>
+                <td className="center">{r["점심식전"]}</td>
+                <td className="center">{r["점심식후"]}</td>
+                <td className="center">{r["저녁식전"]}</td>
+                <td className="center">{r["저녁식후"]}</td>
+                <td className="center">{r["취침복용"]}</td>
+                <td className="center">{r["확인자"]}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>

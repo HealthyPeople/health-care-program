@@ -147,6 +147,7 @@ export default function MedicationTime() {
 	const [eadtList, setEadtList] = useState<string[]>([]);
 	const [eadtLoading, setEadtLoading] = useState(false);
 	const [detailLoading, setDetailLoading] = useState(false);
+	const [detailExists, setDetailExists] = useState(false);
 
 	const [medicationData, setMedicationData] = useState<Record<MedicationTypeKey, MedicationTimeData>>(
 		JSON.parse(JSON.stringify(DEFAULT_MEDICATION_DATA))
@@ -222,9 +223,10 @@ export default function MedicationTime() {
 			)
 			.join('');
 
-		const calendarRows = calendar
-			.map(
-				(r) => `
+		const calendarRows = calendar.length
+			? calendar
+					.map(
+						(r) => `
         <tr>
           <td class="center">${r.EADT ?? ''}</td>
           <td class="center">${r['아침식전'] ?? ''}</td>
@@ -237,8 +239,13 @@ export default function MedicationTime() {
           <td class="center">${r['확인자'] ?? ''}</td>
         </tr>
       `
-			)
-			.join('');
+					)
+					.join('')
+			: `
+        <tr>
+          <td class="center" colspan="9">해당 월 복용 기록 없음</td>
+        </tr>
+      `;
 
 		return `
       <div class="sheet">
@@ -763,14 +770,17 @@ export default function MedicationTime() {
 			const json = await res.json();
 			const data = json?.data;
 			if (!data) {
+				setDetailExists(false);
 				setMedicationData(JSON.parse(JSON.stringify(DEFAULT_MEDICATION_DATA)));
 				setConfirmer('');
 				setConfirmDate(todayYmd());
 				setNotes('');
 				setEtc('');
-				setIsEditMode(true);
+				setIsEditMode(false);
 				return;
 			}
+
+			setDetailExists(true);
 
 			setMedicationData({
 				아침식전: data.times?.아침식전 ?? DEFAULT_MEDICATION_DATA.아침식전,
@@ -841,6 +851,7 @@ export default function MedicationTime() {
 			setOriginalNotes(notes);
 			setOriginalEtc(etc);
 			await refreshEadtList(selectedMember, true);
+			await loadDetail(selectedMember, selectedEadt);
 		} catch (e) {
 			console.error('저장 오류:', e);
 			alert('저장 중 오류가 발생했습니다.');
@@ -919,6 +930,9 @@ export default function MedicationTime() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [selectedMember?.PNUM, selectedEadt]);
 
+	const showEmptyMedicationData =
+		!eadtLoading && !detailLoading && !isEditMode && (eadtList.length === 0 || !detailExists);
+
 	return (
 		<div className="min-h-screen text-black bg-white">
 			<div className="mx-auto max-w-[1400px] p-4">
@@ -929,6 +943,7 @@ export default function MedicationTime() {
 							onSelectMember={(m) => {
 								setSelectedMember(m);
 								setIsEditMode(false);
+								setDetailExists(false);
 								setSelectedEadt(todayYmd());
 								setEadtList([]);
 								setMedicationData(JSON.parse(JSON.stringify(DEFAULT_MEDICATION_DATA)));
@@ -1131,6 +1146,10 @@ export default function MedicationTime() {
 								</div>
 
 								<div className="flex gap-4 p-4">
+									{showEmptyMedicationData ? (
+										<div className="flex-1 px-3 py-6 text-sm text-blue-900/60">데이터가 없습니다</div>
+									) : (
+										<>
 									{/* 좌: 복용일자 목록 */}
 									<aside className="w-[220px] shrink-0">
 										<div className="overflow-hidden bg-white border border-blue-300 rounded">
@@ -1374,6 +1393,8 @@ export default function MedicationTime() {
 											</div>
 										</div>
 									</section>
+										</>
+									)}
 								</div>
 							</div>
 						)}
