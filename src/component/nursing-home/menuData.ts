@@ -47,12 +47,12 @@ export const sections3: Sections3 = {
       { name: '간식내역 일괄 등록', link: '/nursingHome/snack-bulk-registration' },
       { name: '외출/외박 처리', link: '/nursingHome/outing-processing' },
     ],
-    '수급자서비스 입력기준 정보 등록(설명요청_F30112)': [
+    '수급자서비스 입력기준 정보 등록': [
       { name: '약물복용시간', link: '/nursingHome/medication-time' },
       { name: '장기요양-신체활동', link: '/nursingHome/longterm-physical-activity' },
-      { name: '장기요양-간호및지시(설명요청_F30112)', link: '/nursingHome/longterm-nursing-instruction' },
-      { name: '장기요양-기능및인지관리(설명요청_F30112)', link: '/nursingHome/longterm-functional-cognitive' },
-      { name: '장기요양-수급자상태(설명요청_F30112)', link: '/nursingHome/longterm-beneficiary-status' },
+      { name: '장기요양-간호및지시', link: '/nursingHome/longterm-nursing-instruction' },
+      { name: '장기요양-기능및인지관리', link: '/nursingHome/longterm-functional-cognitive' },
+      { name: '장기요양-수급자상태', link: '/nursingHome/longterm-beneficiary-status' },
       { name: '장기요양기록양식 출력', link: '/nursingHome/longterm-record-format' },
     ],
     '상담관리': [

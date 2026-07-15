@@ -172,7 +172,7 @@ export async function POST(req) {
     if (raw.mealType != null && raw.ST_KIND == null) raw.ST_KIND = raw.mealType;
     if (raw.mealLocation != null && raw.ST_PLAC == null) raw.ST_PLAC = raw.mealLocation;
     if (raw.mealConfirmer != null && raw.ST_CONF == null) raw.ST_CONF = raw.mealConfirmer;
-    if (raw.confirmer != null && raw.ST_CONF == null) raw.ST_CONF = raw.confirmer;
+    if (raw.soreConfirmer != null && raw.NS_SORE_CONF == null) raw.NS_SORE_CONF = raw.soreConfirmer;
     if (raw.mealType != null && raw.PH_MEAL_KIND_NM == null) raw.PH_MEAL_KIND_NM = raw.mealType;
     if (raw.mealIntake != null && raw.PH_MEAL_VAL_NM == null) raw.PH_MEAL_VAL_NM = raw.mealIntake;
     if (raw.mealClassification != null && raw.PH_MEAL_WT_NM == null) raw.PH_MEAL_WT_NM = raw.mealClassification;

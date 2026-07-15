@@ -180,7 +180,9 @@ export default function LongtermPhysicalActivity() {
 		}
 		setMealClassification(String(d?.ST_KIND ?? mealClassification));
 		setMealLocation(String(d?.ST_PLAC ?? mealLocation));
-		setMealConfirmer(String(d?.ST_CONF ?? mealConfirmer));
+		const mealConfirmerValue = String(d?.ST_CONF ?? '').trim();
+		setMealConfirmer(mealConfirmerValue);
+		setMealConfirmerSearchTerm(mealConfirmerValue);
 
 		{
 			const code = String(d?.PH_BATH_METH ?? '').trim();
@@ -340,15 +342,19 @@ export default function LongtermPhysicalActivity() {
 		}
 	};
 
-	// 직원 검색 debounce
+	// 직원 검색 debounce (편집 모드에서만)
 	useEffect(() => {
+		if (!isEditing) {
+			setShowMealConfirmerDropdown(false);
+			return;
+		}
 		const timer = setTimeout(() => {
 			if (mealConfirmerSearchTerm && mealConfirmerSearchTerm.trim() !== '') {
 				searchEmployee(mealConfirmerSearchTerm, setMealConfirmerSuggestions, setShowMealConfirmerDropdown);
 			}
 		}, 300);
 		return () => clearTimeout(timer);
-	}, [mealConfirmerSearchTerm]);
+	}, [mealConfirmerSearchTerm, isEditing]);
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
@@ -411,6 +417,8 @@ export default function LongtermPhysicalActivity() {
 
 	const radioInputClass = 'w-4 h-4 border border-blue-300 shrink-0 accent-blue-700';
 	const checkboxInputClass = 'w-4 h-4 border border-blue-300 rounded shrink-0 accent-blue-700';
+	const mealConfirmerDisplayValue = String(mealConfirmerSearchTerm || mealConfirmer || '').trim();
+	const readModeTextClass = 'text-sm font-semibold text-blue-800';
 
 	return (
 		<div className="min-h-screen text-black bg-white">
@@ -547,18 +555,20 @@ export default function LongtermPhysicalActivity() {
 												className="flex-1 px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 											/>
 										</div>
-										{/* 확인자 */}
+										{/* 확인자 (ST_CONF) */}
 										<div className="flex items-center gap-2">
 											<label className="w-24 px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">
 												확인자
 											</label>
+											{!isEditing ? (
+												<span className={readModeTextClass}>{mealConfirmerDisplayValue || '없음'}</span>
+											) : (
 											<div className="relative flex-1 employee-dropdown-container">
 												<input
 													type="text"
 													value={mealConfirmerSearchTerm || mealConfirmer}
 													onChange={(e) => {
 														const value = e.target.value;
-														if (!isEditing) return;
 														setMealConfirmer(value);
 														setMealConfirmerSearchTerm(value);
 														if (!value || value.trim() === '') {
@@ -567,12 +577,13 @@ export default function LongtermPhysicalActivity() {
 														}
 													}}
 													onFocus={() => {
-														if (!isEditing) return;
 														if (mealConfirmer) {
 															setMealConfirmerSearchTerm(mealConfirmer);
 														}
+														if (mealConfirmerSearchTerm && mealConfirmerSearchTerm.trim() !== '') {
+															searchEmployee(mealConfirmerSearchTerm, setMealConfirmerSuggestions, setShowMealConfirmerDropdown);
+														}
 													}}
-													disabled={!isEditing}
 													className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 													placeholder="확인자 검색"
 												/>
@@ -582,7 +593,6 @@ export default function LongtermPhysicalActivity() {
 															<div
 																key={`${employee.EMPNO}-${index}`}
 																onClick={() => {
-																	if (!isEditing) return;
 																	setMealConfirmer(employee.EMPNM);
 																	setMealConfirmerSearchTerm(employee.EMPNM);
 																	setShowMealConfirmerDropdown(false);
@@ -595,6 +605,7 @@ export default function LongtermPhysicalActivity() {
 													</div>
 												)}
 											</div>
+											)}
 										</div>
 									</div>
 								</div>
