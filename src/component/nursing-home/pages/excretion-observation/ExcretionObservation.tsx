@@ -4,6 +4,17 @@ import { formatCareGradeLabel } from '../../utils/careGrade';
 import { attachLatestRoomNoByPnum } from '../../utils/roomNoFloor';
 import { RoomNoFloorSelect } from '../../components/RoomNoFloorSelect';
 import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
+import {
+	ANNT_STAT_OPTIONS,
+	EXCRETION_TIME_SLOTS,
+	createEmptyExcretionForm,
+	excretionFormToPayload,
+	formatDateYmd,
+	rowToExcretionForm,
+	vtmGuToLabel,
+	type ExcretionFormData,
+	type F33021Row,
+} from '../../utils/excretionObservationFields';
 
 interface MemberData {
 	ANCD: string;
@@ -17,10 +28,9 @@ interface MemberData {
 	[key: string]: any;
 }
 
-interface ObservationData {
-	OBSDT: string; // 관찰일자
-	OBSTM: string; // 관찰시간
-	[key: string]: any;
+interface ObservationRecord extends F33021Row {
+	OBSDT: string;
+	OBSTM: string;
 }
 
 export default function ExcretionObservation() {
@@ -28,28 +38,15 @@ export default function ExcretionObservation() {
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [selectedTimeIndex, setSelectedTimeIndex] = useState<number | null>(null);
 	const [observationDates, setObservationDates] = useState<string[]>([]);
-	const [observationTimes, setObservationTimes] = useState<string[]>([]);
+	const [observationRecords, setObservationRecords] = useState<ObservationRecord[]>([]);
 	const [loadingObservations, setLoadingObservations] = useState(false);
 	const [observationDatePage, setObservationDatePage] = useState(1);
 	const observationDateItemsPerPage = 10;
 	const [observationTimePage, setObservationTimePage] = useState(1);
 	const observationTimeItemsPerPage = 10;
 
-	// 폼 데이터
-	const [formData, setFormData] = useState({
-		beneficiary: '', // 수급자
-		observationDate: '2025-12-11', // 관찰일자
-		beneficiaryStatus: '일반', // 수급자상태
-		statusOther: '', // 상태기타
-		observationTime: '05:00 - 06:00', // 관찰시간
-		diaperUse: '없음', // 기저귀착용
-		stomaCatheter: '', // 장루(요루)도뇨관삽입
-		intakeAmount: '', // 섭취량
-		urine: false, // 소변
-		stool: false, // 대변
-		diaperOrClothesChange: false, // 기저귀 또는 옷 교환
-		observer: '고경란' // 관찰자
-	});
+	const [formData, setFormData] = useState<ExcretionFormData>(createEmptyExcretionForm());
+	const [defaultObserver, setDefaultObserver] = useState('');
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -146,6 +143,21 @@ export default function ExcretionObservation() {
 
 	useEffect(() => {
 		fetchMembers();
+		void (async () => {
+			try {
+				const res = await fetch('/api/auth/user-info', { credentials: 'include', cache: 'no-store' });
+				const result = await res.json().catch(() => ({}));
+				if (res.ok && result?.success) {
+					const name = String(result?.data?.empnm ?? result?.data?.EMPNM ?? '').trim();
+					if (name) {
+						setDefaultObserver(name);
+						setFormData((prev) => (prev.observer ? prev : { ...prev, observer: name }));
+					}
+				}
+			} catch {
+				/* ignore */
+			}
+		})();
 	}, []);
 
 	// 검색어 변경 시 실시간 검색 (디바운싱)
@@ -172,38 +184,50 @@ export default function ExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/excretion-observation/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setObservationDates([]);
+			const url = `/api/f33021?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&mode=dates`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '관찰일자 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const dates = list
+				.map((r: { VDT?: string }) => formatDateYmd(r?.VDT ?? ''))
+				.filter((d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d));
+			setObservationDates(dates);
 		} catch (err) {
 			console.error('관찰일자 조회 오류:', err);
+			setObservationDates([]);
 		} finally {
 			setLoadingObservations(false);
 		}
 	};
 
-	// 관찰시간 목록 조회
-	const fetchObservationTimes = async (ancd: string, pnum: string, date: string) => {
+	// 관찰시간(구분) 목록 조회
+	const fetchObservationRecords = async (ancd: string, pnum: string, date: string) => {
 		if (!ancd || !pnum || !date) {
-			setObservationTimes([]);
+			setObservationRecords([]);
 			return;
 		}
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/excretion-observation/times?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&date=${encodeURIComponent(date)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setObservationTimes([]);
+			const url = `/api/f33021?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&vdt=${encodeURIComponent(date)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '관찰시간 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const mapped: ObservationRecord[] = list.map((r: F33021Row) => ({
+				...r,
+				OBSDT: formatDateYmd(r.VDT),
+				OBSTM: vtmGuToLabel(String(r.VTM_GU ?? '')),
+			}));
+			setObservationRecords(mapped);
 		} catch (err) {
 			console.error('관찰시간 조회 오류:', err);
+			setObservationRecords([]);
 		} finally {
 			setLoadingObservations(false);
 		}
@@ -212,7 +236,10 @@ export default function ExcretionObservation() {
 	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
+		setSelectedDateIndex(null);
+		setSelectedTimeIndex(null);
+		setObservationRecords([]);
+		setFormData(createEmptyExcretionForm(member.P_NM || '', defaultObserver));
 		fetchObservationDates(member.ANCD, member.PNUM);
 	};
 
@@ -221,32 +248,23 @@ export default function ExcretionObservation() {
 		setSelectedDateIndex(index);
 		const selectedDate = observationDates[index];
 		if (selectedMember && selectedDate) {
-			fetchObservationTimes(selectedMember.ANCD, selectedMember.PNUM, selectedDate);
+			fetchObservationRecords(selectedMember.ANCD, selectedMember.PNUM, selectedDate);
 		}
-		setFormData(prev => ({ ...prev, observationDate: selectedDate || '' }));
+		setFormData((prev) => ({
+			...createEmptyExcretionForm(selectedMember?.P_NM || prev.beneficiary, defaultObserver || prev.observer),
+			observationDate: selectedDate || '',
+		}));
 		setSelectedTimeIndex(null);
 	};
 
 	// 관찰시간 선택 함수
-	const handleSelectTime = (index: number, time: string) => {
+	const handleSelectTime = (index: number, record: ObservationRecord) => {
 		setSelectedTimeIndex(index);
-		setFormData(prev => ({ ...prev, observationTime: time || '' }));
+		setFormData(rowToExcretionForm(record, selectedMember?.P_NM || ''));
 	};
 
 	// 날짜 형식 변환 함수
-	const formatDateDisplay = (dateStr: string) => {
-		if (!dateStr) return '';
-		if (dateStr.includes('T')) {
-			dateStr = dateStr.split('T')[0];
-		}
-		if (dateStr.includes('-') && dateStr.length >= 10) {
-			return dateStr.substring(0, 10);
-		}
-		if (dateStr.length === 8 && !dateStr.includes('-') && !dateStr.includes('년')) {
-			return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-		}
-		return dateStr;
-	};
+	const formatDateDisplay = formatDateYmd;
 
 	// 저장 함수
 	const handleSave = async () => {
@@ -262,27 +280,26 @@ export default function ExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedTimeIndex !== null ? '/api/excretion-observation/update' : '/api/excretion-observation/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
+			const payload = excretionFormToPayload(formData, selectedMember.PNUM);
+			const res = await fetch(`/api/f33021?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '관찰 데이터 저장 실패');
+			}
 
 			alert(selectedTimeIndex !== null ? '관찰 데이터가 수정되었습니다.' : '관찰 데이터가 저장되었습니다.');
-			
-			// 데이터 다시 조회
+
+			await fetchObservationDates(selectedMember.ANCD, selectedMember.PNUM);
 			if (selectedMember && formData.observationDate) {
-				await fetchObservationTimes(selectedMember.ANCD, selectedMember.PNUM, formData.observationDate);
+				await fetchObservationRecords(selectedMember.ANCD, selectedMember.PNUM, formData.observationDate);
 			}
 		} catch (err) {
 			console.error('관찰 데이터 저장 오류:', err);
-			alert('관찰 데이터 저장 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '관찰 데이터 저장 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingObservations(false);
 		}
@@ -306,33 +323,30 @@ export default function ExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/excretion-observation/${selectedTimeIndex}`, {
-			// 	method: 'DELETE'
-			// });
+			const record = observationRecords[selectedTimeIndex];
+			const vdt = formatDateDisplay(record?.OBSDT || formData.observationDate || '');
+			const vtmGu = String(record?.VTM_GU ?? '').trim();
+			const url = `/api/f33021?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+				selectedMember.PNUM
+			)}&vdt=${encodeURIComponent(vdt)}&vtmGu=${encodeURIComponent(vtmGu)}`;
+			const res = await fetch(url, { method: 'DELETE' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '관찰 데이터 삭제 실패');
+			}
 
 			alert('관찰 데이터가 삭제되었습니다.');
-			
-			// 데이터 다시 조회
+
+			await fetchObservationDates(selectedMember.ANCD, selectedMember.PNUM);
 			if (selectedMember && formData.observationDate) {
-				await fetchObservationTimes(selectedMember.ANCD, selectedMember.PNUM, formData.observationDate);
+				await fetchObservationRecords(selectedMember.ANCD, selectedMember.PNUM, formData.observationDate);
 			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				observationTime: '',
-				diaperUse: '없음',
-				stomaCatheter: '',
-				intakeAmount: '',
-				urine: false,
-				stool: false,
-				diaperOrClothesChange: false
-			}));
+
+			setFormData(createEmptyExcretionForm(selectedMember.P_NM || '', defaultObserver));
 			setSelectedTimeIndex(null);
 		} catch (err) {
 			console.error('관찰 데이터 삭제 오류:', err);
-			alert('관찰 데이터 삭제 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '관찰 데이터 삭제 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingObservations(false);
 		}
@@ -345,10 +359,10 @@ export default function ExcretionObservation() {
 	const currentDateItems = observationDates.slice(observationDateStartIndex, observationDateEndIndex);
 
 	// 관찰시간 목록 페이지네이션
-	const observationTimeTotalPages = Math.ceil(observationTimes.length / observationTimeItemsPerPage);
+	const observationTimeTotalPages = Math.ceil(observationRecords.length / observationTimeItemsPerPage);
 	const observationTimeStartIndex = (observationTimePage - 1) * observationTimeItemsPerPage;
 	const observationTimeEndIndex = observationTimeStartIndex + observationTimeItemsPerPage;
-	const currentTimeItems = observationTimes.slice(observationTimeStartIndex, observationTimeEndIndex);
+	const currentTimeItems = observationRecords.slice(observationTimeStartIndex, observationTimeEndIndex);
 
 	return (
 		<div className="flex flex-col min-h-screen text-black bg-white">
@@ -614,22 +628,22 @@ export default function ExcretionObservation() {
 						<div className="flex-1 overflow-y-auto bg-white">
 							{loadingObservations ? (
 								<div className="px-2 py-1 text-sm text-blue-900/60">로딩 중...</div>
-							) : observationTimes.length === 0 ? (
+							) : observationRecords.length === 0 ? (
 								<div className="px-2 py-1 text-sm text-blue-900/60">
 									{selectedDateIndex !== null ? '관찰시간이 없습니다' : '관찰일자를 선택해주세요'}
 								</div>
 							) : (
-								currentTimeItems.map((time, localIndex) => {
+								currentTimeItems.map((record, localIndex) => {
 									const globalIndex = observationTimeStartIndex + localIndex;
 									return (
 										<div
-											key={globalIndex}
-											onClick={() => handleSelectTime(globalIndex, time)}
+											key={`${record.VDT}-${record.VTM_GU}-${globalIndex}`}
+											onClick={() => handleSelectTime(globalIndex, record)}
 											className={`px-2 py-1.5 text-base cursor-pointer hover:bg-blue-100 rounded ${
 												selectedTimeIndex === globalIndex ? 'bg-blue-200 font-semibold' : ''
 											}`}
 										>
-											{time}
+											{record.OBSTM}
 										</div>
 									);
 								})
@@ -726,9 +740,9 @@ export default function ExcretionObservation() {
 								onChange={(e) => setFormData(prev => ({ ...prev, beneficiaryStatus: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 							>
-								<option value="일반">일반</option>
-								<option value="응급">응급</option>
-								<option value="특별">특별</option>
+								{ANNT_STAT_OPTIONS.map((opt) => (
+									<option key={opt.code} value={opt.code}>{opt.label}</option>
+								))}
 							</select>
 						</div>
 
@@ -752,25 +766,9 @@ export default function ExcretionObservation() {
 								onChange={(e) => setFormData(prev => ({ ...prev, observationTime: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 							>
-								<option value="05:00 - 06:00">05:00 - 06:00</option>
-								<option value="06:00 - 07:00">06:00 - 07:00</option>
-								<option value="07:00 - 08:00">07:00 - 08:00</option>
-								<option value="08:00 - 09:00">08:00 - 09:00</option>
-								<option value="09:00 - 10:00">09:00 - 10:00</option>
-								<option value="10:00 - 11:00">10:00 - 11:00</option>
-								<option value="11:00 - 12:00">11:00 - 12:00</option>
-								<option value="12:00 - 13:00">12:00 - 13:00</option>
-								<option value="13:00 - 14:00">13:00 - 14:00</option>
-								<option value="14:00 - 15:00">14:00 - 15:00</option>
-								<option value="15:00 - 16:00">15:00 - 16:00</option>
-								<option value="16:00 - 17:00">16:00 - 17:00</option>
-								<option value="17:00 - 18:00">17:00 - 18:00</option>
-								<option value="18:00 - 19:00">18:00 - 19:00</option>
-								<option value="19:00 - 20:00">19:00 - 20:00</option>
-								<option value="20:00 - 21:00">20:00 - 21:00</option>
-								<option value="21:00 - 22:00">21:00 - 22:00</option>
-								<option value="22:00 - 23:00">22:00 - 23:00</option>
-								<option value="23:00 - 24:00">23:00 - 24:00</option>
+								{EXCRETION_TIME_SLOTS.map((slot) => (
+									<option key={slot.vtmGu} value={slot.label}>{slot.label}</option>
+								))}
 							</select>
 						</div>
 
@@ -788,6 +786,7 @@ export default function ExcretionObservation() {
 									<option value="있음">있음</option>
 								</select>
 							</div>
+						</div>
 							<div className="flex items-center gap-2">
 								<label className="text-sm font-medium text-blue-900 whitespace-nowrap">장루(요루)도뇨관삽입</label>
 								<input
@@ -799,13 +798,12 @@ export default function ExcretionObservation() {
 								/>
 								<span className="text-sm text-blue-900">ml</span>
 							</div>
-						</div>
 
 						{/* 섭취량 */}
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">섭취량</label>
 							<input
-								type="number"
+								type="text"
 								value={formData.intakeAmount}
 								onChange={(e) => setFormData(prev => ({ ...prev, intakeAmount: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"

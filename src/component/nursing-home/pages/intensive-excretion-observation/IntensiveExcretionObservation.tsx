@@ -4,6 +4,15 @@ import { formatCareGradeLabel } from '../../utils/careGrade';
 import { attachLatestRoomNoByPnum } from '../../utils/roomNoFloor';
 import { RoomNoFloorSelect } from '../../components/RoomNoFloorSelect';
 import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
+import {
+	EXCRETION_TIME_SLOTS,
+	formatDateYmd,
+	isCheckedFlag,
+	labelToVtmGu,
+	toCheckFlag,
+	vtmGuToLabel,
+	type F33021Row,
+} from '../../utils/excretionObservationFields';
 
 interface MemberData {
 	ANCD: string;
@@ -17,17 +26,13 @@ interface MemberData {
 	[key: string]: any;
 }
 
-interface ObservationData {
-	ANCD?: string;
-	PNUM?: string;
-	OBSDT: string; // 관찰일자(VDT)
-	OBSTM: string; // 관찰시간구분(VTM_GU)
-	URINE: string; // 소변구분(PSS_GU) '0'/'1'
-	STOOL: string; // 대변구분(DNG_GU) '0'/'1'
-	DIAPER: string; // 기저귀교환(NPPY_CNG_GU) '0'/'1'
-	REMARKS: string; // 비고(ETC)
-	OBSERVER: string; // 관찰자(INEMPNM)
-	[key: string]: any;
+interface ObservationData extends F33021Row {
+	OBSDT: string;
+	OBSTM: string;
+	URINE: string;
+	STOOL: string;
+	DIAPER: string;
+	OBSERVER: string;
 }
 
 export default function IntensiveExcretionObservation() {
@@ -42,17 +47,26 @@ export default function IntensiveExcretionObservation() {
 	const [observationListPage, setObservationListPage] = useState(1);
 	const observationListItemsPerPage = 10;
 
-	// 폼 데이터
-	const [formData, setFormData] = useState({
-		beneficiary: '', // 수급자
-		observationDate: '', // 관찰일자
-		observationTime: '', // 관찰시간
-		urine: false, // 소변
-		stool: false, // 대변
-		diaperChange: false, // 기저귀교환
-		remarks: '', // 비고
-		observer: '' // 관찰자
+	const emptyIntensiveForm = (beneficiary = '', observer = ''): {
+		beneficiary: string;
+		observationDate: string;
+		observationTime: string;
+		urine: boolean;
+		stool: boolean;
+		diaperChange: boolean;
+		observer: string;
+	} => ({
+		beneficiary,
+		observationDate: formatDateYmd(new Date().toISOString()),
+		observationTime: EXCRETION_TIME_SLOTS[0].label,
+		urine: false,
+		stool: false,
+		diaperChange: false,
+		observer,
 	});
+
+	const [formData, setFormData] = useState(emptyIntensiveForm());
+	const [defaultObserver, setDefaultObserver] = useState('');
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -149,6 +163,21 @@ export default function IntensiveExcretionObservation() {
 
 	useEffect(() => {
 		fetchMembers();
+		void (async () => {
+			try {
+				const res = await fetch('/api/auth/user-info', { credentials: 'include', cache: 'no-store' });
+				const result = await res.json().catch(() => ({}));
+				if (res.ok && result?.success) {
+					const name = String(result?.data?.empnm ?? result?.data?.EMPNM ?? '').trim();
+					if (name) {
+						setDefaultObserver(name);
+						setFormData((prev) => (prev.observer ? prev : { ...prev, observer: name }));
+					}
+				}
+			} catch {
+				/* ignore */
+			}
+		})();
 	}, []);
 
 	// 검색어 변경 시 실시간 검색 (디바운싱)
@@ -175,29 +204,16 @@ export default function IntensiveExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			const today = new Date();
-			const end = today.toISOString().split('T')[0];
-			const oneYearAgo = new Date(today);
-			oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-			const start = oneYearAgo.toISOString().split('T')[0];
-
-			const url = `/api/f33020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
-				pnum
-			)}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`;
+			const url = `/api/f33021?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&mode=dates`;
 			const response = await fetch(url, { method: 'GET' });
 			const result = await response.json().catch(() => ({}));
 			if (!response.ok || !result?.success) {
 				throw new Error(result?.error || '관찰일자 조회 실패');
 			}
 			const list = Array.isArray(result.data) ? result.data : [];
-			const dates: string[] = Array.from(
-				new Set(
-					list
-						.map((r: any) => formatDateDisplay(String(r?.VDT ?? r?.OBSDT ?? '')))
-						.filter((d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d))
-				)
-			) as string[];
-			dates.sort((a: string, b: string) => (a > b ? -1 : a < b ? 1 : 0));
+			const dates: string[] = list
+				.map((r: { VDT?: string }) => formatDateYmd(String(r?.VDT ?? '')))
+				.filter((d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d));
 			setObservationDates(dates);
 		} catch (err) {
 			console.error('관찰일자 조회 오류:', err);
@@ -216,7 +232,7 @@ export default function IntensiveExcretionObservation() {
 
 		setLoadingObservations(true);
 		try {
-			const url = `/api/f33020?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
+			const url = `/api/f33021?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(
 				pnum
 			)}&vdt=${encodeURIComponent(date)}`;
 			const response = await fetch(url, { method: 'GET' });
@@ -225,16 +241,14 @@ export default function IntensiveExcretionObservation() {
 				throw new Error(result?.error || '관찰 데이터 조회 실패');
 			}
 			const list = Array.isArray(result.data) ? result.data : [];
-			const mapped: ObservationData[] = list.map((r: any) => ({
-				ANCD: r?.ANCD,
-				PNUM: r?.PNUM,
-				OBSDT: formatDateDisplay(r?.VDT || ''),
-				OBSTM: String(r?.VTM_GU ?? ''),
-				URINE: String(r?.PSS_GU ?? '0'),
-				STOOL: String(r?.DNG_GU ?? '0'),
-				DIAPER: String(r?.NPPY_CNG_GU ?? '0'),
-				REMARKS: r?.ETC ?? '',
-				OBSERVER: r?.INEMPNM ?? ''
+			const mapped: ObservationData[] = list.map((r: F33021Row) => ({
+				...r,
+				OBSDT: formatDateYmd(r.VDT),
+				OBSTM: vtmGuToLabel(String(r.VTM_GU ?? '')),
+				URINE: String(r.PSS_GU ?? '0'),
+				STOOL: String(r.DNG_GU ?? '0'),
+				DIAPER: String(r.NPPY_CNG_GU ?? '0'),
+				OBSERVER: String(r.INEMPNM ?? ''),
 			}));
 			setObservationList(mapped);
 		} catch (err) {
@@ -248,7 +262,10 @@ export default function IntensiveExcretionObservation() {
 	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
+		setSelectedDateIndex(null);
+		setSelectedObservationIndex(null);
+		setObservationList([]);
+		setFormData(emptyIntensiveForm(member.P_NM || '', defaultObserver));
 		fetchObservationDates(member.ANCD, member.PNUM);
 	};
 
@@ -269,38 +286,17 @@ export default function IntensiveExcretionObservation() {
 		setFormData({
 			beneficiary: selectedMember?.P_NM || '',
 			observationDate: observation.OBSDT || '',
-			observationTime: observation.OBSTM || '',
-			urine: observation.URINE === '1' || observation.URINE === 'Y',
-			stool: observation.STOOL === '1' || observation.STOOL === 'Y',
-			diaperChange: observation.DIAPER === '1' || observation.DIAPER === 'Y',
-			remarks: observation.REMARKS || '',
-			observer: observation.OBSERVER || ''
+			observationTime: observation.OBSTM || vtmGuToLabel(String(observation.VTM_GU ?? '')),
+			urine: isCheckedFlag(observation.URINE),
+			stool: isCheckedFlag(observation.STOOL),
+			diaperChange: isCheckedFlag(observation.DIAPER),
+			observer: observation.OBSERVER || defaultObserver,
 		});
 	};
 
-	// 날짜 형식 변환 함수
-	const formatDateDisplay = (dateStr: string) => {
-		if (!dateStr) return '';
-		if (dateStr.includes('T')) {
-			dateStr = dateStr.split('T')[0];
-		}
-		if (dateStr.includes('-') && dateStr.length >= 10) {
-			return dateStr.substring(0, 10);
-		}
-		if (dateStr.length === 8 && !dateStr.includes('-') && !dateStr.includes('년')) {
-			return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-		}
-		return dateStr;
-	};
+	const formatDateDisplay = formatDateYmd;
 
-	// 시간 형식 변환 함수
-	const formatTimeDisplay = (timeStr: string) => {
-		if (!timeStr) return '';
-		if (timeStr.length === 4) {
-			return `${timeStr.substring(0, 2)}:${timeStr.substring(2, 4)}`;
-		}
-		return timeStr;
-	};
+	const formatTimeDisplay = (timeStr: string) => vtmGuToLabel(timeStr);
 
 	// 저장 함수
 	const handleSave = async () => {
@@ -324,16 +320,20 @@ export default function IntensiveExcretionObservation() {
 			const payload = {
 				PNUM: selectedMember.PNUM,
 				VDT: formData.observationDate,
-				VTM_GU: String(formData.observationTime).trim().slice(0, 2),
-				PSS_GU: formData.urine ? '1' : '0',
-				DNG_GU: formData.stool ? '1' : '0',
-				NPPY_CNG_GU: formData.diaperChange ? '1' : '0',
-				ETC: formData.remarks || '',
+				VTM_GU: labelToVtmGu(formData.observationTime),
+				ANNT_STAT_GU: '1',
+				ANNT_STAT_DESC: '',
+				PSS_NPPY_VAL_GU: '0',
+				PSS_CTHT_VAL: '',
+				INTK_VAL: '',
+				PSS_GU: toCheckFlag(formData.urine),
+				DNG_GU: toCheckFlag(formData.stool),
+				NPPY_CNG_GU: toCheckFlag(formData.diaperChange),
 				INEMPNO: null,
-				INEMPNM: formData.observer || null
+				INEMPNM: formData.observer || null,
 			};
 
-			const res = await fetch(`/api/f33020?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+			const res = await fetch(`/api/f33021?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
@@ -345,21 +345,15 @@ export default function IntensiveExcretionObservation() {
 
 			alert(selectedObservationIndex !== null ? '관찰 데이터가 수정되었습니다.' : '관찰 데이터가 저장되었습니다.');
 			
-			// 데이터 다시 조회
+			await fetchObservationDates(selectedMember.ANCD, selectedMember.PNUM);
 			if (selectedMember && formData.observationDate) {
 				await fetchObservations(selectedMember.ANCD, selectedMember.PNUM, formData.observationDate);
 			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				observationTime: '',
-				urine: false,
-				stool: false,
-				diaperChange: false,
-				remarks: '',
-				observer: ''
-			}));
+
+			setFormData({
+				...emptyIntensiveForm(selectedMember?.P_NM || formData.beneficiary, defaultObserver),
+				observationDate: formData.observationDate,
+			});
 			setSelectedObservationIndex(null);
 		} catch (err) {
 			console.error('관찰 데이터 저장 오류:', err);
@@ -389,8 +383,8 @@ export default function IntensiveExcretionObservation() {
 		try {
 			const observationToDelete = observationList[selectedObservationIndex];
 			const vdt = formatDateDisplay(observationToDelete.OBSDT || formData.observationDate || '');
-			const vtmGu = String(observationToDelete.OBSTM || formData.observationTime || '').trim().slice(0, 2);
-			const url = `/api/f33020?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+			const vtmGu = String(observationToDelete.VTM_GU ?? labelToVtmGu(formData.observationTime));
+			const url = `/api/f33021?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
 				selectedMember.PNUM
 			)}&vdt=${encodeURIComponent(vdt)}&vtmGu=${encodeURIComponent(vtmGu)}`;
 			const res = await fetch(url, { method: 'DELETE' });
@@ -401,21 +395,15 @@ export default function IntensiveExcretionObservation() {
 
 			alert('관찰 데이터가 삭제되었습니다.');
 			
-			// 데이터 다시 조회
+			await fetchObservationDates(selectedMember.ANCD, selectedMember.PNUM);
 			if (selectedMember && formData.observationDate) {
 				await fetchObservations(selectedMember.ANCD, selectedMember.PNUM, formData.observationDate);
 			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				observationTime: '',
-				urine: false,
-				stool: false,
-				diaperChange: false,
-				remarks: '',
-				observer: ''
-			}));
+
+			setFormData({
+				...emptyIntensiveForm(selectedMember.P_NM || '', defaultObserver),
+				observationDate: formData.observationDate,
+			});
 			setSelectedObservationIndex(null);
 		} catch (err) {
 			console.error('관찰 데이터 삭제 오류:', err);
@@ -732,7 +720,7 @@ export default function IntensiveExcretionObservation() {
 												}`}
 											>
 												<td className="px-2 py-1.5 text-center text-blue-900 border-r border-blue-100">{formatDateDisplay(observation.OBSDT || '')}</td>
-												<td className="px-2 py-1.5 text-center text-blue-900 border-r border-blue-100">{formatTimeDisplay(observation.OBSTM || '')}</td>
+												<td className="px-2 py-1.5 text-center text-blue-900 border-r border-blue-100">{observation.OBSTM || formatTimeDisplay(observation.VTM_GU || '')}</td>
 												<td className="px-2 py-1.5 text-center text-blue-900 border-r border-blue-100">
 													{observation.URINE === '1' || observation.URINE === 'Y' ? '✓' : '-'}
 												</td>
@@ -833,12 +821,15 @@ export default function IntensiveExcretionObservation() {
 						{/* 관찰시간 */}
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap">관찰시간</label>
-							<input
-								type="time"
+							<select
 								value={formData.observationTime}
 								onChange={(e) => setFormData(prev => ({ ...prev, observationTime: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-							/>
+							>
+								{EXCRETION_TIME_SLOTS.map((slot) => (
+									<option key={slot.vtmGu} value={slot.label}>{slot.label}</option>
+								))}
+							</select>
 						</div>
 
 						{/* 소변 */}
@@ -871,18 +862,6 @@ export default function IntensiveExcretionObservation() {
 								checked={formData.diaperChange}
 								onChange={(e) => setFormData(prev => ({ ...prev, diaperChange: e.target.checked }))}
 								className="w-4 h-4 text-blue-500 border border-blue-300 rounded focus:ring-blue-500"
-							/>
-						</div>
-
-						{/* 비고 */}
-						<div className="flex items-center gap-2">
-							<label className="text-sm font-medium text-blue-900 whitespace-nowrap">비고</label>
-							<input
-								type="text"
-								value={formData.remarks}
-								onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
-								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-								placeholder="비고를 입력하세요"
 							/>
 						</div>
 
