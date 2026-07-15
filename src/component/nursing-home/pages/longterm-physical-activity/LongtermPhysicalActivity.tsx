@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { MemberListPanel } from '../../components/MemberListPanel';
+import { BATH_METH_TO_LABEL, resolveBathMethodFromRow } from '../../utils/physicalActivityFields';
 
 interface MemberData {
 	[key: string]: any;
@@ -53,23 +54,6 @@ export default function LongtermPhysicalActivity() {
 		'5': '1',
 		'6': '1',
 		'7': '2'
-	};
-
-	const BATH_METH_TO_LABEL: Record<string, string> = {
-		'1': '전신입욕',
-		'2': '샤워식',
-		'3': '침상목욕'
-	};
-	const BATH_METH_LABEL_TO_CODE: Record<string, string> = {
-		'전신입욕': '1',
-		'샤워식': '2',
-		'침상목욕': '3',
-		'샤워식-목욕의자': '2',
-		'욕조식': '1',
-		'수건목욕': '3',
-		'입욕': '1',
-		'목욕의자': '2',
-		'기타': '3'
 	};
 
 	// 식사 정보 관련 state
@@ -185,13 +169,8 @@ export default function LongtermPhysicalActivity() {
 		setMealConfirmerSearchTerm(mealConfirmerValue);
 
 		{
-			const code = String(d?.PH_BATH_METH ?? '').trim();
-			const label = String(d?.PH_BATH_METH_NM ?? '').trim();
-			if (code && BATH_METH_TO_LABEL[code]) {
-				setBathMethod(code as '1' | '2' | '3');
-			} else if (label && BATH_METH_LABEL_TO_CODE[label]) {
-				setBathMethod(BATH_METH_LABEL_TO_CODE[label] as '1' | '2' | '3');
-			}
+			const resolved = resolveBathMethodFromRow(d);
+			if (resolved) setBathMethod(resolved);
 		}
 		setBathTimeRequired(String(d?.PH_BATH_TM ?? bathTimeRequired));
 		setBathTime(String(d?.BATH_SPV_TM ?? bathTime));

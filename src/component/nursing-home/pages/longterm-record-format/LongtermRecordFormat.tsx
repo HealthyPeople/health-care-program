@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MemberListPanel } from '../../components/MemberListPanel';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import { resolveBathMethodFromRow } from '../../utils/physicalActivityFields';
+import {
+	applyNursingBaselineToAllDays,
+	applyNursingFieldsToDay,
+	formatVitalSignsFromRow
+} from '../../utils/nursingFields';
 
 interface MemberData {
 	[key: string]: any;
@@ -23,6 +29,268 @@ function startOfWeekSunday(base: Date) {
 }
 
 const empty7 = () => ['', '', '', '', '', '', ''];
+const empty7Bool = () => [false, false, false, false, false, false, false];
+
+const MEAL_KIND_TO_LABEL: Record<string, string> = {
+	'1': '일반식',
+	'2': '죽',
+	'3': '유동식(미음)',
+	'4': '유동식(미음)',
+	'5': '일반식',
+	'6': '일반식',
+	'7': '죽'
+};
+const MEAL_VAL_TO_LABEL: Record<string, string> = {
+	'1': '1',
+	'2': '1/2이상',
+	'3': '1/2미만'
+};
+
+const ynToFlag = (v: unknown): '1' | '0' => {
+	const s = String(v ?? '').trim().toLowerCase();
+	if (s === '1' || s === 'y' || s === 'true') return '1';
+	return '0';
+};
+
+const ynChecked = (v: unknown) => ynToFlag(v) === '1';
+
+const toStatusLabel = (v: unknown): '와상' | '준와상' | '자립' => {
+	const s = String(v ?? '').trim();
+	if (s === '1' || s === '와상') return '와상';
+	if (s === '3' || s === '자립') return '자립';
+	return '준와상';
+};
+
+const resolveDenturesChecked = (dnt: unknown, dntDsc: unknown) => {
+	const type = String(dntDsc ?? '').trim();
+	return ynChecked(dnt) || type === '1' || type === '2';
+};
+
+const mealKindLabel = (row: any) => {
+	const label = String(row?.PH_MEAL_KIND_NM ?? '').trim();
+	if (label) return label.replace('유동식', '유동식(미음)');
+	const code = String(row?.PH_MEAL_KIND ?? '').trim();
+	return MEAL_KIND_TO_LABEL[code] ?? '';
+};
+
+const mealIntakeLabel = (row: any) => {
+	const label = String(row?.PH_MEAL_VAL_NM ?? '').trim();
+	if (label) return label;
+	const code = String(row?.PH_MEAL_VAL ?? '').trim();
+	return MEAL_VAL_TO_LABEL[code] ?? '';
+};
+
+const formatVitalSigns = formatVitalSignsFromRow;
+
+const hasFieldValue = (v: unknown) => v != null && String(v).trim() !== '';
+
+const mergeRowsByLatestField = (rows: any[]): any | null => {
+	const sorted = [...rows]
+		.filter(Boolean)
+		.sort((a, b) => new Date(String(b?.INDT ?? 0)).getTime() - new Date(String(a?.INDT ?? 0)).getTime());
+	if (sorted.length === 0) return null;
+
+	const merged: Record<string, any> = { ...sorted[0] };
+	const keys = new Set<string>();
+	sorted.forEach((row) => Object.keys(row).forEach((k) => keys.add(k)));
+
+	keys.forEach((key) => {
+		if (key === 'INDT' || key === 'PNUM' || key === 'ANCD' || key === 'rn') return;
+		for (const row of sorted) {
+			if (hasFieldValue(row[key])) {
+				merged[key] = row[key];
+				return;
+			}
+		}
+	});
+
+	return merged;
+};
+
+const createEmptyDailyRecords = () => ({
+	grooming: empty7Bool(),
+	bathTime: empty7(),
+	bathMethod: empty7(),
+	mealType: empty7(),
+	mealIntake: empty7(),
+	positionChange: empty7Bool(),
+	toiletUsage: empty7(),
+	movementAssistance: empty7Bool(),
+	walk: empty7Bool(),
+	outing: empty7Bool(),
+	physicalActivityNotes: empty7(),
+	physicalActivityPreparer: empty7(),
+	cognitiveSupport: empty7Bool(),
+	communicationSupport: empty7Bool(),
+	cognitiveNotes: empty7(),
+	cognitivePreparer: empty7(),
+	vitalSigns: empty7(),
+	healthManagement: empty7Bool(),
+	nursingManagement: empty7Bool(),
+	emergencyService: empty7Bool(),
+	healthNotes: empty7(),
+	healthPreparer: empty7(),
+	trainingProgram: empty7(),
+	physicalFunctionTraining: empty7Bool(),
+	cognitiveTraining: empty7Bool(),
+	physicalTherapy: empty7Bool(),
+	trainingNotes: empty7(),
+	trainingPreparer: empty7(),
+	admissionDischargeTime: empty7()
+});
+
+type DailyRecords = ReturnType<typeof createEmptyDailyRecords>;
+
+const dayIndexInWeek = (indt: unknown, weekStart: Date) => {
+	if (!indt) return -1;
+	const d = new Date(String(indt));
+	if (Number.isNaN(d.getTime())) return -1;
+	d.setHours(0, 0, 0, 0);
+	const start = new Date(weekStart);
+	start.setHours(0, 0, 0, 0);
+	const diff = Math.round((d.getTime() - start.getTime()) / 86400000);
+	return diff >= 0 && diff < 7 ? diff : -1;
+};
+
+const mapPhysicalActivityFromRow = (row: any, idx: number, records: DailyRecords, merge = false) => {
+	const setField = (has: boolean, apply: () => void) => {
+		if (!merge || has) apply();
+	};
+
+	setField(hasFieldValue(row?.PH_HEAD_HELP), () => {
+		records.grooming[idx] = ynChecked(row?.PH_HEAD_HELP);
+	});
+	setField(hasFieldValue(row?.PH_BATH_TM) || hasFieldValue(row?.BATH_SPV_TM), () => {
+		records.bathTime[idx] = String(row?.PH_BATH_TM ?? row?.BATH_SPV_TM ?? '').trim();
+	});
+	setField(hasFieldValue(row?.PH_MEAL_KIND) || hasFieldValue(row?.PH_MEAL_KIND_NM), () => {
+		records.mealType[idx] = mealKindLabel(row);
+	});
+	setField(hasFieldValue(row?.PH_MEAL_VAL) || hasFieldValue(row?.PH_MEAL_VAL_NM), () => {
+		records.mealIntake[idx] = mealIntakeLabel(row);
+	});
+	setField(hasFieldValue(row?.PH_CHANG_HELP), () => {
+		records.positionChange[idx] = ynChecked(row?.PH_CHANG_HELP);
+	});
+	setField(hasFieldValue(row?.PH_TOL_CNT), () => {
+		records.toiletUsage[idx] = String(row?.PH_TOL_CNT ?? '').trim();
+	});
+	setField(hasFieldValue(row?.PH_MOVE_HELP), () => {
+		records.movementAssistance[idx] = ynChecked(row?.PH_MOVE_HELP);
+	});
+	setField(hasFieldValue(row?.PH_WORK_HELP), () => {
+		records.walk[idx] = ynChecked(row?.PH_WORK_HELP);
+	});
+	setField(hasFieldValue(row?.PH_OUT_HELP), () => {
+		records.outing[idx] = ynChecked(row?.PH_OUT_HELP);
+	});
+	setField(hasFieldValue(row?.PH_VIEW), () => {
+		records.physicalActivityNotes[idx] = String(row?.PH_VIEW ?? '').trim();
+	});
+	setField(hasFieldValue(row?.PH_WRITE_NAME) || hasFieldValue(row?.INEMPNM), () => {
+		records.physicalActivityPreparer[idx] = String(row?.PH_WRITE_NAME ?? row?.INEMPNM ?? '').trim();
+	});
+};
+
+const mapCognitiveFromRow = (row: any, idx: number, records: DailyRecords) => {
+	records.cognitiveSupport[idx] = ynChecked(row?.RG_AID_HELP);
+	records.communicationSupport[idx] = ynChecked(row?.RG_TALK_HELP);
+	records.cognitiveNotes[idx] = String(row?.RG_VIEW ?? '').trim();
+	records.cognitivePreparer[idx] = String(row?.RG_WRITE_NAME ?? '').trim();
+};
+
+const mapNursingFromRow = (row: any, idx: number, records: DailyRecords, merge = false) => {
+	applyNursingFieldsToDay(row, idx, records, merge);
+};
+
+const mapTrainingFromRow = (row: any, idx: number, records: DailyRecords) => {
+	records.trainingProgram[idx] = ynChecked(row?.FN_COGN_HELP) ? '실시' : '';
+	records.physicalFunctionTraining[idx] = ynChecked(row?.FN_MOVE_HELP);
+	records.cognitiveTraining[idx] = ynChecked(row?.FN_MIND_TRAIN ?? row?.FN_MIND_HELP);
+	records.physicalTherapy[idx] = ynChecked(row?.FN_PHY_HELP);
+	records.trainingNotes[idx] = String(row?.FN_VIEW ?? '').trim();
+	records.trainingPreparer[idx] = String(row?.FN_WRITE_NAME ?? '').trim();
+};
+
+const applyBaselineToAllDays = (baselineRow: any, records: DailyRecords) => {
+	for (let i = 0; i < 7; i++) {
+		mapPhysicalActivityFromRow(baselineRow, i, records);
+		mapCognitiveFromRow(baselineRow, i, records);
+		mapNursingFromRow(baselineRow, i, records);
+		mapTrainingFromRow(baselineRow, i, records);
+	}
+};
+
+const applyBathMethodToAllDays = (row: any, records: DailyRecords) => {
+	const bathCode = resolveBathMethodFromRow(row);
+	for (let i = 0; i < 7; i++) {
+		records.bathMethod[i] = bathCode;
+	}
+};
+
+const buildDailyRecords = (baselineRow: any | null, rangeRows: any[], weekStart: Date) => {
+	const records = createEmptyDailyRecords();
+	const mergedBaseline = mergeRowsByLatestField([baselineRow, ...rangeRows].filter(Boolean));
+	if (mergedBaseline) applyBaselineToAllDays(mergedBaseline, records);
+
+	if (baselineRow) applyBathMethodToAllDays(baselineRow, records);
+	if (baselineRow) applyNursingBaselineToAllDays(baselineRow, records);
+
+	const byDay = new Map<number, any>();
+	rangeRows.forEach((row) => {
+		const idx = dayIndexInWeek(row?.INDT, weekStart);
+		if (idx < 0) return;
+		const existing = byDay.get(idx);
+		if (!existing || new Date(String(row.INDT)) > new Date(String(existing.INDT))) {
+			byDay.set(idx, row);
+		}
+	});
+	byDay.forEach((row, idx) => {
+		mapPhysicalActivityFromRow(row, idx, records, true);
+		mapCognitiveFromRow(row, idx, records);
+		mapNursingFromRow(row, idx, records, true);
+		mapTrainingFromRow(row, idx, records);
+		const bathCode = resolveBathMethodFromRow(row);
+		if (bathCode) records.bathMethod[idx] = bathCode;
+	});
+	return records;
+};
+
+const applyBeneficiaryFromRow = (row: any, applyLegacy: (raw: unknown) => void) => {
+	const hasDirect =
+		row?.ST_SP_ST != null ||
+		row?.ST_SCK_ALZ != null ||
+		row?.ST_MNG_BRN != null;
+
+	if (hasDirect) {
+		return {
+			status: toStatusLabel(row?.ST_SP_ST),
+			dementia: ynChecked(row?.ST_SCK_ALZ),
+			stroke: ynChecked(row?.ST_SCK_APO),
+			hypertension: ynChecked(row?.ST_SCK_HBL),
+			diabetes: ynChecked(row?.ST_SCK_GLY),
+			arthritis: ynChecked(row?.ST_SCK_ARTH),
+			otherDisease: ynChecked(row?.ST_SCK_GITA),
+			otherDiseaseText: String(row?.ST_SCK_GITA_DSC ?? '').trim(),
+			tracheostomy: ynChecked(row?.ST_MNG_BRN),
+			dentures: resolveDenturesChecked(row?.ST_MNG_DNT, row?.ST_MNG_DNT_DSC),
+			nasogastricTube: ynChecked(row?.ST_MNG_LTUB),
+			urinaryCatheter: ynChecked(row?.ST_MNG_FIX_TUB),
+			cystostomy: ynChecked(row?.ST_MNG_CYS),
+			urostomy: ynChecked(row?.ST_MNG_URB),
+			colostomy: ynChecked(row?.ST_MNG_TOP),
+			diaper: ynChecked(row?.ST_MNG_DAP),
+			pressureSore: ynChecked(row?.ST_MNG_BAD),
+			pressureSoreArea: String(row?.ST_MNG_BAD_DSC ?? '').trim(),
+			pressureSorePrevention: ynChecked(row?.ST_MNG_BCHK),
+			pressureSorePreventionTool: String(row?.ST_MNG_BCHK_DSC ?? '').trim(),
+			roomNo: String(row?.ROOM_NO ?? '').trim()
+		};
+	}
+
+	applyLegacy(row?.RG_JSON ?? row?.RG_ETC_DESC ?? row?.NS_ETC_DESC);
+	return null;
+};
 
 export default function LongtermRecordFormat() {
 	const [selectedMember, setSelectedMember] = useState<MemberData | null>(null);
@@ -53,42 +321,9 @@ export default function LongtermRecordFormat() {
 	const [pressureSoreArea, setPressureSoreArea] = useState('');
 	const [pressureSorePrevention, setPressureSorePrevention] = useState(false);
 	const [pressureSorePreventionTool, setPressureSorePreventionTool] = useState('');
+	const [roomNo, setRoomNo] = useState('');
 
-	const [dailyRecords] = useState({
-		grooming: [false, false, false, false, false, false, false],
-		bathTime: empty7(),
-		bathMethod: empty7(),
-		mealType: empty7(),
-		mealIntake: empty7(),
-		positionChange: [false, false, false, false, false, false, false],
-		toiletUsage: empty7(),
-		movementAssistance: [false, false, false, false, false, false, false],
-		walk: [false, false, false, false, false, false, false],
-		outing: [false, false, false, false, false, false, false],
-		physicalActivityNotes: empty7(),
-		physicalActivityPreparer: empty7(),
-
-		cognitiveSupport: [false, false, false, false, false, false, false],
-		communicationSupport: [false, false, false, false, false, false, false],
-		cognitiveNotes: empty7(),
-		cognitivePreparer: empty7(),
-
-		vitalSigns: empty7(),
-		healthManagement: [false, false, false, false, false, false, false],
-		nursingManagement: [false, false, false, false, false, false, false],
-		emergencyService: [false, false, false, false, false, false, false],
-		healthNotes: empty7(),
-		healthPreparer: empty7(),
-
-		trainingProgram: empty7(),
-		physicalFunctionTraining: [false, false, false, false, false, false, false],
-		cognitiveTraining: [false, false, false, false, false, false, false],
-		physicalTherapy: [false, false, false, false, false, false, false],
-		trainingNotes: empty7(),
-		trainingPreparer: empty7(),
-
-		admissionDischargeTime: empty7(),
-	});
+	const [dailyRecords, setDailyRecords] = useState(createEmptyDailyRecords);
 
 	const calculateWeekDates = (start: Date) => {
 		const dates: string[] = [];
@@ -106,13 +341,13 @@ export default function LongtermRecordFormat() {
 		setYear(String(startOfWeek.getFullYear()));
 	};
 
-	const applyRgJson = (raw: unknown) => {
+	const applyLegacyBeneficiaryJson = (raw: unknown) => {
 		if (!raw) return;
 		try {
 			const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
 			if (!j || typeof j !== 'object') return;
 
-			const m = j as Record<string, any>;
+			const m = (j as any).beneficiaryStatus ?? j;
 			if (m.status === '와상' || m.status === '준와상' || m.status === '자립') setStatus(m.status);
 			if (typeof m.dementia === 'boolean') setDementia(m.dementia);
 			if (typeof m.stroke === 'boolean') setStroke(m.stroke);
@@ -138,21 +373,111 @@ export default function LongtermRecordFormat() {
 		}
 	};
 
-	const fetchF30112ForRange = async () => {
-		if (!selectedPnum) return;
+	const applyBeneficiaryState = (state: {
+		status: '와상' | '준와상' | '자립';
+		dementia: boolean;
+		stroke: boolean;
+		hypertension: boolean;
+		diabetes: boolean;
+		arthritis: boolean;
+		otherDisease: boolean;
+		otherDiseaseText: string;
+		tracheostomy: boolean;
+		dentures: boolean;
+		nasogastricTube: boolean;
+		urinaryCatheter: boolean;
+		cystostomy: boolean;
+		urostomy: boolean;
+		colostomy: boolean;
+		diaper: boolean;
+		pressureSore: boolean;
+		pressureSoreArea: string;
+		pressureSorePrevention: boolean;
+		pressureSorePreventionTool: string;
+		roomNo: string;
+	}) => {
+		setStatus(state.status);
+		setDementia(state.dementia);
+		setStroke(state.stroke);
+		setHypertension(state.hypertension);
+		setDiabetes(state.diabetes);
+		setArthritis(state.arthritis);
+		setOtherDisease(state.otherDisease);
+		setOtherDiseaseText(state.otherDiseaseText);
+		setTracheostomy(state.tracheostomy);
+		setDentures(state.dentures);
+		setNasogastricTube(state.nasogastricTube);
+		setUrinaryCatheter(state.urinaryCatheter);
+		setCystostomy(state.cystostomy);
+		setUrostomy(state.urostomy);
+		setColostomy(state.colostomy);
+		setDiaper(state.diaper);
+		setPressureSore(state.pressureSore);
+		setPressureSoreArea(state.pressureSoreArea);
+		setPressureSorePrevention(state.pressureSorePrevention);
+		setPressureSorePreventionTool(state.pressureSorePreventionTool);
+		setRoomNo(state.roomNo);
+	};
+
+	const resetBeneficiaryDefaults = () => {
+		setStatus('준와상');
+		setDementia(false);
+		setStroke(false);
+		setHypertension(false);
+		setDiabetes(false);
+		setArthritis(false);
+		setOtherDisease(false);
+		setOtherDiseaseText('');
+		setTracheostomy(false);
+		setDentures(false);
+		setNasogastricTube(false);
+		setUrinaryCatheter(false);
+		setCystostomy(false);
+		setUrostomy(false);
+		setColostomy(false);
+		setDiaper(false);
+		setPressureSore(false);
+		setPressureSoreArea('');
+		setPressureSorePrevention(false);
+		setPressureSorePreventionTool('');
+		setRoomNo('');
+	};
+
+	const loadRecordData = async (pnum: string, start: Date) => {
+		if (!pnum) {
+			resetBeneficiaryDefaults();
+			setDailyRecords(createEmptyDailyRecords());
+			return;
+		}
 		setLoading(true);
+		resetBeneficiaryDefaults();
+		setDailyRecords(createEmptyDailyRecords());
 		try {
-			const from = toYmd(weekStart);
-			const toD = new Date(weekStart);
+			const from = toYmd(start);
+			const toD = new Date(start);
 			toD.setDate(toD.getDate() + 6);
 			const to = toYmd(toD);
 
-			const res = await fetch(`/api/f30112?pnum=${encodeURIComponent(selectedPnum)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-			const json = await res.json().catch(() => ({}));
-			const rows = json?.success && Array.isArray(json.data) ? json.data : [];
+			const [baselineRes, rangeRes] = await Promise.all([
+				fetch(`/api/f30112?pnum=${encodeURIComponent(pnum)}`),
+				fetch(`/api/f30112?pnum=${encodeURIComponent(pnum)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+			]);
+			const baselineJson = await baselineRes.json().catch(() => ({}));
+			const rangeJson = await rangeRes.json().catch(() => ({}));
 
-			const row = rows[0] ?? null;
-			if (row?.RG_JSON) applyRgJson(row.RG_JSON);
+			const baselineRow = baselineJson?.success && Array.isArray(baselineJson.data) ? baselineJson.data[0] : null;
+			const rangeRows = rangeJson?.success && Array.isArray(rangeJson.data) ? rangeJson.data : [];
+
+			const beneficiary = baselineRow
+				? applyBeneficiaryFromRow(baselineRow, applyLegacyBeneficiaryJson)
+				: null;
+			if (beneficiary) {
+				applyBeneficiaryState(beneficiary);
+			} else if (baselineRow?.ROOM_NO != null) {
+				setRoomNo(String(baselineRow.ROOM_NO).trim());
+			}
+
+			setDailyRecords(buildDailyRecords(baselineRow, rangeRows, start));
 		} catch (e) {
 			console.error('F30112 기간 조회 오류:', e);
 			alert('기록양식 정보를 불러오는 중 오류가 발생했습니다.');
@@ -212,12 +537,17 @@ export default function LongtermRecordFormat() {
 		.lt-sheet.lt-form .rec .cat {
 			width: 22px;
 			writing-mode: vertical-rl;
-			text-orientation: mixed;
-			transform: rotate(180deg);
+			text-orientation: upright;
+			vertical-align: top;
 			text-align: center;
 			font-weight: 700;
 			font-size: 8.5pt;
-			line-height: 1.1;
+			line-height: 1.35;
+			letter-spacing: 0.06em;
+			padding-top: 2px;
+		}
+		.lt-sheet.lt-form .rec .cat .cat-label {
+			display: inline-block;
 		}
 		.lt-sheet.lt-form .rec .grp { width: 34px; text-align: center; font-weight: 700; font-size: 8pt; vertical-align: middle; }
 		.lt-sheet.lt-form .rec .sub { font-size: 8pt; text-align: left; line-height: 1.15; }
@@ -284,19 +614,18 @@ export default function LongtermRecordFormat() {
 
 	useEffect(() => {
 		calculateWeekDates(weekStart);
-	}, []);
+	}, [weekStart]);
 
 	useEffect(() => {
-		calculateWeekDates(weekStart);
-		if (selectedPnum) void fetchF30112ForRange();
-	}, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+		void loadRecordData(selectedPnum, weekStart);
+	}, [selectedPnum, weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const vitalDisplay = (i: number) => {
 		const v = dailyRecords.vitalSigns[i]?.trim();
 		return v || <span className="tiny lt-center">/</span>;
 	};
 
-	return (
+return (
 		<div className="lt-longterm-root min-h-screen text-black bg-white">
 			<style dangerouslySetInnerHTML={{ __html: ltFormCss }} />
 			<style dangerouslySetInnerHTML={{ __html: ltPrintLayoutCss }} />
@@ -305,10 +634,7 @@ export default function LongtermRecordFormat() {
 				<div className="flex gap-4">
 					<aside className="lt-no-print w-1/3 shrink-0">
 						<MemberListPanel
-							onSelectMember={async (m) => {
-								setSelectedMember(m);
-								setTimeout(() => void fetchF30112ForRange(), 0);
-							}}
+							onSelectMember={(m) => { setSelectedMember(m); }}
 						/>
 					</aside>
 
@@ -330,7 +656,7 @@ export default function LongtermRecordFormat() {
 									/>
 									<button
 										type="button"
-										onClick={() => void fetchF30112ForRange()}
+										onClick={() => void loadRecordData(selectedPnum, weekStart)}
 										disabled={!selectedPnum || loading}
 										className="px-3 py-1 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
@@ -347,7 +673,12 @@ export default function LongtermRecordFormat() {
 								</button>
 							</div>
 
-							<div className="lt-longterm-sheet-wrap p-4 overflow-x-auto">
+							<div className="relative">
+							<div
+								className={`lt-longterm-sheet-wrap p-4 overflow-x-auto ${
+									!selectedMember ? 'blur-sm select-none pointer-events-none opacity-70' : ''
+								}`}
+							>
 								<div className="lt-sheet lt-form max-w-[210mm] mx-auto bg-white">
 									<div className="lt-law">■ 노인장기요양보험법 시행규칙 [별지 제16호서식] &lt;개정 2019. 9. 27.&gt;</div>
 									<div className="lt-front">(앞쪽)</div>
@@ -379,7 +710,7 @@ export default function LongtermRecordFormat() {
 												<td className="lbl tight">장기요양기관기호</td>
 												<td className="lt-center val-bold">14161000067</td>
 												<td className="lbl tight">침실</td>
-												<td className="lt-center val-bold">{String(selectedMember?.P_ROOM ?? '').trim()}</td>
+												<td className="lt-center val-bold">{roomNo || String(selectedMember?.P_ROOM ?? '').trim()}</td>
 											</tr>
 										</tbody>
 									</table>
@@ -542,12 +873,16 @@ export default function LongtermRecordFormat() {
 													<td key={i} className="tiny lt-left">
 														<div className="optcol">
 															<div>
-																<span className={`cb ${dailyRecords.bathMethod[i] === '전신입욕' ? 'checked' : ''}`} />
+																<span className={`cb ${dailyRecords.bathMethod[i] === '1' ? 'checked' : ''}`} />
 																전신입욕
 															</div>
 															<div>
-																<span className={`cb ${dailyRecords.bathMethod[i] === '샤워식' ? 'checked' : ''}`} />
+																<span className={`cb ${dailyRecords.bathMethod[i] === '2' ? 'checked' : ''}`} />
 																샤워식
+															</div>
+															<div>
+																<span className={`cb ${dailyRecords.bathMethod[i] === '3' ? 'checked' : ''}`} />
+																침상목욕
 															</div>
 														</div>
 													</td>
@@ -570,7 +905,7 @@ export default function LongtermRecordFormat() {
 																죽
 															</div>
 															<div>
-																<span className={`cb ${dailyRecords.mealType[i] === '유동식' ? 'checked' : ''}`} />
+																<span className={`cb ${dailyRecords.mealType[i] === '유동식(미음)' || dailyRecords.mealType[i] === '유동식' ? 'checked' : ''}`} />
 																유동식(미음)
 															</div>
 														</div>
@@ -718,7 +1053,7 @@ export default function LongtermRecordFormat() {
 
 											<tr>
 												<td className="cat" rowSpan={6}>
-													건강 및 간호 관리
+													<span className="cat-label">건강 및 간호 관리</span>
 												</td>
 												<td className="sub" colSpan={2}>
 													혈압/체온
@@ -865,6 +1200,14 @@ export default function LongtermRecordFormat() {
 									<div className="lt-footer">210mm X 297mm [백상지 80g/㎡]</div>
 								</div>
 							</div>
+							{!selectedMember && (
+								<div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-white/30 backdrop-blur-[1px] lt-no-print">
+									<p className="text-center text-lg font-semibold text-blue-900 bg-white/95 px-8 py-5 rounded-lg border border-blue-300 shadow-md max-w-sm">
+										수급자를 선택해주세요
+									</p>
+								</div>
+							)}
+						</div>
 						</div>
 					</section>
 				</div>
