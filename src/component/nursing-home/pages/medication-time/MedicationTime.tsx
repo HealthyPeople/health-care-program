@@ -8,9 +8,10 @@ interface MemberData {
 }
 
 interface MedicationTimeData {
-	status: '약없음' | '복용' | '미복용';
+	status: '약없음' | '복용' | '미복용' | '';
 	time: string;
 	helper: string;
+	rawStatus?: string;
 }
 
 type MedicationTypeKey =
@@ -181,7 +182,8 @@ export default function MedicationTime() {
 			...prev,
 			[type]: {
 				...prev[type],
-				status
+				status,
+				rawStatus: undefined
 			}
 		}));
 	};
@@ -1166,13 +1168,16 @@ export default function MedicationTime() {
 										<div className="bg-white border border-blue-300 rounded-lg">
 											<div className="px-4 py-3 bg-blue-50 border-b border-blue-200">
 												<div className="grid grid-cols-12 gap-2">
-													<div className="col-span-4 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded">
-														구분 / 복용상태
+													<div className="col-span-2 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded whitespace-nowrap">
+														구분
 													</div>
-													<div className="col-span-4 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded">
+													<div className="col-span-5 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded whitespace-nowrap">
+														복용상태
+													</div>
+													<div className="col-span-2 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded whitespace-nowrap">
 														복용시간
 													</div>
-													<div className="col-span-4 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded">
+													<div className="col-span-3 px-2 py-1 text-sm font-semibold text-center text-blue-900 bg-blue-200 border border-blue-300 rounded whitespace-nowrap">
 														복용도우미
 													</div>
 												</div>
@@ -1186,61 +1191,58 @@ export default function MedicationTime() {
 												{/* 약물 복용 시간 행들 */}
 												{medicationTypes.map((type) => (
 													<div key={type} className="grid grid-cols-12 gap-2 items-center">
-														<div className="col-span-4 flex items-center gap-3">
-															<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														<div className="col-span-2">
+															<label className="inline-block px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
 																{type}
 															</label>
-															<div className="flex items-center gap-3">
-																<label className={`flex items-center gap-1 ${isEditMode ? 'cursor-pointer' : 'cursor-default'}`}>
-																	<input
-																		type="radio"
-																		name={type}
-																		value="약없음"
-																		checked={medicationData[type].status === '약없음'}
-																		onChange={() => (isEditMode ? handleMedicationStatusChange(type, '약없음') : undefined)}
-																		className="w-4 h-4 border border-blue-300"
-																		disabled={!isEditMode}
-																	/>
-																	<span className="text-sm text-blue-900">약없음</span>
-																</label>
-																<label className={`flex items-center gap-1 ${isEditMode ? 'cursor-pointer' : 'cursor-default'}`}>
-																	<input
-																		type="radio"
-																		name={type}
-																		value="복용"
-																		checked={medicationData[type].status === '복용'}
-																		onChange={() => (isEditMode ? handleMedicationStatusChange(type, '복용') : undefined)}
-																		className="w-4 h-4 border border-blue-300"
-																		disabled={!isEditMode}
-																	/>
-																	<span className="text-sm text-blue-900">복용</span>
-																</label>
-																<label className={`flex items-center gap-1 ${isEditMode ? 'cursor-pointer' : 'cursor-default'}`}>
-																	<input
-																		type="radio"
-																		name={type}
-																		value="미복용"
-																		checked={medicationData[type].status === '미복용'}
-																		onChange={() => (isEditMode ? handleMedicationStatusChange(type, '미복용') : undefined)}
-																		className="w-4 h-4 border border-blue-300"
-																		disabled={!isEditMode}
-																	/>
-																	<span className="text-sm text-blue-900">미복용</span>
-																</label>
+														</div>
+														<div className="col-span-5">
+															<div className="flex items-center flex-nowrap gap-2">
+																{(['약없음', '복용', '미복용'] as const).map((status) => {
+																	const isChecked = medicationData[type].status === status;
+																	return (
+																		<label
+																			key={status}
+																			className={`flex items-center gap-1 shrink-0 ${isEditMode ? 'cursor-pointer' : 'cursor-default pointer-events-none'}`}
+																		>
+																			<input
+																				type="radio"
+																				name={type}
+																				value={status}
+																				checked={isChecked}
+																				onChange={() => (isEditMode ? handleMedicationStatusChange(type, status) : undefined)}
+																				className="w-4 h-4 border border-blue-300 shrink-0 accent-blue-700"
+																				tabIndex={isEditMode ? 0 : -1}
+																			/>
+																			<span
+																				className={`text-sm whitespace-nowrap ${
+																					!isEditMode && isChecked ? 'font-semibold text-blue-800' : 'text-blue-900'
+																				}`}
+																			>
+																				{status}
+																			</span>
+																		</label>
+																	);
+																})}
+																{medicationData[type].rawStatus && medicationData[type].status === '' && (
+																	<span className="text-xs text-orange-700 whitespace-nowrap shrink-0">
+																		(값{medicationData[type].rawStatus}으로 선택없음)
+																	</span>
+																)}
 															</div>
 														</div>
 
-														<div className="col-span-4">
+														<div className="col-span-2">
 															<input
 																type="time"
 																value={medicationData[type].time}
 																onChange={(e) => (isEditMode ? handleMedicationTimeChange(type, e.target.value) : undefined)}
-																className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded disabled:bg-blue-50"
+																className="w-full max-w-[7rem] px-2 py-1 text-sm bg-white border border-blue-300 rounded disabled:bg-blue-50"
 																disabled={!isEditMode}
 															/>
 														</div>
 
-														<div className="col-span-4 relative helper-dropdown-container">
+														<div className="col-span-3 relative min-w-0 helper-dropdown-container">
 															<input
 																type="text"
 																value={helperSearchTerms[type] || medicationData[type].helper}

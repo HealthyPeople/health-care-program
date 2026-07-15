@@ -39,6 +39,40 @@ const STATUS_MAP_FROM_DB = {
   "9": "약없음",
 };
 
+function mapTimeFromDb(row, statusField, timeField, nameField) {
+  const raw = String(row[statusField] || "").trim();
+  const mapped = STATUS_MAP_FROM_DB[raw];
+  if (mapped) {
+    return {
+      status: mapped,
+      time: row[timeField] ?? "",
+      helper: row[nameField] ?? "",
+      rawStatus: "",
+    };
+  }
+  if (!raw) {
+    return {
+      status: "약없음",
+      time: row[timeField] ?? "",
+      helper: row[nameField] ?? "",
+      rawStatus: "",
+    };
+  }
+  return {
+    status: "",
+    time: row[timeField] ?? "",
+    helper: row[nameField] ?? "",
+    rawStatus: raw,
+  };
+}
+
+function mapStatusToDb(entry) {
+  const { status, rawStatus } = entry || {};
+  if (status && STATUS_MAP_TO_DB[status]) return STATUS_MAP_TO_DB[status];
+  if (rawStatus) return String(rawStatus).trim();
+  return "9";
+}
+
 export async function GET(req) {
   try {
     const { error, sessionAncd } = requireSession(req);
@@ -94,41 +128,13 @@ export async function GET(req) {
       CONF_DATE: normalizeDateString(row.INDT),
       CONF_NAME: row.CONF_NAME ?? "",
       times: {
-        아침식전: {
-          status: STATUS_MAP_FROM_DB[String(row.MOIN || "").trim()] || "약없음",
-          time: row.MOIN_TIME ?? "",
-          helper: row.MOIN_NAME ?? "",
-        },
-        아침식후: {
-          status: STATUS_MAP_FROM_DB[String(row.MOOUT || "").trim()] || "약없음",
-          time: row.MOOUT_TIME ?? "",
-          helper: row.MOUT_NAME ?? "",
-        },
-        점심식전: {
-          status: STATUS_MAP_FROM_DB[String(row.AFIN || "").trim()] || "약없음",
-          time: row.AFIN_TIME ?? "",
-          helper: row.AFIN_NAME ?? "",
-        },
-        점심식후: {
-          status: STATUS_MAP_FROM_DB[String(row.AFOUT || "").trim()] || "약없음",
-          time: row.AFOUT_TIME ?? "",
-          helper: row.AFOUT_NAME ?? "",
-        },
-        저녁식전: {
-          status: STATUS_MAP_FROM_DB[String(row.EVIN || "").trim()] || "약없음",
-          time: row.EVIN_TIME ?? "",
-          helper: row.EVIN_NAME ?? "",
-        },
-        저녁식후: {
-          status: STATUS_MAP_FROM_DB[String(row.EVOUT || "").trim()] || "약없음",
-          time: row.EVOUT_TIME ?? "",
-          helper: row.EVOUT_NAME ?? "",
-        },
-        취침복용: {
-          status: STATUS_MAP_FROM_DB[String(row.SLIN || "").trim()] || "약없음",
-          time: row.SLIN_TIME ?? "",
-          helper: row.SLIN_NAME ?? "",
-        },
+        아침식전: mapTimeFromDb(row, "MOIN", "MOIN_TIME", "MOIN_NAME"),
+        아침식후: mapTimeFromDb(row, "MOOUT", "MOOUT_TIME", "MOUT_NAME"),
+        점심식전: mapTimeFromDb(row, "AFIN", "AFIN_TIME", "AFIN_NAME"),
+        점심식후: mapTimeFromDb(row, "AFOUT", "AFOUT_TIME", "AFOUT_NAME"),
+        저녁식전: mapTimeFromDb(row, "EVIN", "EVIN_TIME", "EVIN_NAME"),
+        저녁식후: mapTimeFromDb(row, "EVOUT", "EVOUT_TIME", "EVOUT_NAME"),
+        취침복용: mapTimeFromDb(row, "SLIN", "SLIN_TIME", "SLIN_NAME"),
       },
     };
 
@@ -167,13 +173,13 @@ export async function POST(req) {
       ANCD: sessionAncd,
       PNUM: String(PNUM).trim(),
       EADT: eadtNorm,
-      MOIN: STATUS_MAP_TO_DB[v("아침식전").status] || "9",
-      MOOUT: STATUS_MAP_TO_DB[v("아침식후").status] || "9",
-      AFIN: STATUS_MAP_TO_DB[v("점심식전").status] || "9",
-      AFOUT: STATUS_MAP_TO_DB[v("점심식후").status] || "9",
-      EVIN: STATUS_MAP_TO_DB[v("저녁식전").status] || "9",
-      EVOUT: STATUS_MAP_TO_DB[v("저녁식후").status] || "9",
-      SLIN: STATUS_MAP_TO_DB[v("취침복용").status] || "9",
+      MOIN: mapStatusToDb(v("아침식전")),
+      MOOUT: mapStatusToDb(v("아침식후")),
+      AFIN: mapStatusToDb(v("점심식전")),
+      AFOUT: mapStatusToDb(v("점심식후")),
+      EVIN: mapStatusToDb(v("저녁식전")),
+      EVOUT: mapStatusToDb(v("저녁식후")),
+      SLIN: mapStatusToDb(v("취침복용")),
       EADES: EADES ?? "",
       INDT: confDateNorm,
       ETC: ETC ?? "",
