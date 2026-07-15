@@ -79,14 +79,14 @@ export const sections3: Sections3 = {
     '장기요양제공 관리': [
       { name: '장기요양제공내역 등록', link: '/nursingHome/longterm-care-registration' },
     ],
-    '배설관찰 관리(설명요청_F33021)': [
+    '배설관찰 관리': [
       { name: '배설관찰 등록', link: '/nursingHome/intensive-excretion-observation' },
       { name: '집중배설관찰 등록', link: '/nursingHome/excretion-observation' },
     ],
     '목욕서비스 관리': [
       { name: '목욕서비스제공내역 등록', link: '/nursingHome/bath-service' },
     ],
-    '체위변경 관리(설명요청_F33040)': [
+    '체위변경 관리': [
       { name: '체위변경내역 등록', link: '/nursingHome/position-change-record' },
     ],
   },

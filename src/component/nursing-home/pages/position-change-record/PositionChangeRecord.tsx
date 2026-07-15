@@ -4,6 +4,18 @@ import { formatCareGradeLabel } from '../../utils/careGrade';
 import { attachLatestRoomNoByPnum } from '../../utils/roomNoFloor';
 import { RoomNoFloorSelect } from '../../components/RoomNoFloorSelect';
 import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
+import {
+	CHNG_POSI_OPTIONS,
+	POSITION_CHANGE_TIME_SLOTS,
+	chngGuToLabel,
+	chngPosiToLabel,
+	createEmptyPositionChangeForm,
+	formatDateYmd,
+	positionChangeFormToPayload,
+	rowToPositionChangeForm,
+	type F33040Row,
+	type PositionChangeFormData,
+} from '../../utils/positionChangeFields';
 
 interface MemberData {
 	ANCD: string;
@@ -17,14 +29,12 @@ interface MemberData {
 	[key: string]: any;
 }
 
-interface PositionChangeData {
-	CHGDT: string; // 변경일자
-	CHGTM: string; // 변경시간
-	CHGPOS: string; // 체위변경
-	REMARKS: string; // 비고
-	CHGER: string; // 변경자
-	CHGNUM: string;
-	[key: string]: any;
+interface PositionChangeData extends F33040Row {
+	CHGDT: string;
+	CHGTM: string;
+	CHGPOS: string;
+	REMARKS: string;
+	CHGER: string;
 }
 
 export default function PositionChangeRecord() {
@@ -39,15 +49,8 @@ export default function PositionChangeRecord() {
 	const [changeListPage, setChangeListPage] = useState(1);
 	const changeListItemsPerPage = 10;
 
-	// 폼 데이터
-	const [formData, setFormData] = useState({
-		beneficiary: '길덕남', // 수급자
-		changeDate: '2025-12-11', // 변경일자
-		changeTime: '05:00 - 06:00', // 변경시간
-		changedPosture: '좌측위', // 변경자세
-		remarks: '', // 비고
-		changer: '고경란' // 변경자
-	});
+	const [formData, setFormData] = useState<PositionChangeFormData>(createEmptyPositionChangeForm());
+	const [defaultChanger, setDefaultChanger] = useState('');
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -144,6 +147,21 @@ export default function PositionChangeRecord() {
 
 	useEffect(() => {
 		fetchMembers();
+		void (async () => {
+			try {
+				const res = await fetch('/api/auth/user-info', { credentials: 'include', cache: 'no-store' });
+				const result = await res.json().catch(() => ({}));
+				if (res.ok && result?.success) {
+					const name = String(result?.data?.empnm ?? result?.data?.EMPNM ?? '').trim();
+					if (name) {
+						setDefaultChanger(name);
+						setFormData((prev) => (prev.changer ? prev : { ...prev, changer: name }));
+					}
+				}
+			} catch {
+				/* ignore */
+			}
+		})();
 	}, []);
 
 	// 검색어 변경 시 실시간 검색 (디바운싱)
@@ -170,15 +188,20 @@ export default function PositionChangeRecord() {
 
 		setLoadingChanges(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/position-change-record/dates?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setPositionChangeDates([]);
+			const url = `/api/f33040?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&mode=dates`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '체위변경일자 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const dates = list
+				.map((r: { CHNG_DT?: string; VDT?: string }) => formatDateYmd(r?.CHNG_DT ?? r?.VDT ?? ''))
+				.filter((d: string) => d && /^\d{4}-\d{2}-\d{2}$/.test(d));
+			setPositionChangeDates(dates);
 		} catch (err) {
 			console.error('체위변경일자 조회 오류:', err);
+			setPositionChangeDates([]);
 		} finally {
 			setLoadingChanges(false);
 		}
@@ -193,24 +216,36 @@ export default function PositionChangeRecord() {
 
 		setLoadingChanges(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/position-change-record?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&date=${encodeURIComponent(date)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setPositionChangeList([]);
+			const url = `/api/f33040?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}&vdt=${encodeURIComponent(date)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '체위변경 목록 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const mapped: PositionChangeData[] = list.map((r: F33040Row) => ({
+				...r,
+				CHGDT: formatDateYmd(r.CHNG_DT ?? r.VDT),
+				CHGTM: chngGuToLabel(String(r.CHNG_GU ?? '')),
+				CHGPOS: chngPosiToLabel(String(r.CHNG_POSI ?? '')),
+				REMARKS: String(r.CHNG_ETC ?? ''),
+				CHGER: String(r.CHNG_EMPNM ?? ''),
+			}));
+			setPositionChangeList(mapped);
 		} catch (err) {
 			console.error('체위변경 목록 조회 오류:', err);
+			setPositionChangeList([]);
 		} finally {
 			setLoadingChanges(false);
 		}
 	};
 
-	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
+		setSelectedDateIndex(null);
+		setSelectedChangeIndex(null);
+		setPositionChangeList([]);
+		setFormData(createEmptyPositionChangeForm(member.P_NM || '', defaultChanger));
 		fetchPositionChangeDates(member.ANCD, member.PNUM);
 	};
 
@@ -221,46 +256,22 @@ export default function PositionChangeRecord() {
 		if (selectedMember && selectedDate) {
 			fetchPositionChanges(selectedMember.ANCD, selectedMember.PNUM, selectedDate);
 		}
-		setFormData(prev => ({ ...prev, changeDate: selectedDate || '' }));
+		setFormData((prev) => ({
+			...createEmptyPositionChangeForm(selectedMember?.P_NM || prev.beneficiary, defaultChanger || prev.changer),
+			changeDate: selectedDate || '',
+		}));
 		setSelectedChangeIndex(null);
 	};
 
 	// 체위변경 선택 함수
 	const handleSelectChange = (index: number, change: PositionChangeData) => {
 		setSelectedChangeIndex(index);
-		setFormData({
-			beneficiary: selectedMember?.P_NM || '',
-			changeDate: change.CHGDT || '',
-			changeTime: change.CHGTM || '',
-			changedPosture: change.CHGPOS || '',
-			remarks: change.REMARKS || '',
-			changer: change.CHGER || ''
-		});
+		setFormData(rowToPositionChangeForm(change, selectedMember?.P_NM || ''));
 	};
 
-	// 날짜 형식 변환 함수
-	const formatDateDisplay = (dateStr: string) => {
-		if (!dateStr) return '';
-		if (dateStr.includes('T')) {
-			dateStr = dateStr.split('T')[0];
-		}
-		if (dateStr.includes('-') && dateStr.length >= 10) {
-			return dateStr.substring(0, 10);
-		}
-		if (dateStr.length === 8 && !dateStr.includes('-') && !dateStr.includes('년')) {
-			return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-		}
-		return dateStr;
-	};
+	const formatDateDisplay = formatDateYmd;
 
-	// 시간 형식 변환 함수
-	const formatTimeDisplay = (timeStr: string) => {
-		if (!timeStr) return '';
-		if (timeStr.length === 4) {
-			return `${timeStr.substring(0, 2)}:${timeStr.substring(2, 4)}`;
-		}
-		return timeStr;
-	};
+	const formatTimeDisplay = (timeStr: string) => chngGuToLabel(timeStr);
 
 	// 저장 함수
 	const handleSave = async () => {
@@ -276,27 +287,26 @@ export default function PositionChangeRecord() {
 
 		setLoadingChanges(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedChangeIndex !== null ? '/api/position-change-record/update' : '/api/position-change-record/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
+			const payload = positionChangeFormToPayload(formData, selectedMember.PNUM);
+			const res = await fetch(`/api/f33040?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '체위변경 저장 실패');
+			}
 
 			alert(selectedChangeIndex !== null ? '체위변경이 수정되었습니다.' : '체위변경이 저장되었습니다.');
-			
-			// 데이터 다시 조회
+
+			await fetchPositionChangeDates(selectedMember.ANCD, selectedMember.PNUM);
 			if (selectedMember && formData.changeDate) {
 				await fetchPositionChanges(selectedMember.ANCD, selectedMember.PNUM, formData.changeDate);
 			}
 		} catch (err) {
 			console.error('체위변경 저장 오류:', err);
-			alert('체위변경 저장 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '체위변경 저장 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingChanges(false);
 		}
@@ -321,30 +331,32 @@ export default function PositionChangeRecord() {
 		setLoadingChanges(true);
 		try {
 			const changeToDelete = positionChangeList[selectedChangeIndex];
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/position-change-record/${changeToDelete.CHGNUM}`, {
-			// 	method: 'DELETE'
-			// });
+			const vdt = formatDateDisplay(changeToDelete.CHGDT || formData.changeDate || '');
+			const chngGu = String(changeToDelete.CHNG_GU ?? '');
+			const url = `/api/f33040?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+				selectedMember.PNUM
+			)}&vdt=${encodeURIComponent(vdt)}&chngGu=${encodeURIComponent(chngGu)}`;
+			const res = await fetch(url, { method: 'DELETE' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '체위변경 삭제 실패');
+			}
 
 			alert('체위변경이 삭제되었습니다.');
-			
-			// 데이터 다시 조회
+
+			await fetchPositionChangeDates(selectedMember.ANCD, selectedMember.PNUM);
 			if (selectedMember && formData.changeDate) {
 				await fetchPositionChanges(selectedMember.ANCD, selectedMember.PNUM, formData.changeDate);
 			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				changeTime: '',
-				changedPosture: '',
-				remarks: '',
-				changer: ''
-			}));
+
+			setFormData({
+				...createEmptyPositionChangeForm(selectedMember.P_NM || '', defaultChanger),
+				changeDate: formData.changeDate,
+			});
 			setSelectedChangeIndex(null);
 		} catch (err) {
 			console.error('체위변경 삭제 오류:', err);
-			alert('체위변경 삭제 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '체위변경 삭제 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingChanges(false);
 		}
@@ -670,7 +682,7 @@ export default function PositionChangeRecord() {
 													}`}
 												>
 													<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatDateDisplay(change.CHGDT || '')}</td>
-													<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{formatTimeDisplay(change.CHGTM || '')}</td>
+													<td className="px-3 py-2 text-center text-blue-900 border-r border-blue-100">{change.CHGTM || formatTimeDisplay(change.CHNG_GU || '')}</td>
 													<td className="px-3 py-2 text-center text-blue-900">{change.CHGPOS || '-'}</td>
 												</tr>
 											);
@@ -769,25 +781,9 @@ export default function PositionChangeRecord() {
 								onChange={(e) => setFormData(prev => ({ ...prev, changeTime: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 							>
-								<option value="05:00 - 06:00">05:00 - 06:00</option>
-								<option value="06:00 - 07:00">06:00 - 07:00</option>
-								<option value="07:00 - 08:00">07:00 - 08:00</option>
-								<option value="08:00 - 09:00">08:00 - 09:00</option>
-								<option value="09:00 - 10:00">09:00 - 10:00</option>
-								<option value="10:00 - 11:00">10:00 - 11:00</option>
-								<option value="11:00 - 12:00">11:00 - 12:00</option>
-								<option value="12:00 - 13:00">12:00 - 13:00</option>
-								<option value="13:00 - 14:00">13:00 - 14:00</option>
-								<option value="14:00 - 15:00">14:00 - 15:00</option>
-								<option value="15:00 - 16:00">15:00 - 16:00</option>
-								<option value="16:00 - 17:00">16:00 - 17:00</option>
-								<option value="17:00 - 18:00">17:00 - 18:00</option>
-								<option value="18:00 - 19:00">18:00 - 19:00</option>
-								<option value="19:00 - 20:00">19:00 - 20:00</option>
-								<option value="20:00 - 21:00">20:00 - 21:00</option>
-								<option value="21:00 - 22:00">21:00 - 22:00</option>
-								<option value="22:00 - 23:00">22:00 - 23:00</option>
-								<option value="23:00 - 24:00">23:00 - 24:00</option>
+								{POSITION_CHANGE_TIME_SLOTS.map((slot) => (
+									<option key={slot.vtmGu} value={slot.label}>{slot.label}</option>
+								))}
 							</select>
 						</div>
 
@@ -799,13 +795,9 @@ export default function PositionChangeRecord() {
 								onChange={(e) => setFormData(prev => ({ ...prev, changedPosture: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 							>
-								<option value="좌측위">좌측위</option>
-								<option value="우측위">우측위</option>
-								<option value="배위">배위</option>
-								<option value="복위">복위</option>
-								<option value="좌측경사위">좌측경사위</option>
-								<option value="우측경사위">우측경사위</option>
-								<option value="기타">기타</option>
+								{CHNG_POSI_OPTIONS.map((opt) => (
+									<option key={opt.code} value={opt.code}>{opt.label}</option>
+								))}
 							</select>
 						</div>
 
