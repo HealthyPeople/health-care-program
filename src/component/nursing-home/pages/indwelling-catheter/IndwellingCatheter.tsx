@@ -1,6 +1,19 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
+import { attachLatestRoomNoByPnum } from '../../utils/roomNoFloor';
+import { RoomNoFloorSelect } from '../../components/RoomNoFloorSelect';
+import { matchesSelectedFloorByRoomNo } from '../../utils/roomNoFloorFilter';
+import {
+	CATHETER_TIME_SLOTS,
+	catheterFormToPayload,
+	createEmptyCatheterForm,
+	formatDateYmd,
+	isCheckedFlag,
+	rowToCatheterForm,
+	type CatheterFormData,
+	type F33050Row,
+} from '../../utils/indwellingCatheterFields';
 
 interface MemberData {
 	ANCD: string;
@@ -10,22 +23,19 @@ interface MemberData {
 	P_GRD: string;
 	P_BRDT: string;
 	P_ST: string;
+	ROOM_NO?: string;
 	[key: string]: any;
 }
 
-interface CatheterData {
-	MGDT: string; // 관리일자
-	MGTM: string; // 관리시간
-	URVOL: string; // 소변량
-	CATH: string; // 도뇨관
-	URPULSE: string; // 소변맥
-	DISINF: string; // 소독
-	ED_V: string;
-	TOTURVOL: string; // 소변총량
-	REMARKS: string; // 비고
-	OBSERVER: string; // 관찰자
-	MGNUM: string;
-	[key: string]: any;
+interface CatheterData extends F33050Row {
+	MGDT: string;
+	MGTM: string;
+	TOTURVOL: string;
+	CATH: string;
+	URPULSE: string;
+	DISINF: string;
+	REMARKS: string;
+	OBSERVER: string;
 }
 
 export default function IndwellingCatheter() {
@@ -37,19 +47,8 @@ export default function IndwellingCatheter() {
 	const [listPage, setListPage] = useState(1);
 	const listItemsPerPage = 10;
 
-	// 폼 데이터
-	const [formData, setFormData] = useState({
-		beneficiary: '', // 수급자
-		managementDate: '2025-12-11', // 관리일자
-		managementTime: '05:00 - 06:00', // 관리시간
-		totalUrineVolume: '', // 소변총량
-		urineVolume: '', // 소변량
-		catheter: true, // 도뇨관 (체크박스)
-		urinePulse: false, // 소변맥 (체크박스)
-		disinfection: false, // 소독 (체크박스)
-		remarks: '', // 비고
-		observer: '고경란' // 관찰자
-	});
+	const [formData, setFormData] = useState<CatheterFormData>(createEmptyCatheterForm());
+	const [defaultObserver, setDefaultObserver] = useState('');
 
 	// 수급자 목록 데이터
 	const [memberList, setMemberList] = useState<MemberData[]>([]);
@@ -73,7 +72,9 @@ export default function IndwellingCatheter() {
 			const result = await response.json();
 			
 			if (result.success) {
-				setMemberList(result.data || []);
+				const list = Array.isArray(result.data) ? (result.data as MemberData[]) : [];
+				const merged = await attachLatestRoomNoByPnum(list as any);
+				setMemberList(merged as MemberData[]);
 			}
 		} catch (err) {
 			console.error('수급자 목록 조회 오류:', err);
@@ -115,11 +116,7 @@ export default function IndwellingCatheter() {
 		}
 		
 		if (selectedFloor) {
-			const memberFloor = String(member.P_FLOOR || '').trim();
-			const selectedFloorTrimmed = String(selectedFloor).trim();
-			if (memberFloor !== selectedFloorTrimmed) {
-				return false;
-			}
+			if (!matchesSelectedFloorByRoomNo((member as any).ROOM_NO, selectedFloor)) return false;
 		}
 		
 		if (searchTerm && searchTerm.trim() !== '') {
@@ -148,6 +145,21 @@ export default function IndwellingCatheter() {
 
 	useEffect(() => {
 		fetchMembers();
+		void (async () => {
+			try {
+				const res = await fetch('/api/auth/user-info', { credentials: 'include', cache: 'no-store' });
+				const result = await res.json().catch(() => ({}));
+				if (res.ok && result?.success) {
+					const name = String(result?.data?.empnm ?? result?.data?.EMPNM ?? '').trim();
+					if (name) {
+						setDefaultObserver(name);
+						setFormData((prev) => (prev.observer ? prev : { ...prev, observer: name }));
+					}
+				}
+			} catch {
+				/* ignore */
+			}
+		})();
 	}, []);
 
 	// 검색어 변경 시 실시간 검색 (디바운싱)
@@ -174,64 +186,54 @@ export default function IndwellingCatheter() {
 
 		setLoadingRecords(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = `/api/indwelling-catheter?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
-			// const response = await fetch(url);
-			// const result = await response.json();
-			
-			// 임시로 빈 데이터 반환
-			setCatheterList([]);
+			const url = `/api/f33050?ancd=${encodeURIComponent(ancd)}&pnum=${encodeURIComponent(pnum)}`;
+			const response = await fetch(url, { method: 'GET' });
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '유치도뇨관리 목록 조회 실패');
+			}
+			const list = Array.isArray(result.data) ? result.data : [];
+			const mapped: CatheterData[] = list.map((r: F33050Row) => ({
+				...r,
+				MGDT: formatDateYmd(r.VDT),
+				MGTM: String(r.VTM_GU ?? ''),
+				TOTURVOL: r.PSS_VAL != null ? String(r.PSS_VAL) : '',
+				CATH: String(r.CH_01 ?? '0'),
+				URPULSE: String(r.CH_02 ?? '0'),
+				DISINF: String(r.CH_03 ?? '0'),
+				REMARKS: String(r.ETC ?? ''),
+				OBSERVER: String(r.INEMPNM ?? ''),
+			}));
+			setCatheterList(mapped);
 		} catch (err) {
 			console.error('유치도뇨관리 목록 조회 오류:', err);
+			setCatheterList([]);
 		} finally {
 			setLoadingRecords(false);
 		}
 	};
 
-	// 수급자 선택 함수
 	const handleSelectMember = (member: MemberData) => {
 		setSelectedMember(member);
-		setFormData(prev => ({ ...prev, beneficiary: member.P_NM || '' }));
+		setSelectedRecordIndex(null);
+		setIsEditMode(false);
+		setFormData(createEmptyCatheterForm(member.P_NM || '', defaultObserver));
 		fetchCatheterRecords(member.ANCD, member.PNUM);
 	};
 
-	// 기록 선택 함수
 	const handleSelectRecord = (index: number, record: CatheterData) => {
 		setSelectedRecordIndex(index);
 		setIsEditMode(false);
-		setFormData({
-			beneficiary: selectedMember?.P_NM || '',
-			managementDate: record.MGDT || '',
-			managementTime: record.MGTM || '',
-			totalUrineVolume: record.TOTURVOL || '',
-			urineVolume: record.URVOL || '',
-			catheter: record.CATH === '1' || record.CATH === 'Y',
-			urinePulse: record.URPULSE === '1' || record.URPULSE === 'Y',
-			disinfection: record.DISINF === '1' || record.DISINF === 'Y',
-			remarks: record.REMARKS || '',
-			observer: record.OBSERVER || ''
-		});
+		setFormData(rowToCatheterForm(record, selectedMember?.P_NM || ''));
 	};
 
-	// 날짜 형식 변환 함수
-	const formatDateDisplay = (dateStr: string) => {
-		if (!dateStr) return '';
-		if (dateStr.includes('T')) {
-			dateStr = dateStr.split('T')[0];
-		}
-		if (dateStr.includes('-') && dateStr.length >= 10) {
-			return dateStr.substring(0, 10);
-		}
-		if (dateStr.length === 8 && !dateStr.includes('-') && !dateStr.includes('년')) {
-			return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-		}
-		return dateStr;
-	};
+	const formatDateDisplay = formatDateYmd;
 
-	// 시간 형식 변환 함수
 	const formatTimeDisplay = (timeStr: string) => {
 		if (!timeStr) return '';
-		return timeStr;
+		if (timeStr.includes(':')) return timeStr;
+		const slot = CATHETER_TIME_SLOTS.find((s) => s.vtmGu === String(timeStr).padStart(2, '0').slice(-2));
+		return slot?.label ?? timeStr;
 	};
 
 	// 저장 함수
@@ -248,28 +250,29 @@ export default function IndwellingCatheter() {
 
 		setLoadingRecords(true);
 		try {
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const url = selectedRecordIndex !== null ? '/api/indwelling-catheter/update' : '/api/indwelling-catheter/create';
-			// const response = await fetch(url, {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({
-			// 		ancd: selectedMember.ANCD,
-			// 		pnum: selectedMember.PNUM,
-			// 		...formData
-			// 	})
-			// });
+			const payload = catheterFormToPayload(formData, selectedMember.PNUM);
+			const res = await fetch(`/api/f33050?ancd=${encodeURIComponent(selectedMember.ANCD)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(payload),
+			});
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '유치도뇨관리 저장 실패');
+			}
 
 			alert(selectedRecordIndex !== null ? '유치도뇨관리가 수정되었습니다.' : '유치도뇨관리가 저장되었습니다.');
 			setIsEditMode(false);
-			
-			// 데이터 다시 조회
+			setSelectedRecordIndex(null);
+
 			if (selectedMember) {
 				await fetchCatheterRecords(selectedMember.ANCD, selectedMember.PNUM);
 			}
+
+			setFormData(createEmptyCatheterForm(selectedMember.P_NM || '', defaultObserver));
 		} catch (err) {
 			console.error('유치도뇨관리 저장 오류:', err);
-			alert('유치도뇨관리 저장 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '유치도뇨관리 저장 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingRecords(false);
 		}
@@ -294,34 +297,29 @@ export default function IndwellingCatheter() {
 		setLoadingRecords(true);
 		try {
 			const recordToDelete = catheterList[selectedRecordIndex];
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch(`/api/indwelling-catheter/${recordToDelete.MGNUM}`, {
-			// 	method: 'DELETE'
-			// });
+			const vdt = formatDateDisplay(recordToDelete.MGDT || formData.managementDate || '');
+			const vtmGu = String(recordToDelete.VTM_GU ?? '');
+			const url = `/api/f33050?ancd=${encodeURIComponent(selectedMember.ANCD)}&pnum=${encodeURIComponent(
+				selectedMember.PNUM
+			)}&vdt=${encodeURIComponent(vdt)}&vtmGu=${encodeURIComponent(vtmGu)}`;
+			const res = await fetch(url, { method: 'DELETE' });
+			const result = await res.json().catch(() => ({}));
+			if (!res.ok || !result?.success) {
+				throw new Error(result?.error || '유치도뇨관리 삭제 실패');
+			}
 
 			alert('유치도뇨관리가 삭제되었습니다.');
 			setIsEditMode(false);
-			
-			// 데이터 다시 조회
+
 			if (selectedMember) {
 				await fetchCatheterRecords(selectedMember.ANCD, selectedMember.PNUM);
 			}
-			
-			// 폼 초기화
-			setFormData(prev => ({
-				...prev,
-				managementTime: '',
-				totalUrineVolume: '',
-				urineVolume: '',
-				catheter: true,
-				urinePulse: false,
-				disinfection: false,
-				remarks: ''
-			}));
+
+			setFormData(createEmptyCatheterForm(selectedMember.P_NM || '', defaultObserver));
 			setSelectedRecordIndex(null);
 		} catch (err) {
 			console.error('유치도뇨관리 삭제 오류:', err);
-			alert('유치도뇨관리 삭제 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '유치도뇨관리 삭제 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingRecords(false);
 		}
@@ -385,16 +383,12 @@ export default function IndwellingCatheter() {
 							{/* 층수 필터 */}
 							<div className="space-y-1">
 								<div className="text-xs text-blue-900/80">층수</div>
-								<select
+								<RoomNoFloorSelect
+									members={memberList as any}
 									value={selectedFloor}
-									onChange={(e) => setSelectedFloor(e.target.value)}
+									onChange={setSelectedFloor}
 									className="w-full px-2 py-1 text-xs text-blue-900 bg-white border border-blue-300 rounded"
-								>
-									<option value="">층수 전체</option>
-									{Array.from(new Set(memberList.map(m => m.P_FLOOR).filter(f => f !== null && f !== undefined && f !== ''))).sort((a, b) => Number(a) - Number(b)).map(floor => (
-										<option key={floor} value={String(floor)}>{floor}층</option>
-									))}
-								</select>
+								/>
 							</div>
 						</div>
 					</div>
@@ -505,6 +499,12 @@ export default function IndwellingCatheter() {
 					</div>
 				</div>
 
+				<div className="relative flex flex-1 min-w-0">
+					<div
+						className={`flex flex-1 min-w-0 ${
+							!selectedMember ? 'blur-sm select-none pointer-events-none opacity-70' : ''
+						}`}
+					>
 				{/* 중간 패널: 유치도뇨관리 목록 테이블 */}
 				<div className="flex flex-col w-1/3 bg-white border-r border-blue-200">
 					<div className="overflow-hidden border-b border-blue-200 bg-blue-50">
@@ -513,11 +513,10 @@ export default function IndwellingCatheter() {
 								<tr>
 									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">관리일자</th>
 									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">관리시간</th>
-									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">소변량</th>
+									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">소변총량</th>
 									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">도뇨관</th>
-									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">소변</th>
-									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">소독</th>
-									<th className="px-2 py-2 font-semibold text-center text-blue-900">ED_V</th>
+									<th className="px-2 py-2 font-semibold text-center text-blue-900 border-r border-blue-200">소변맥</th>
+									<th className="px-2 py-2 font-semibold text-center text-blue-900">소독</th>
 								</tr>
 							</thead>
 						</table>
@@ -528,11 +527,11 @@ export default function IndwellingCatheter() {
 								<tbody>
 									{loadingRecords ? (
 										<tr>
-											<td colSpan={7} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
+											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
 										</tr>
 									) : catheterList.length === 0 ? (
 										<tr>
-											<td colSpan={7} className="px-2 py-4 text-center text-blue-900/60">
+											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">
 												{selectedMember ? '유치도뇨관리 데이터가 없습니다' : '수급자를 선택해주세요'}
 											</td>
 										</tr>
@@ -541,7 +540,7 @@ export default function IndwellingCatheter() {
 											const globalIndex = listStartIndex + localIndex;
 											return (
 												<tr
-													key={globalIndex}
+													key={`${record.VDT}-${record.VTM_GU}-${globalIndex}`}
 													onClick={() => handleSelectRecord(globalIndex, record)}
 													className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
 														selectedRecordIndex === globalIndex ? 'bg-blue-100' : ''
@@ -549,17 +548,16 @@ export default function IndwellingCatheter() {
 												>
 													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">{formatDateDisplay(record.MGDT || '')}</td>
 													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">{formatTimeDisplay(record.MGTM || '')}</td>
-													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">{record.URVOL || '-'}</td>
+													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">{record.TOTURVOL || '-'}</td>
 													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">
-														{record.CATH === '1' || record.CATH === 'Y' ? '✓' : '-'}
+														{isCheckedFlag(record.CATH) ? '✓' : '-'}
 													</td>
 													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">
-														{record.URPULSE === '1' || record.URPULSE === 'Y' ? '✓' : '-'}
+														{isCheckedFlag(record.URPULSE) ? '✓' : '-'}
 													</td>
-													<td className="px-2 py-2 text-center text-blue-900 border-r border-blue-100">
-														{record.DISINF === '1' || record.DISINF === 'Y' ? '✓' : '-'}
+													<td className="px-2 py-2 text-center text-blue-900">
+														{isCheckedFlag(record.DISINF) ? '✓' : '-'}
 													</td>
-													<td className="px-2 py-2 text-center text-blue-900">{record.ED_V || '-'}</td>
 												</tr>
 											);
 										})
@@ -633,9 +631,8 @@ export default function IndwellingCatheter() {
 							<input
 								type="text"
 								value={formData.beneficiary}
-								onChange={(e) => setFormData(prev => ({ ...prev, beneficiary: e.target.value }))}
-								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-								placeholder="수급자명"
+								readOnly
+								className="flex-1 px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50"
 							/>
 						</div>
 
@@ -643,10 +640,10 @@ export default function IndwellingCatheter() {
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">관리일자</label>
 							<input
-								type="text"
+								type="date"
 								value={formData.managementDate}
-								readOnly
-								className="flex-1 px-3 py-1.5 text-sm border border-blue-200 rounded bg-gray-50"
+								onChange={(e) => setFormData(prev => ({ ...prev, managementDate: e.target.value }))}
+								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 							/>
 						</div>
 
@@ -658,25 +655,9 @@ export default function IndwellingCatheter() {
 								onChange={(e) => setFormData(prev => ({ ...prev, managementTime: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
 							>
-								<option value="05:00 - 06:00">05:00 - 06:00</option>
-								<option value="06:00 - 07:00">06:00 - 07:00</option>
-								<option value="07:00 - 08:00">07:00 - 08:00</option>
-								<option value="08:00 - 09:00">08:00 - 09:00</option>
-								<option value="09:00 - 10:00">09:00 - 10:00</option>
-								<option value="10:00 - 11:00">10:00 - 11:00</option>
-								<option value="11:00 - 12:00">11:00 - 12:00</option>
-								<option value="12:00 - 13:00">12:00 - 13:00</option>
-								<option value="13:00 - 14:00">13:00 - 14:00</option>
-								<option value="14:00 - 15:00">14:00 - 15:00</option>
-								<option value="15:00 - 16:00">15:00 - 16:00</option>
-								<option value="16:00 - 17:00">16:00 - 17:00</option>
-								<option value="17:00 - 18:00">17:00 - 18:00</option>
-								<option value="18:00 - 19:00">18:00 - 19:00</option>
-								<option value="19:00 - 20:00">19:00 - 20:00</option>
-								<option value="20:00 - 21:00">20:00 - 21:00</option>
-								<option value="21:00 - 22:00">21:00 - 22:00</option>
-								<option value="22:00 - 23:00">22:00 - 23:00</option>
-								<option value="23:00 - 24:00">23:00 - 24:00</option>
+								{CATHETER_TIME_SLOTS.map((slot) => (
+									<option key={slot.vtmGu} value={slot.label}>{slot.label}</option>
+								))}
 							</select>
 						</div>
 
@@ -684,23 +665,12 @@ export default function IndwellingCatheter() {
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">소변총량</label>
 							<input
-								type="text"
+								type="number"
 								value={formData.totalUrineVolume}
 								onChange={(e) => setFormData(prev => ({ ...prev, totalUrineVolume: e.target.value }))}
 								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-								placeholder="소변총량을 입력하세요"
-							/>
-						</div>
-
-						{/* 소변량 */}
-						<div className="flex items-center gap-2">
-							<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">소변량</label>
-							<input
-								type="text"
-								value={formData.urineVolume}
-								onChange={(e) => setFormData(prev => ({ ...prev, urineVolume: e.target.value }))}
-								className="flex-1 px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500"
-								placeholder="소변량을 입력하세요"
+								placeholder="소변총량(ml)"
+								min={0}
 							/>
 						</div>
 
@@ -777,6 +747,15 @@ export default function IndwellingCatheter() {
 							삭제
 						</button>
 					</div>
+				</div>
+					</div>
+					{!selectedMember && (
+						<div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-white/30 backdrop-blur-[1px]">
+							<p className="px-6 py-3 text-lg font-semibold text-blue-900 bg-white/90 border border-blue-200 rounded-lg shadow-sm">
+								수급자를 선택해주세요
+							</p>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>

@@ -542,6 +542,12 @@ export default function PositionChangeRecord() {
 					</div>
 				</div>
 
+				<div className="relative flex flex-1 min-w-0">
+					<div
+						className={`flex flex-1 min-w-0 ${
+							!selectedMember ? 'blur-sm select-none pointer-events-none opacity-70' : ''
+						}`}
+					>
 				{/* 중간-왼쪽 패널: 체위변경일자 목록 */}
 				<div className="flex flex-col w-1/4 bg-white border-r border-blue-200">
 					<div className="overflow-hidden border-b border-blue-200 bg-blue-50">
@@ -841,6 +847,15 @@ export default function PositionChangeRecord() {
 							삭제
 						</button>
 					</div>
+				</div>
+					</div>
+					{!selectedMember && (
+						<div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-white/30 backdrop-blur-[1px]">
+							<p className="px-6 py-3 text-lg font-semibold text-blue-900 bg-white/90 border border-blue-200 rounded-lg shadow-sm">
+								수급자를 선택해주세요
+							</p>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>
