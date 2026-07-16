@@ -414,7 +414,10 @@ export type F51012UiSnapshot = {
 	formData: {
 		beneficiary: string;
 		creationDate: string;
+		/** 화면 표시용 작성자명 (F01010.EMPNM) */
 		creator: string;
+		/** F51012.RQEMP = F01010.EMPNO */
+		creatorEmpno: string;
 		height: string;
 		weight: string;
 		judgmentBasis: string;
@@ -525,7 +528,8 @@ export function hydrateFromF51012Row(row: Record<string, unknown> | null | undef
 		formData: {
 			beneficiary: beneficiaryName,
 			creationDate: normalizeYmdFromRow(row.RQDT ?? row.rqdt),
-			creator: rowStr(row, 'RQEMP') || '',
+			creator: rowStr(row, 'RQEMP_NM') || rowStr(row, 'EMPNM') || '',
+			creatorEmpno: rowStr(row, 'RQEMP') || '',
 			height: rowStr(row, 'HEIGHT') || '0.0',
 			weight: rowStr(row, 'WEIGHT') || '0.0',
 			judgmentBasis: rowStr(row, 'C90'),
@@ -628,6 +632,7 @@ export function emptySnapshot(beneficiaryName: string, creationDate: string): F5
 			beneficiary: beneficiaryName,
 			creationDate,
 			creator: '',
+			creatorEmpno: '',
 			height: '0.0',
 			weight: '0.0',
 			judgmentBasis: '',
@@ -696,7 +701,7 @@ export function buildF51012RowPayload(
 	pnum: string | number,
 	rqdtYmd: string
 ): Record<string, unknown> {
-	const rqempRaw = String(ui.formData.creator ?? '').trim();
+	const rqempRaw = String(ui.formData.creatorEmpno ?? '').trim();
 	const rqempNum = parseInt(rqempRaw, 10);
 
 	const row: Record<string, unknown> = {

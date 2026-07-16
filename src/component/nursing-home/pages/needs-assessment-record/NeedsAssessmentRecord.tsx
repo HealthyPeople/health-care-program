@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { formatCareGradeLabel } from '../../utils/careGrade';
 import {
 	NO_ROOM_VALUE,
@@ -39,6 +39,12 @@ export default function NeedsAssessmentRecord() {
 	const [isEditMode, setIsEditMode] = useState(false);
 	/** 수정 취소 시 복원용 */
 	const [backupSnapshot, setBackupSnapshot] = useState<F51012UiSnapshot | null>(null);
+
+	/** 작성자(F01010) 검색 */
+	const [creatorSuggestions, setCreatorSuggestions] = useState<Array<{ EMPNO: string | number; EMPNM: string }>>([]);
+	const [showCreatorDropdown, setShowCreatorDropdown] = useState(false);
+	const [creatorSearchLoading, setCreatorSearchLoading] = useState(false);
+	const creatorWrapRef = useRef<HTMLDivElement | null>(null);
 
 	const initialSnap = emptySnapshot('', '');
 	const [formData, setFormData] = useState(initialSnap.formData);
@@ -315,6 +321,75 @@ export default function NeedsAssessmentRecord() {
 
 	const isReadOnly = !isEditMode;
 
+	const searchCreatorByName = useCallback(async (name: string) => {
+		const q = name.trim();
+		if (!q) {
+			setCreatorSuggestions([]);
+			setShowCreatorDropdown(false);
+			return;
+		}
+		setCreatorSearchLoading(true);
+		try {
+			const res = await fetch(`/api/f01010?name=${encodeURIComponent(q)}`);
+			const json = await res.json();
+			if (json?.success && Array.isArray(json.data)) {
+				setCreatorSuggestions(json.data);
+				setShowCreatorDropdown(json.data.length > 0);
+			} else {
+				setCreatorSuggestions([]);
+				setShowCreatorDropdown(false);
+			}
+		} catch {
+			setCreatorSuggestions([]);
+			setShowCreatorDropdown(false);
+		} finally {
+			setCreatorSearchLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!isEditMode) {
+			setShowCreatorDropdown(false);
+			return;
+		}
+		// 이미 목록에서 선택한 EMPNO가 있으면 재검색하지 않음
+		if (String(formData.creatorEmpno ?? '').trim()) {
+			setShowCreatorDropdown(false);
+			return;
+		}
+		const name = String(formData.creator ?? '').trim();
+		const timer = setTimeout(() => {
+			if (name.length >= 1) {
+				void searchCreatorByName(name);
+			} else {
+				setCreatorSuggestions([]);
+				setShowCreatorDropdown(false);
+			}
+		}, 280);
+		return () => clearTimeout(timer);
+	}, [formData.creator, formData.creatorEmpno, isEditMode, searchCreatorByName]);
+
+	useEffect(() => {
+		const onDocClick = (e: MouseEvent) => {
+			const t = e.target as Node;
+			if (creatorWrapRef.current && !creatorWrapRef.current.contains(t)) {
+				setShowCreatorDropdown(false);
+			}
+		};
+		document.addEventListener('mousedown', onDocClick);
+		return () => document.removeEventListener('mousedown', onDocClick);
+	}, []);
+
+	const handlePickCreator = (emp: { EMPNO: string | number; EMPNM: string }) => {
+		setFormData((prev) => ({
+			...prev,
+			creator: String(emp.EMPNM ?? '').trim(),
+			creatorEmpno: emp.EMPNO != null ? String(emp.EMPNO) : '',
+		}));
+		setShowCreatorDropdown(false);
+		setCreatorSuggestions([]);
+	};
+
 	const handleEnterEditMode = () => {
 		if (!selectedMember) {
 			alert('수급자를 선택해주세요.');
@@ -346,6 +421,11 @@ export default function NeedsAssessmentRecord() {
 		const rqdt = formatDateDisplay(formData.creationDate.trim());
 		if (!rqdt) {
 			alert('작성일자(RQDT)를 YYYY-MM-DD 형식으로 입력해주세요.');
+			return;
+		}
+		const empno = String(formData.creatorEmpno ?? '').trim();
+		if (!empno || !Number.isFinite(parseInt(empno, 10))) {
+			alert('작성자를 직원 검색에서 선택해 주세요. (F01010 EMPNO → RQEMP)');
 			return;
 		}
 
@@ -423,9 +503,11 @@ export default function NeedsAssessmentRecord() {
 			return;
 		}
 
-		if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-			return;
-		}
+		const name = String(selectedMember.P_NM || formData.beneficiary || '').trim() || '해당 수급자';
+		const ok = window.confirm(
+			`정말 삭제하시겠습니까?\n\n수급자: ${name}\n작성일자: ${rqdt}\n\n삭제된 기록은 복구할 수 없습니다.`
+		);
+		if (!ok) return;
 
 		setLoadingDates(true);
 		try {
@@ -723,13 +805,57 @@ export default function NeedsAssessmentRecord() {
 									</div>
 									<div className="flex items-center gap-2">
 										<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">작성자</label>
-										<input
-											type="text"
-											value={formData.creator}
-											onChange={(e) => setFormData(prev => ({ ...prev, creator: e.target.value }))}
-											className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[120px] disabled:bg-gray-50"
-											placeholder="면접사원번호(RQEMP, 숫자)"
-										/>
+										<div ref={creatorWrapRef} className="relative employee-dropdown-container min-w-[160px]">
+											<input
+												type="text"
+												value={formData.creator}
+												onChange={(e) => {
+													const v = e.target.value;
+													setFormData((prev) => ({
+														...prev,
+														creator: v,
+														// 이름을 직접 수정하면 EMPNO 매칭 해제
+														creatorEmpno: '',
+													}));
+												}}
+												onFocus={() => {
+													if (isReadOnly) return;
+													if (String(formData.creator ?? '').trim().length >= 1) {
+														setShowCreatorDropdown(true);
+													}
+												}}
+												className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[160px] disabled:bg-gray-50"
+												placeholder={isReadOnly ? '' : '이름 검색 후 선택'}
+												autoComplete="off"
+												readOnly={isReadOnly}
+											/>
+											{!isReadOnly && showCreatorDropdown ? (
+												<ul className="absolute z-[100] left-0 right-0 mt-1 max-h-48 overflow-auto rounded border border-blue-300 bg-white shadow-lg min-w-[220px]">
+													{creatorSearchLoading ? (
+														<li className="px-3 py-2 text-sm text-blue-900/60">검색 중...</li>
+													) : creatorSuggestions.length === 0 ? (
+														<li className="px-3 py-2 text-sm text-blue-900/60">검색 결과 없음</li>
+													) : (
+														creatorSuggestions.map((emp, i) => (
+															<li
+																key={`${emp.EMPNO}-${i}`}
+																className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 border-b border-blue-50 last:border-0"
+																onMouseDown={(e) => e.preventDefault()}
+																onClick={() => handlePickCreator(emp)}
+															>
+																<span className="font-medium text-blue-900">{emp.EMPNM}</span>
+																<span className="ml-2 text-blue-900/70">사번 {emp.EMPNO ?? '-'}</span>
+															</li>
+														))
+													)}
+												</ul>
+											) : null}
+											{formData.creatorEmpno && isEditMode ? (
+												<p className="text-[10px] text-blue-900/60 mt-0.5">선택됨 (사번 {formData.creatorEmpno})</p>
+											) : isEditMode ? (
+												<p className="text-[10px] text-amber-700 mt-0.5">목록에서 직원을 선택해야 저장됩니다</p>
+											) : null}
+										</div>
 									</div>
 								</div>
 
@@ -823,11 +949,6 @@ export default function NeedsAssessmentRecord() {
 														<span className="text-sm text-blue-900">
 															<span className="text-[10px] text-blue-700/70 mr-1">{item.key}</span>
 															{item.label}
-															{val ? (
-																<span className="ml-1 text-[10px] text-blue-600">
-																	({val === 'X' ? '1' : val === '△' ? '2' : '3'})
-																</span>
-															) : null}
 														</span>
 													</div>
 													);

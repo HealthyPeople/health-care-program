@@ -303,11 +303,16 @@ export async function GET(req) {
 			// 문자열 날짜 비교 — Date 객체 timezone 이슈로 단건 누락 방지
 			request.input('rqdt', sql.VarChar(10), ymd);
 			const result = await request.query(`
-        SELECT TOP 1 *
-        FROM ${TABLE}
-        WHERE [ANCD] = @sessionAncd
-          AND CAST([PNUM] AS VARCHAR(30)) = @pnum
-          AND CONVERT(varchar(10), CAST([RQDT] AS DATE), 23) = @rqdt
+        SELECT TOP 1
+          t.*,
+          e.[EMPNM] AS RQEMP_NM
+        FROM ${TABLE} t
+        LEFT JOIN [돌봄시설DB].[dbo].[F01010] e
+          ON t.[ANCD] = e.[ANCD]
+          AND t.[RQEMP] = e.[EMPNO]
+        WHERE t.[ANCD] = @sessionAncd
+          AND CAST(t.[PNUM] AS VARCHAR(30)) = @pnum
+          AND CONVERT(varchar(10), CAST(t.[RQDT] AS DATE), 23) = @rqdt
       `);
 			const row = serializeRow(result.recordset?.[0] || null);
 			return new Response(JSON.stringify({ success: true, data: row }), {
