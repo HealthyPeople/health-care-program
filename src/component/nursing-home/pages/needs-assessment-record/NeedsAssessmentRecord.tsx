@@ -31,6 +31,7 @@ import {
 	type ActivityAssessment,
 	type F51012UiSnapshot,
 } from './f51012Mapper';
+import { openNeedsAssessmentBatchPrint, openNeedsAssessmentPrint } from './needsAssessmentRecordPrint';
 
 interface MemberData {
 	ANCD: string;
@@ -40,6 +41,8 @@ interface MemberData {
 	P_GRD: string;
 	P_BRDT: string;
 	P_ST: string;
+	P_YYNO?: string | null;
+	P_NO?: string | null;
 	ROOM_NO?: string | null;
 	[key: string]: any;
 }
@@ -49,6 +52,11 @@ export default function NeedsAssessmentRecord() {
 	const [selectedDateIndex, setSelectedDateIndex] = useState<number | null>(null);
 	const [recordDates, setRecordDates] = useState<string[]>([]);
 	const [loadingDates, setLoadingDates] = useState(false);
+	/** 일괄출력용 체크된 수급자 키 (ANCD-PNUM) */
+	const [checkedMemberKeys, setCheckedMemberKeys] = useState<Set<string>>(new Set());
+	const [batchPrintFrom, setBatchPrintFrom] = useState('');
+	const [batchPrintTo, setBatchPrintTo] = useState('');
+	const [batchPrinting, setBatchPrinting] = useState(false);
 	const [activeTab, setActiveTab] = useState<string>('신체');
 	/** false = 읽기모드, true = 수정모드 */
 	const [isEditMode, setIsEditMode] = useState(false);
@@ -133,6 +141,19 @@ export default function NeedsAssessmentRecord() {
 
 	const availableFloors = availableFloorsFromMembers(memberList);
 
+	const memberKey = (m: Pick<MemberData, 'ANCD' | 'PNUM'>) =>
+		`${String(m.ANCD ?? '').trim()}::${String(m.PNUM ?? '').trim()}`;
+
+	const toggleMemberChecked = (member: MemberData, checked: boolean) => {
+		const key = memberKey(member);
+		setCheckedMemberKeys((prev) => {
+			const next = new Set(prev);
+			if (checked) next.add(key);
+			else next.delete(key);
+			return next;
+		});
+	};
+
 	// 수급자 목록 조회
 	const fetchMembers = async (nameSearch?: string) => {
 		setLoading(true);
@@ -212,6 +233,21 @@ export default function NeedsAssessmentRecord() {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const endIndex = startIndex + itemsPerPage;
 	const currentMembers = filteredMembers.slice(startIndex, endIndex);
+
+	const allFilteredChecked =
+		filteredMembers.length > 0 && filteredMembers.every((m) => checkedMemberKeys.has(memberKey(m)));
+
+	const toggleAllFilteredChecked = (checked: boolean) => {
+		setCheckedMemberKeys((prev) => {
+			const next = new Set(prev);
+			for (const m of filteredMembers) {
+				const key = memberKey(m);
+				if (checked) next.add(key);
+				else next.delete(key);
+			}
+			return next;
+		});
+	};
 
 	const handlePageChange = (page: number) => {
 		setCurrentPage(page);
@@ -302,6 +338,108 @@ export default function NeedsAssessmentRecord() {
 			alert('기록을 불러오는 중 오류가 발생했습니다.');
 		} finally {
 			setLoadingDates(false);
+		}
+	};
+
+	/** 작성일자 목록 개별출력 — 해당 일자 데이터 즉시 인쇄 */
+	const handlePrintRecord = async (index: number) => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		const rqdtRaw = recordDates[index];
+		if (rqdtRaw == null) return;
+		const rqdt = formatDateDisplay(String(rqdtRaw));
+		if (!rqdt) {
+			alert('출력할 작성일자가 올바르지 않습니다.');
+			return;
+		}
+
+		try {
+			const res = await fetch(
+				`/api/f51012?pnum=${encodeURIComponent(String(selectedMember.PNUM).trim())}&rqdt=${encodeURIComponent(rqdt)}`
+			);
+			const result = await res.json();
+			if (!(result.success && result.data && typeof result.data === 'object')) {
+				alert('출력할 기록을 찾을 수 없습니다.');
+				return;
+			}
+			const snap = hydrateFromF51012Row(result.data as Record<string, unknown>, selectedMember.P_NM || '');
+			openNeedsAssessmentPrint(snap, selectedMember);
+		} catch (err) {
+			console.error('욕구사정 개별출력 오류:', err);
+			alert('출력 준비 중 오류가 발생했습니다.');
+		}
+	};
+
+	/** 체크된 수급자 + 기간 일괄출력 */
+	const handleBatchPrint = async () => {
+		if (checkedMemberKeys.size === 0) {
+			alert('출력할 수급자를 체크해주세요.');
+			return;
+		}
+		if (!batchPrintFrom || !batchPrintTo) {
+			alert('출력 기간(시작일·종료일)을 설정해주세요.');
+			return;
+		}
+		const from = formatDateDisplay(batchPrintFrom);
+		const to = formatDateDisplay(batchPrintTo);
+		if (!from || !to) {
+			alert('출력 기간 형식이 올바르지 않습니다.');
+			return;
+		}
+		if (from > to) {
+			alert('시작일이 종료일보다 늦을 수 없습니다.');
+			return;
+		}
+
+		const targets = memberList.filter((m) => checkedMemberKeys.has(memberKey(m)));
+		if (targets.length === 0) {
+			alert('체크된 수급자를 찾을 수 없습니다.');
+			return;
+		}
+
+		setBatchPrinting(true);
+		try {
+			const printItems: Array<{ snap: F51012UiSnapshot; member: MemberData }> = [];
+
+			for (const member of targets) {
+				const listRes = await fetch(
+					`/api/f51012?pnum=${encodeURIComponent(String(member.PNUM).trim())}`
+				);
+				const listJson = await listRes.json();
+				const dates: string[] = Array.isArray(listJson?.data) ? listJson.data : [];
+				const inRange = dates
+					.map((d) => formatDateDisplay(String(d)))
+					.filter((d) => d && d >= from && d <= to)
+					.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+				for (const rqdt of inRange) {
+					const detailRes = await fetch(
+						`/api/f51012?pnum=${encodeURIComponent(String(member.PNUM).trim())}&rqdt=${encodeURIComponent(rqdt)}`
+					);
+					const detailJson = await detailRes.json();
+					if (detailJson?.success && detailJson.data && typeof detailJson.data === 'object') {
+						const snap = hydrateFromF51012Row(
+							detailJson.data as Record<string, unknown>,
+							member.P_NM || ''
+						);
+						printItems.push({ snap, member });
+					}
+				}
+			}
+
+			if (printItems.length === 0) {
+				alert('선택한 수급자·기간에 해당하는 욕구사정기록이 없습니다.');
+				return;
+			}
+
+			openNeedsAssessmentBatchPrint(printItems);
+		} catch (err) {
+			console.error('욕구사정 일괄출력 오류:', err);
+			alert('일괄출력 준비 중 오류가 발생했습니다.');
+		} finally {
+			setBatchPrinting(false);
 		}
 	};
 
@@ -578,6 +716,34 @@ export default function NeedsAssessmentRecord() {
 			<div className="flex h-[calc(100vh-56px)]">
 				{/* 좌측 패널: 수급자 목록 */}
 				<div className="flex flex-col w-1/4 p-4 bg-white border-r border-blue-200">
+					{/* 일괄출력: 기간 + 버튼 */}
+					<div className="mb-3 p-2 space-y-2 border border-blue-200 rounded-lg bg-blue-50/60">
+						<div className="text-xs font-semibold text-blue-900">일괄출력 기간</div>
+						<div className="flex items-center gap-1">
+							<input
+								type="date"
+								value={batchPrintFrom}
+								onChange={(e) => setBatchPrintFrom(e.target.value)}
+								className="flex-1 min-w-0 px-1 py-1 text-xs bg-white border border-blue-300 rounded"
+							/>
+							<span className="text-xs text-blue-900 shrink-0">~</span>
+							<input
+								type="date"
+								value={batchPrintTo}
+								onChange={(e) => setBatchPrintTo(e.target.value)}
+								className="flex-1 min-w-0 px-1 py-1 text-xs bg-white border border-blue-300 rounded"
+							/>
+						</div>
+						<button
+							type="button"
+							onClick={() => void handleBatchPrint()}
+							disabled={batchPrinting || checkedMemberKeys.size === 0}
+							className="w-full px-2 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-700 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{batchPrinting ? '출력 준비 중...' : `일괄출력 (${checkedMemberKeys.size}명)`}
+						</button>
+					</div>
+
 					{/* 필터 헤더 */}
 					<div className="mb-3">
 						<h3 className="mb-2 text-sm font-semibold text-blue-900">수급자 목록</h3>
@@ -651,46 +817,72 @@ export default function NeedsAssessmentRecord() {
 							<table className="w-full text-xs">
 								<thead className="sticky top-0 border-b border-blue-200 bg-blue-50">
 									<tr>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">연번</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">현황</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">수급자명</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">성별</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">등급</th>
-										<th className="px-2 py-1.5 font-semibold text-center text-blue-900">나이</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200 w-8">
+											<input
+												type="checkbox"
+												checked={allFilteredChecked}
+												onChange={(e) => toggleAllFilteredChecked(e.target.checked)}
+												className="w-3.5 h-3.5 border-blue-300 rounded"
+												title="현재 필터 수급자 전체 선택"
+											/>
+										</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">연번</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">현황</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">수급자명</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">성별</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900 border-r border-blue-200">등급</th>
+										<th className="px-1 py-1.5 font-semibold text-center text-blue-900">나이</th>
 									</tr>
 								</thead>
 								<tbody>
 									{loading ? (
 										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
+											<td colSpan={7} className="px-2 py-4 text-center text-blue-900/60">로딩 중...</td>
 										</tr>
 									) : filteredMembers.length === 0 ? (
 										<tr>
-											<td colSpan={6} className="px-2 py-4 text-center text-blue-900/60">수급자 데이터가 없습니다</td>
+											<td colSpan={7} className="px-2 py-4 text-center text-blue-900/60">수급자 데이터가 없습니다</td>
 										</tr>
 									) : (
-										currentMembers.map((member, index) => (
-											<tr
-												key={`${member.ANCD}-${member.PNUM}-${index}`}
-												onClick={() => handleSelectMember(member)}
-												className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-													selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM ? 'bg-blue-100' : ''
-												}`}
-											>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">{startIndex + index + 1}</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">{member.P_NM || '-'}</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
-												</td>
-												<td className="px-2 py-1.5 text-center border-r border-blue-100">
-													{formatCareGradeLabel(member.P_GRD)}
-												</td>
-												<td className="px-2 py-1.5 text-center">{calculateAge(member.P_BRDT)}</td>
-											</tr>
-										))
+										currentMembers.map((member, index) => {
+											const key = memberKey(member);
+											const isChecked = checkedMemberKeys.has(key);
+											return (
+												<tr
+													key={`${member.ANCD}-${member.PNUM}-${index}`}
+													onClick={() => handleSelectMember(member)}
+													className={`border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+														selectedMember?.ANCD === member.ANCD && selectedMember?.PNUM === member.PNUM
+															? 'bg-blue-100'
+															: ''
+													}`}
+												>
+													<td
+														className="px-1 py-1.5 text-center border-r border-blue-100"
+														onClick={(e) => e.stopPropagation()}
+													>
+														<input
+															type="checkbox"
+															checked={isChecked}
+															onChange={(e) => toggleMemberChecked(member, e.target.checked)}
+															className="w-3.5 h-3.5 border-blue-300 rounded"
+														/>
+													</td>
+													<td className="px-1 py-1.5 text-center border-r border-blue-100">{startIndex + index + 1}</td>
+													<td className="px-1 py-1.5 text-center border-r border-blue-100">
+														{member.P_ST === '1' ? '입소' : member.P_ST === '9' ? '퇴소' : '-'}
+													</td>
+													<td className="px-1 py-1.5 text-center border-r border-blue-100">{member.P_NM || '-'}</td>
+													<td className="px-1 py-1.5 text-center border-r border-blue-100">
+														{member.P_SEX === '1' ? '남' : member.P_SEX === '2' ? '여' : '-'}
+													</td>
+													<td className="px-1 py-1.5 text-center border-r border-blue-100">
+														{formatCareGradeLabel(member.P_GRD)}
+													</td>
+													<td className="px-1 py-1.5 text-center">{calculateAge(member.P_BRDT)}</td>
+												</tr>
+											);
+										})
 									)}
 								</tbody>
 							</table>
@@ -789,12 +981,28 @@ export default function NeedsAssessmentRecord() {
 										recordDates.map((date, index) => (
 											<div
 												key={index}
-												onClick={() => handleSelectDate(index)}
-												className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 border-b border-blue-50 ${
+												className={`flex items-center gap-1 px-2 py-1.5 text-sm border-b border-blue-50 ${
 													selectedDateIndex === index ? 'bg-blue-100 font-semibold' : ''
 												}`}
 											>
-												{formatDateDisplay(date)}
+												<button
+													type="button"
+													onClick={() => void handleSelectDate(index)}
+													className="flex-1 min-w-0 text-left hover:text-blue-700 truncate"
+												>
+													{formatDateDisplay(date)}
+												</button>
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														void handlePrintRecord(index);
+													}}
+													className="shrink-0 px-1.5 py-0.5 text-[11px] font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200"
+													title="개별출력"
+												>
+													출력
+												</button>
 											</div>
 										))
 									)}
