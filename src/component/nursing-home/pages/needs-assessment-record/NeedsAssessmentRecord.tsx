@@ -804,7 +804,14 @@ export default function NeedsAssessmentRecord() {
 
 						{/* 오른쪽: 평가 폼 */}
 						<div className="flex flex-1 overflow-hidden bg-white">
-							<div className="flex-1 p-4 overflow-y-auto">
+							<div className="relative flex-1 min-w-0 overflow-hidden">
+								<div
+									className={`h-full p-4 overflow-y-auto ${
+										selectedMember && selectedDateIndex == null && !isEditMode
+											? 'blur-sm select-none pointer-events-none opacity-70'
+											: ''
+									}`}
+								>
 								{!selectedMember ? (
 									<div className="flex items-center justify-center h-40 text-sm text-blue-900/60">
 										수급자를 선택해주세요
@@ -1903,7 +1910,15 @@ export default function NeedsAssessmentRecord() {
 										</div>
 									</>
 								)}
-								</fieldset>
+									</fieldset>
+									)}
+								</div>
+								{selectedMember && selectedDateIndex == null && !isEditMode && (
+									<div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-white/30 backdrop-blur-[1px]">
+										<p className="px-6 py-3 text-lg font-semibold text-blue-900 bg-white/90 border border-blue-200 rounded-lg shadow-sm">
+											열람 원하는 날짜를 선택해주세요
+										</p>
+									</div>
 								)}
 							</div>
 
