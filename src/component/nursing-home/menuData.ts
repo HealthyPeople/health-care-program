@@ -132,8 +132,8 @@ export const sections3: Sections3 = {
     '월 프로그램 수행계획': [
       { name: '월 프로그램 수행계획 등록', link: '/nursingHome/monthly-program-plan' },
     ],
-    '프로그램 의견수렴 및 반영(신규/임의개발)': [
-      { name: '프로그램 의견수렴 및 반영(신규/임의개발)', link: '/nursingHome/program-feedback' },
+    '프로그램 의견수렴 및 반영(신규페이지)': [
+      { name: '프로그램 의견수렴 및 반영(신규페이지)', link: '/nursingHome/program-feedback' },
     ],
   },
   '요구도관리': {
