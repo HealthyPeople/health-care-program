@@ -137,16 +137,16 @@ export const sections3: Sections3 = {
     ],
   },
   '요구도관리': {
-    '욕구 사정 기록지(설명요청_F51012)': [
+    '욕구 사정 기록지': [
       { name: '욕구 사정 기록지 등록', link: '/nursingHome/needs-assessment-record' },
     ],
-    '욕창 위험도 측정(설명요청_F51013)': [
+    '욕창 위험도 측정': [
       { name: '욕창 위험도 측정내역 등록', link: '/nursingHome/bedsore-risk-measurement' },
     ],
-    '낙상 위험측정(Hnhn)(설명요청_F51014)': [
+    '낙상 위험측정(Hnhn)': [
       { name: '낙상 위험측정(Hnhn) 내역 등록', link: '/nursingHome/fall-risk-measurement' },
     ],
-    '인지상태 평가(설명요청_F51015)': [
+    '인지상태 평가': [
       { name: '인지상태 평가내역 등록', link: '/nursingHome/cognitive-assessment-record' },
     ],
   },

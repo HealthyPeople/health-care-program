@@ -231,184 +231,225 @@ const COG_LABELS = [
 	'혼자 남겨짐에 대한 공포',
 ] as const;
 
-const H1_LABEL_TO_CODE: Record<string, string> = {
-	'정상적으로 들린다': '3',
-	'거의 들리지 않는다': '2',
-	'보통의 소리를 듣기는 하고, 못 듣기도 한다': '2',
-};
-const H1_CODE_TO_LABEL: Record<string, string> = {
-	'1': '거의 들리지 않는다',
-	'2': '보통의 소리를 듣기는 하고, 못 듣기도 한다',
-	'3': '정상적으로 들린다',
-};
+/** 의사소통 H01 청취능력 */
+export const H01_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '들리는지 판단불능' },
+	{ code: '2', label: '거의 들리지 않는다' },
+	{ code: '3', label: '큰 소리는 들을 수 있다' },
+	{ code: '4', label: '보통의 소리를 듣기는 하고, 못 듣기도 한다' },
+	{ code: '5', label: '정상(보청기사용포함)' },
+];
 
-const H2_LABEL_TO_CODE: Record<string, string> = {
-	'정상적으로 의사소통한다': '1',
-	'가끔 이해하고 의사를 표현한다': '2',
-	'의사소통이 어렵다': '3',
-};
-const H2_CODE_TO_LABEL: Record<string, string> = {
-	'1': '정상적으로 의사소통한다',
-	'2': '가끔 이해하고 의사를 표현한다',
-	'3': '의사소통이 어렵다',
-};
+/** 의사소통 H02 */
+export const H02_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '모두 이해하고 의사를 표현한다' },
+	{ code: '2', label: '대부분 이해하고 의사를 표현한다' },
+	{ code: '3', label: '가끔 이해하고 의사를 표현한다' },
+	{ code: '4', label: '거의 이해하지 못하고 의사를 전달하지 못한다' },
+];
 
-const H3_LABEL_TO_CODE: Record<string, string> = {
-	'정상적인 발음': '1',
-	'간혹 어눌한 발음이 섞인다': '2',
-	'발음이 매우 어눌하다': '3',
-};
-const H3_CODE_TO_LABEL: Record<string, string> = {
-	'1': '정상적인 발음',
-	'2': '간혹 어눌한 발음이 섞인다',
-	'3': '발음이 매우 어눌하다',
-};
+/** 의사소통 H03 발음능력 */
+export const H03_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '정확하게 발음이 가능하다' },
+	{ code: '2', label: '응얼거리는 소리로만 한다' },
+	{ code: '3', label: '간혹 어눌한 발음이 섞인다' },
+	{ code: '4', label: '전혀 발음하지 못한다' },
+];
 
-const I1_LABEL_TO_CODE: Record<string, string> = {
-	양호: '1',
-	보통: '1',
-	불량: '2',
-	의치: '3',
-};
-const I1_CODE_TO_LABEL: Record<string, string> = {
-	'1': '양호',
-	'2': '불량',
-	'3': '의치',
-	'4': '불량',
-};
+const H1_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...H01_OPTIONS.map((o) => [o.label, o.code] as const),
+	// 구 UI 라벨 호환
+	['정상적으로 들린다', '5'],
+	['거의 들리지 않는다', '2'],
+	['보통의 소리를 듣기는 하고, 못 듣기도 한다', '4'],
+]);
+const H1_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(H01_OPTIONS.map((o) => [o.code, o.label]));
 
-const I2_LABEL_TO_CODE: Record<string, string> = {
-	식욕저하: '1',
-	없음: '1',
-	저작곤란: '2',
-	삼킴곤란: '3',
-};
-const I2_CODE_TO_LABEL: Record<string, string> = {
-	'1': '식욕저하',
-	'2': '저작곤란',
-	'3': '삼킴곤란',
-	'4': '식욕저하',
-	'5': '식욕저하',
-	'6': '식욕저하',
-};
+const H2_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...H02_OPTIONS.map((o) => [o.label, o.code] as const),
+	['정상적으로 의사소통한다', '1'],
+	['가끔 이해하고 의사를 표현한다', '3'],
+	['의사소통이 어렵다', '4'],
+]);
+const H2_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(H02_OPTIONS.map((o) => [o.code, o.label]));
 
-const I3_LABEL_TO_CODE: Record<string, string> = {
-	미음: '1',
-	죽: '2',
-	일반식: '3',
-	연식: '2',
-	유동식: '2',
-	당뇨식: '4',
-	경관영양: '5',
-};
-const I3_CODE_TO_LABEL: Record<string, string> = {
-	'1': '미음',
-	'2': '죽',
-	'3': '일반식',
-	'4': '당뇨식',
-	'5': '경관영양',
-};
+const H3_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...H03_OPTIONS.map((o) => [o.label, o.code] as const),
+	['정상적인 발음', '1'],
+	['간혹 어눌한 발음이 섞인다', '3'],
+	['발음이 매우 어눌하다', '2'],
+]);
+const H3_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(H03_OPTIONS.map((o) => [o.code, o.label]));
 
-const I4_LABEL_TO_CODE: Record<string, string> = {
-	숟가락: '1',
-	젓가락: '2',
-	포크숟가락: '3',
-	손: '4',
-	도움: '4',
-};
-const I4_CODE_TO_LABEL: Record<string, string> = {
-	'1': '숟가락',
-	'2': '젓가락',
-	'3': '포크숟가락',
-	'4': '도움',
-};
+function normalizeHCode(raw: string, max: number, labelToCode: Record<string, string>): string {
+	const s = String(raw ?? '').trim();
+	if (!s) return '';
+	if (/^\d+$/.test(s)) {
+		const n = parseInt(s, 10);
+		if (n >= 1 && n <= max) return String(n);
+	}
+	return labelToCode[s] || '';
+}
 
-const I5_LABEL_TO_CODE: Record<string, string> = {
-	정상: '1',
-	설사: '2',
-	변비: '3',
-	실금: '1',
-};
-const I5_CODE_TO_LABEL: Record<string, string> = {
-	'1': '정상',
-	'2': '설사',
-	'3': '변비',
-	'4': '정상',
-};
+/** 영양 I01 치아상태 */
+export const I01_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '양호' },
+	{ code: '2', label: '불량' },
+	{ code: '3', label: '의치' },
+	{ code: '4', label: '잔존치아없음' },
+];
 
-const J01_MAP: Record<string, string> = { 기혼: '1', 미혼: '2', 이혼: '2', 사별: '2' };
-const J01_REV: Record<string, string> = { '1': '기혼', '2': '미혼' };
+/** 영양 I02 식사시문제점 */
+export const I02_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '식욕저하' },
+	{ code: '2', label: '저작곤란' },
+	{ code: '3', label: '연하곤란' },
+	{ code: '4', label: '소화불량' },
+	{ code: '5', label: '구토' },
+	{ code: '6', label: '없음' },
+];
 
-const J01_01_MAP: Record<string, string> = { 생존: '1', 사망: '2' };
-const J01_01_REV: Record<string, string> = { '1': '생존', '2': '사망', '9': '생존' };
+/** 영양 I03 식사형태 */
+export const I03_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '미음' },
+	{ code: '2', label: '죽' },
+	{ code: '3', label: '일반식' },
+	{ code: '4', label: '당뇨식' },
+	{ code: '5', label: '경관식' },
+];
 
-const J02_MAP: Record<string, string> = { 무: '1', 유: '2' };
-const J02_REV: Record<string, string> = { '1': '무', '2': '유' };
+/** 영양 I04 도구사용 */
+export const I04_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '숟가락' },
+	{ code: '2', label: '젓가락' },
+	{ code: '3', label: '포크숟가락' },
+	{ code: '4', label: '사용불가' },
+];
 
-const J02_02_MAP: Record<string, string> = {
-	배우자: '1',
-	자녀: '2',
-	자부: '3',
-	사위: '4',
-	형제자매: '5',
-	친척: '6',
-	기타: '9',
-};
-const J02_02_REV: Record<string, string> = {
-	'1': '배우자',
-	'2': '자녀',
-	'3': '자부',
-	'4': '사위',
-	'5': '형제자매',
-	'6': '친척',
-	'9': '기타',
-};
+/** 영양 I05 배설양상 */
+export const I05_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '정상' },
+	{ code: '2', label: '설사' },
+	{ code: '3', label: '변비' },
+	{ code: '4', label: '복부팽만' },
+];
 
-const J02_04_MAP: Record<string, string> = {
-	안정: '1',
-	보통: '1',
-	불안정: '2',
-	연금생활: '3',
-	생활보호: '4',
-};
-const J02_04_REV: Record<string, string> = {
-	'1': '안정',
-	'2': '불안정',
-	'3': '안정',
-	'4': '안정',
-};
+const I1_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...I01_OPTIONS.map((o) => [o.label, o.code] as const),
+	['보통', '1'],
+]);
+const I2_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...I02_OPTIONS.map((o) => [o.label, o.code] as const),
+	['삼킴곤란', '3'],
+]);
+const I3_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...I03_OPTIONS.map((o) => [o.label, o.code] as const),
+	['경관영양', '5'],
+	['연식', '2'],
+	['유동식', '2'],
+]);
+const I4_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...I04_OPTIONS.map((o) => [o.label, o.code] as const),
+	['손', '4'],
+	['도움', '4'],
+]);
+const I5_LABEL_TO_CODE: Record<string, string> = Object.fromEntries([
+	...I05_OPTIONS.map((o) => [o.label, o.code] as const),
+	['실금', '1'],
+]);
 
-const J03_MAP: Record<string, string> = {
+function normalizeICode(raw: string, max: number, labelToCode: Record<string, string>): string {
+	return normalizeHCode(raw, max, labelToCode);
+}
+
+function normalizeCodeFromOptions(
+	raw: string,
+	options: { code: string; label: string }[],
+	extraLabelMap: Record<string, string> = {}
+): string {
+	const s = String(raw ?? '').trim();
+	if (!s) return '';
+	if (options.some((o) => o.code === s)) return s;
+	if (/^\d+$/.test(s)) {
+		const n = String(parseInt(s, 10));
+		const byNum = options.find((o) => o.code === n || o.code === s);
+		if (byNum) return byNum.code;
+	}
+	const labelMap: Record<string, string> = {
+		...Object.fromEntries(options.map((o) => [o.label, o.code])),
+		...extraLabelMap,
+	};
+	return labelMap[s] || '';
+}
+
+/** 가족환경 J01 결혼여부 */
+export const J01_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '기혼' },
+	{ code: '2', label: '미혼' },
+];
+
+/** 가족환경 J01_01 배우자생존여부 */
+export const J01_01_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '생존' },
+	{ code: '2', label: '사망' },
+	{ code: '9', label: '관계없음' },
+];
+
+/** 가족환경 J02 주수발자 — 1.유 2.무 */
+export const J02_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '유' },
+	{ code: '2', label: '무' },
+];
+
+/** 가족환경 J02_02 주수발자-관계 */
+export const J02_02_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '배우자' },
+	{ code: '2', label: '자녀' },
+	{ code: '3', label: '자부' },
+	{ code: '4', label: '사위' },
+	{ code: '5', label: '형제자매' },
+	{ code: '6', label: '친척' },
+	{ code: '9', label: '기타' },
+];
+
+/** 가족환경 J02_04 주수발자-경제상태 */
+export const J02_04_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '안정' },
+	{ code: '2', label: '불안' },
+	{ code: '3', label: '연금생활' },
+	{ code: '4', label: '생활보호' },
+];
+
+/** 가족환경 J03 동거인 */
+export const J03_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '독거' },
+	{ code: '2', label: '부부' },
+	{ code: '3', label: '부모' },
+	{ code: '4', label: '자녀' },
+	{ code: '5', label: '손자녀' },
+	{ code: '6', label: '친척' },
+	{ code: '7', label: '친구/이웃' },
+];
+
+const J01_EXTRA: Record<string, string> = { 이혼: '2', 사별: '2' };
+const J02_EXTRA: Record<string, string> = {}; // 구코드 유=2,무=1 이었을 수 있어 hydrate는 DB코드 우선
+const J02_04_EXTRA: Record<string, string> = { 불안정: '2', 보통: '1' };
+const J03_EXTRA: Record<string, string> = {
 	혼자: '1',
 	배우자: '2',
-	부모: '3',
-	자녀: '4',
 	형제자매: '6',
-	친척: '6',
 	기타: '7',
 };
-const J03_REV: Record<string, string> = {
-	'1': '혼자',
-	'2': '배우자',
-	'3': '부모',
-	'4': '자녀',
-	'5': '자녀',
-	'6': '친척',
-	'7': '기타',
-};
 
-const K01_MAP: Record<string, string> = {
-	천주교: '1',
-	기독교: '2',
-	불교: '3',
-	기타: '9',
-};
-const K01_REV: Record<string, string> = {
-	'1': '천주교',
-	'2': '기독교',
-	'3': '불교',
-	'9': '기타',
-};
+/** 자원이용 K01 종교 — 1.천주교 2.기독교 3.불교 4.기타 */
+export const K01_OPTIONS: { code: string; label: string }[] = [
+	{ code: '1', label: '천주교' },
+	{ code: '2', label: '기독교' },
+	{ code: '3', label: '불교' },
+	{ code: '4', label: '기타' },
+];
+/** 구코드 9(기타) → 4 */
+const K01_EXTRA: Record<string, string> = { '9': '4' };
 
 export type F51012UiSnapshot = {
 	formData: {
@@ -435,40 +476,74 @@ export type F51012UiSnapshot = {
 	cognitionData: Record<string, boolean>;
 	cognitionJudgmentBasis: string;
 	communicationData: {
+		/** H01 코드 1~5 (또는 구 라벨) */
 		listeningAbility: string;
+		/** H02 코드 1~4 */
 		communication: string;
+		/** H03 코드 1~4 */
 		pronunciationAbility: string;
 		judgmentBasis: string;
+		/** H99 */
+		inputComplete: boolean;
 	};
 	nutritionData: {
+		/** I01 코드 */
 		dentalCondition: string;
+		/** I02 코드 */
 		eatingProblems: string;
+		/** I03 코드 */
 		eatingStatus: string;
+		/** I04 코드 */
 		toolUsage: string;
+		/** I05 코드 */
 		excretionPattern: string;
 		judgmentBasis: string;
+		/** I99 */
+		inputComplete: boolean;
 	};
 	familyEnvironmentData: {
+		/** J01 */
 		maritalStatus: string;
+		/** J02 — 1.유 2.무 */
 		primaryCaregiver: string;
+		/** J02_02 */
 		primaryCaregiverRelationship: string;
+		/** J03 */
 		cohabitant: string;
+		/** J01_02 */
 		numberOfChildren: string;
+		/** J02_01 */
 		primaryCaregiverAge: string;
+		/** J02_03 */
 		otherRelationship: string;
+		/** J01_01 */
 		spouseSurvivalStatus: string;
+		/** J02_04 */
 		primaryCaregiverEconomicStatus: string;
+		/** J90 */
 		judgmentBasis: string;
+		/** J99 */
+		inputComplete: boolean;
 	};
 	resourceUtilizationData: {
+		/** K01 */
 		religion: string;
+		/** K01_01 */
 		religionOther: string;
+		/** K02 */
 		primaryMedicalInstitution: string;
+		/** K02_01 */
 		phoneNumber: string;
+		/** K03_01, K03_02 */
 		communityServices: Record<string, boolean>;
+		/** K03_03 */
 		housingImprovementProject: boolean;
+		/** K03_04 */
 		other: string;
+		/** K90 */
 		judgmentBasis: string;
+		/** K99 */
+		inputComplete: boolean;
 	};
 	individualNeedsData: {
 		medicationAdministrationRequest: boolean;
@@ -520,9 +595,9 @@ export function hydrateFromF51012Row(row: Record<string, unknown> | null | undef
 		cognitionData[label] = parseYn(row[col]);
 	});
 
-	const h1c = rowStr(row, 'H01');
-	const h2c = rowStr(row, 'H02');
-	const h3c = rowStr(row, 'H03');
+	const h1c = normalizeHCode(rowStr(row, 'H01'), 5, H1_LABEL_TO_CODE);
+	const h2c = normalizeHCode(rowStr(row, 'H02'), 4, H2_LABEL_TO_CODE);
+	const h3c = normalizeHCode(rowStr(row, 'H03'), 4, H3_LABEL_TO_CODE);
 
 	return {
 		formData: {
@@ -550,33 +625,36 @@ export function hydrateFromF51012Row(row: Record<string, unknown> | null | undef
 		cognitionData,
 		cognitionJudgmentBasis: rowStr(row, 'G90'),
 		communicationData: {
-			listeningAbility: H1_CODE_TO_LABEL[h1c] || H1_CODE_TO_LABEL['2'],
-			communication: H2_CODE_TO_LABEL[h2c] || H2_CODE_TO_LABEL['2'],
-			pronunciationAbility: H3_CODE_TO_LABEL[h3c] || H3_CODE_TO_LABEL['2'],
+			listeningAbility: h1c,
+			communication: h2c,
+			pronunciationAbility: h3c,
 			judgmentBasis: rowStr(row, 'H90'),
+			inputComplete: rowStr(row, 'H99') === '1',
 		},
 		nutritionData: {
-			dentalCondition: I1_CODE_TO_LABEL[rowStr(row, 'I01')] || '양호',
-			eatingProblems: I2_CODE_TO_LABEL[rowStr(row, 'I02')] || '식욕저하',
-			eatingStatus: I3_CODE_TO_LABEL[rowStr(row, 'I03')] || '일반식',
-			toolUsage: I4_CODE_TO_LABEL[rowStr(row, 'I04')] || '젓가락',
-			excretionPattern: I5_CODE_TO_LABEL[rowStr(row, 'I05')] || '정상',
+			dentalCondition: normalizeICode(rowStr(row, 'I01'), 4, I1_LABEL_TO_CODE),
+			eatingProblems: normalizeICode(rowStr(row, 'I02'), 6, I2_LABEL_TO_CODE),
+			eatingStatus: normalizeICode(rowStr(row, 'I03'), 5, I3_LABEL_TO_CODE),
+			toolUsage: normalizeICode(rowStr(row, 'I04'), 4, I4_LABEL_TO_CODE),
+			excretionPattern: normalizeICode(rowStr(row, 'I05'), 4, I5_LABEL_TO_CODE),
 			judgmentBasis: rowStr(row, 'I90'),
+			inputComplete: rowStr(row, 'I99') === '1',
 		},
 		familyEnvironmentData: {
-			maritalStatus: J01_REV[rowStr(row, 'J01')] || '기혼',
-			spouseSurvivalStatus: J01_01_REV[rowStr(row, 'J01_01')] || '사망',
-			numberOfChildren: rowStr(row, 'J01_02') || '0',
-			primaryCaregiver: J02_REV[rowStr(row, 'J02')] || '유',
+			maritalStatus: normalizeCodeFromOptions(rowStr(row, 'J01'), J01_OPTIONS, J01_EXTRA),
+			spouseSurvivalStatus: normalizeCodeFromOptions(rowStr(row, 'J01_01'), J01_01_OPTIONS),
+			numberOfChildren: rowStr(row, 'J01_02') || '',
+			primaryCaregiver: normalizeCodeFromOptions(rowStr(row, 'J02'), J02_OPTIONS, J02_EXTRA),
 			primaryCaregiverAge: rowStr(row, 'J02_01') || '',
-			primaryCaregiverRelationship: J02_02_REV[rowStr(row, 'J02_02')] || '자녀',
+			primaryCaregiverRelationship: normalizeCodeFromOptions(rowStr(row, 'J02_02'), J02_02_OPTIONS),
 			otherRelationship: rowStr(row, 'J02_03'),
-			primaryCaregiverEconomicStatus: J02_04_REV[rowStr(row, 'J02_04')] || '안정',
-			cohabitant: J03_REV[rowStr(row, 'J03')] || '자녀',
+			primaryCaregiverEconomicStatus: normalizeCodeFromOptions(rowStr(row, 'J02_04'), J02_04_OPTIONS, J02_04_EXTRA),
+			cohabitant: normalizeCodeFromOptions(rowStr(row, 'J03'), J03_OPTIONS, J03_EXTRA),
 			judgmentBasis: rowStr(row, 'J90'),
+			inputComplete: rowStr(row, 'J99') === '1',
 		},
 		resourceUtilizationData: {
-			religion: K01_REV[rowStr(row, 'K01')] || '기타',
+			religion: normalizeCodeFromOptions(rowStr(row, 'K01'), K01_OPTIONS, K01_EXTRA),
 			religionOther: rowStr(row, 'K01_01'),
 			primaryMedicalInstitution: rowStr(row, 'K02'),
 			phoneNumber: rowStr(row, 'K02_01'),
@@ -587,6 +665,7 @@ export function hydrateFromF51012Row(row: Record<string, unknown> | null | undef
 			housingImprovementProject: parseYn(row['K03_03']),
 			other: rowStr(row, 'K03_04'),
 			judgmentBasis: rowStr(row, 'K90'),
+			inputComplete: rowStr(row, 'K99') === '1',
 		},
 		individualNeedsData: {
 			medicationAdministrationRequest: parseYn(row['L01_01']),
@@ -649,33 +728,36 @@ export function emptySnapshot(beneficiaryName: string, creationDate: string): F5
 		cognitionData: cog,
 		cognitionJudgmentBasis: '',
 		communicationData: {
-			listeningAbility: '보통의 소리를 듣기는 하고, 못 듣기도 한다',
-			communication: '가끔 이해하고 의사를 표현한다',
-			pronunciationAbility: '간혹 어눌한 발음이 섞인다',
+			listeningAbility: '',
+			communication: '',
+			pronunciationAbility: '',
 			judgmentBasis: '',
+			inputComplete: false,
 		},
 		nutritionData: {
-			dentalCondition: '양호',
-			eatingProblems: '식욕저하',
-			eatingStatus: '일반식',
-			toolUsage: '젓가락',
-			excretionPattern: '정상',
+			dentalCondition: '',
+			eatingProblems: '',
+			eatingStatus: '',
+			toolUsage: '',
+			excretionPattern: '',
 			judgmentBasis: '',
+			inputComplete: false,
 		},
 		familyEnvironmentData: {
-			maritalStatus: '기혼',
-			primaryCaregiver: '유',
-			primaryCaregiverRelationship: '자녀',
-			cohabitant: '자녀',
-			numberOfChildren: '0',
+			maritalStatus: '',
+			primaryCaregiver: '',
+			primaryCaregiverRelationship: '',
+			cohabitant: '',
+			numberOfChildren: '',
 			primaryCaregiverAge: '',
 			otherRelationship: '',
-			spouseSurvivalStatus: '사망',
-			primaryCaregiverEconomicStatus: '안정',
+			spouseSurvivalStatus: '',
+			primaryCaregiverEconomicStatus: '',
 			judgmentBasis: '',
+			inputComplete: false,
 		},
 		resourceUtilizationData: {
-			religion: '기타',
+			religion: '',
 			religionOther: '',
 			primaryMedicalInstitution: '',
 			phoneNumber: '',
@@ -683,6 +765,7 @@ export function emptySnapshot(beneficiaryName: string, creationDate: string): F5
 			housingImprovementProject: false,
 			other: '',
 			judgmentBasis: '',
+			inputComplete: false,
 		},
 		individualNeedsData: {
 			medicationAdministrationRequest: false,
@@ -748,30 +831,35 @@ export function buildF51012RowPayload(
 	});
 	row.G90 = ui.cognitionJudgmentBasis || null;
 
-	row.H01 = H1_LABEL_TO_CODE[ui.communicationData.listeningAbility] || '2';
-	row.H02 = H2_LABEL_TO_CODE[ui.communicationData.communication] || '2';
-	row.H03 = H3_LABEL_TO_CODE[ui.communicationData.pronunciationAbility] || '2';
+	row.H01 = normalizeHCode(ui.communicationData.listeningAbility, 5, H1_LABEL_TO_CODE) || null;
+	row.H02 = normalizeHCode(ui.communicationData.communication, 4, H2_LABEL_TO_CODE) || null;
+	row.H03 = normalizeHCode(ui.communicationData.pronunciationAbility, 4, H3_LABEL_TO_CODE) || null;
 	row.H90 = ui.communicationData.judgmentBasis || null;
+	row.H99 = ui.communicationData.inputComplete ? '1' : '0';
 
-	row.I01 = I1_LABEL_TO_CODE[ui.nutritionData.dentalCondition] || '1';
-	row.I02 = I2_LABEL_TO_CODE[ui.nutritionData.eatingProblems] || '1';
-	row.I03 = I3_LABEL_TO_CODE[ui.nutritionData.eatingStatus] || '3';
-	row.I04 = I4_LABEL_TO_CODE[ui.nutritionData.toolUsage] || '2';
-	row.I05 = I5_LABEL_TO_CODE[ui.nutritionData.excretionPattern] || '1';
+	row.I01 = normalizeICode(ui.nutritionData.dentalCondition, 4, I1_LABEL_TO_CODE) || null;
+	row.I02 = normalizeICode(ui.nutritionData.eatingProblems, 6, I2_LABEL_TO_CODE) || null;
+	row.I03 = normalizeICode(ui.nutritionData.eatingStatus, 5, I3_LABEL_TO_CODE) || null;
+	row.I04 = normalizeICode(ui.nutritionData.toolUsage, 4, I4_LABEL_TO_CODE) || null;
+	row.I05 = normalizeICode(ui.nutritionData.excretionPattern, 4, I5_LABEL_TO_CODE) || null;
 	row.I90 = ui.nutritionData.judgmentBasis || null;
+	row.I99 = ui.nutritionData.inputComplete ? '1' : '0';
 
-	row.J01 = J01_MAP[ui.familyEnvironmentData.maritalStatus] || '1';
-	row.J01_01 = J01_01_MAP[ui.familyEnvironmentData.spouseSurvivalStatus] || '2';
-	row.J01_02 = parseInt(String(ui.familyEnvironmentData.numberOfChildren || '0'), 10) || 0;
-	row.J02 = J02_MAP[ui.familyEnvironmentData.primaryCaregiver] || '2';
-	row.J02_01 = parseInt(String(ui.familyEnvironmentData.primaryCaregiverAge || '0'), 10) || null;
-	row.J02_02 = J02_02_MAP[ui.familyEnvironmentData.primaryCaregiverRelationship] || '2';
+	row.J01 = normalizeCodeFromOptions(ui.familyEnvironmentData.maritalStatus, J01_OPTIONS, J01_EXTRA) || null;
+	row.J01_01 = normalizeCodeFromOptions(ui.familyEnvironmentData.spouseSurvivalStatus, J01_01_OPTIONS) || null;
+	const childrenN = parseInt(String(ui.familyEnvironmentData.numberOfChildren || ''), 10);
+	row.J01_02 = Number.isFinite(childrenN) ? childrenN : null;
+	row.J02 = normalizeCodeFromOptions(ui.familyEnvironmentData.primaryCaregiver, J02_OPTIONS, J02_EXTRA) || null;
+	const ageN = parseInt(String(ui.familyEnvironmentData.primaryCaregiverAge || ''), 10);
+	row.J02_01 = Number.isFinite(ageN) ? ageN : null;
+	row.J02_02 = normalizeCodeFromOptions(ui.familyEnvironmentData.primaryCaregiverRelationship, J02_02_OPTIONS) || null;
 	row.J02_03 = ui.familyEnvironmentData.otherRelationship || null;
-	row.J02_04 = J02_04_MAP[ui.familyEnvironmentData.primaryCaregiverEconomicStatus] || '1';
-	row.J03 = J03_MAP[ui.familyEnvironmentData.cohabitant] || '4';
+	row.J02_04 = normalizeCodeFromOptions(ui.familyEnvironmentData.primaryCaregiverEconomicStatus, J02_04_OPTIONS, J02_04_EXTRA) || null;
+	row.J03 = normalizeCodeFromOptions(ui.familyEnvironmentData.cohabitant, J03_OPTIONS, J03_EXTRA) || null;
 	row.J90 = ui.familyEnvironmentData.judgmentBasis || null;
+	row.J99 = ui.familyEnvironmentData.inputComplete ? '1' : '0';
 
-	row.K01 = K01_MAP[ui.resourceUtilizationData.religion] || '9';
+	row.K01 = normalizeCodeFromOptions(ui.resourceUtilizationData.religion, K01_OPTIONS, K01_EXTRA) || null;
 	row.K01_01 = ui.resourceUtilizationData.religionOther || null;
 	row.K02 = ui.resourceUtilizationData.primaryMedicalInstitution || null;
 	row.K02_01 = ui.resourceUtilizationData.phoneNumber || null;
@@ -780,6 +868,7 @@ export function buildF51012RowPayload(
 	row.K03_03 = yn(ui.resourceUtilizationData.housingImprovementProject);
 	row.K03_04 = ui.resourceUtilizationData.other || null;
 	row.K90 = ui.resourceUtilizationData.judgmentBasis || null;
+	row.K99 = ui.resourceUtilizationData.inputComplete ? '1' : '0';
 
 	row.L01 = ui.individualNeedsData.notes || null;
 	row.L01_01 = yn(ui.individualNeedsData.medicationAdministrationRequest);

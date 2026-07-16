@@ -13,6 +13,21 @@ import {
 	buildF51012RowPayload,
 	collectUiSnapshot,
 	PHYSICAL_ACTIVITY_ITEMS,
+	H01_OPTIONS,
+	H02_OPTIONS,
+	H03_OPTIONS,
+	I01_OPTIONS,
+	I02_OPTIONS,
+	I03_OPTIONS,
+	I04_OPTIONS,
+	I05_OPTIONS,
+	J01_OPTIONS,
+	J01_01_OPTIONS,
+	J02_OPTIONS,
+	J02_02_OPTIONS,
+	J02_04_OPTIONS,
+	J03_OPTIONS,
+	K01_OPTIONS,
 	type ActivityAssessment,
 	type F51012UiSnapshot,
 } from './f51012Mapper';
@@ -395,7 +410,28 @@ export default function NeedsAssessmentRecord() {
 			alert('수급자를 선택해주세요.');
 			return;
 		}
+		if (!formatDateDisplay(formData.creationDate.trim())) {
+			alert('수정할 작성일자를 목록에서 선택해 주세요.\n새 기록을 만들려면 「신규생성」을 눌러 주세요.');
+			return;
+		}
 		setBackupSnapshot(captureCurrentSnapshot());
+		setIsEditMode(true);
+	};
+
+	const handleCreateNew = () => {
+		if (!selectedMember) {
+			alert('수급자를 선택해주세요.');
+			return;
+		}
+		if (isEditMode) {
+			alert('수정/작성 중에는 신규생성을 할 수 없습니다. 먼저 저장하거나 취소해 주세요.');
+			return;
+		}
+		const d = new Date();
+		const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		setBackupSnapshot(captureCurrentSnapshot());
+		setSelectedDateIndex(null);
+		applyF51012Snapshot(emptySnapshot(selectedMember.P_NM || '', today));
 		setIsEditMode(true);
 	};
 
@@ -778,7 +814,9 @@ export default function NeedsAssessmentRecord() {
 									className={`min-w-0 space-y-4 border-0 p-0 m-0 ${isReadOnly ? 'pointer-events-none select-none' : ''}`}
 								>
 								{!isEditMode ? (
-									<p className="text-xs text-blue-900/70 -mt-1">읽기모드 · 수정하려면 「수정」 버튼을 눌러 주세요.</p>
+									<p className="text-xs text-blue-900/70 -mt-1">읽기모드 · 「신규생성」또는 「수정」으로 작성할 수 있습니다.</p>
+								) : selectedDateIndex == null ? (
+									<p className="text-xs text-green-800 -mt-1">신규 작성모드 · 작성일자·작성자 입력 후 「저장」하세요.</p>
 								) : (
 									<p className="text-xs text-green-800 -mt-1">수정모드 · 변경 후 「저장」으로 반영합니다.</p>
 								)}
@@ -796,11 +834,12 @@ export default function NeedsAssessmentRecord() {
 									<div className="flex items-center gap-2">
 										<label className="text-sm font-medium text-blue-900 whitespace-nowrap bg-blue-100 px-3 py-1.5 border border-blue-300 rounded">작성일자</label>
 										<input
-											type="text"
-											value={formData.creationDate}
-											onChange={(e) => setFormData(prev => ({ ...prev, creationDate: e.target.value }))}
-											className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[120px] disabled:bg-gray-50"
-											placeholder="YYYY-MM-DD"
+											type="date"
+											value={formatDateDisplay(formData.creationDate) || ''}
+											onChange={(e) => setFormData((prev) => ({ ...prev, creationDate: e.target.value }))}
+											readOnly={isReadOnly}
+											disabled={isReadOnly}
+											className="px-3 py-1.5 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-w-[150px] disabled:bg-gray-50 disabled:text-blue-900"
 										/>
 									</div>
 									<div className="flex items-center gap-2">
@@ -1233,50 +1272,84 @@ export default function NeedsAssessmentRecord() {
 								{/* 의사소통 탭 */}
 								{activeTab === '의사소통' && (
 									<>
+										<div className="flex items-center justify-end mb-1">
+											<label className="flex items-center gap-2 text-sm text-blue-900">
+												<input
+													type="checkbox"
+													checked={communicationData.inputComplete}
+													onChange={(e) =>
+														setCommunicationData((prev) => ({ ...prev, inputComplete: e.target.checked }))
+													}
+													className="w-4 h-4 border-blue-300 rounded"
+												/>
+												<span className="font-medium">의사소통 입력완료 (H99)</span>
+											</label>
+										</div>
 										<div className="space-y-4">
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">청취능력</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													청취능력
+													<span className="block text-[10px] font-normal text-blue-800/70">H01</span>
+												</label>
 												<select
 													value={communicationData.listeningAbility}
-													onChange={(e) => setCommunicationData(prev => ({ ...prev, listeningAbility: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setCommunicationData((prev) => ({ ...prev, listeningAbility: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="보통의 소리를 듣기는 하고, 못 듣기도 한다">보통의 소리를 듣기는 하고, 못 듣기도 한다</option>
-													<option value="정상적으로 들린다">정상적으로 들린다</option>
-													<option value="거의 들리지 않는다">거의 들리지 않는다</option>
+													<option value="">선택</option>
+													{H01_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">의사소통</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													의사소통
+													<span className="block text-[10px] font-normal text-blue-800/70">H02</span>
+												</label>
 												<select
 													value={communicationData.communication}
-													onChange={(e) => setCommunicationData(prev => ({ ...prev, communication: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setCommunicationData((prev) => ({ ...prev, communication: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="가끔 이해하고 의사를 표현한다">가끔 이해하고 의사를 표현한다</option>
-													<option value="정상적으로 의사소통한다">정상적으로 의사소통한다</option>
-													<option value="의사소통이 어렵다">의사소통이 어렵다</option>
+													<option value="">선택</option>
+													{H02_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">발음능력</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													발음능력
+													<span className="block text-[10px] font-normal text-blue-800/70">H03</span>
+												</label>
 												<select
 													value={communicationData.pronunciationAbility}
-													onChange={(e) => setCommunicationData(prev => ({ ...prev, pronunciationAbility: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setCommunicationData((prev) => ({ ...prev, pronunciationAbility: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="간혹 어눌한 발음이 섞인다">간혹 어눌한 발음이 섞인다</option>
-													<option value="정상적인 발음">정상적인 발음</option>
-													<option value="발음이 매우 어눌하다">발음이 매우 어눌하다</option>
+													<option value="">선택</option>
+													{H03_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 										</div>
 										<div className="flex items-start gap-2 mt-4">
-											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">판단근거</label>
+											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+												판단근거
+												<span className="block text-[10px] font-normal text-blue-800/70">H90</span>
+											</label>
 											<textarea
 												value={communicationData.judgmentBasis}
-												onChange={(e) => setCommunicationData(prev => ({ ...prev, judgmentBasis: e.target.value }))}
-												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px]"
+												onChange={(e) => setCommunicationData((prev) => ({ ...prev, judgmentBasis: e.target.value }))}
+												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px] disabled:bg-gray-50"
 												rows={6}
 											/>
 										</div>
@@ -1286,78 +1359,120 @@ export default function NeedsAssessmentRecord() {
 								{/* 영양 탭 */}
 								{activeTab === '영양' && (
 									<>
+										<div className="flex items-center justify-end mb-1">
+											<label className="flex items-center gap-2 text-sm text-blue-900">
+												<input
+													type="checkbox"
+													checked={nutritionData.inputComplete}
+													onChange={(e) =>
+														setNutritionData((prev) => ({ ...prev, inputComplete: e.target.checked }))
+													}
+													className="w-4 h-4 border-blue-300 rounded"
+												/>
+												<span className="font-medium">영양상태 입력완료 (I99)</span>
+											</label>
+										</div>
 										<div className="space-y-4">
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">치아상태</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													치아상태
+													<span className="block text-[10px] font-normal text-blue-800/70">I01</span>
+												</label>
 												<select
 													value={nutritionData.dentalCondition}
-													onChange={(e) => setNutritionData(prev => ({ ...prev, dentalCondition: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setNutritionData((prev) => ({ ...prev, dentalCondition: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="양호">양호</option>
-													<option value="보통">보통</option>
-													<option value="불량">불량</option>
+													<option value="">선택</option>
+													{I01_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">식사시문제점</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													식사시문제점
+													<span className="block text-[10px] font-normal text-blue-800/70">I02</span>
+												</label>
 												<select
 													value={nutritionData.eatingProblems}
-													onChange={(e) => setNutritionData(prev => ({ ...prev, eatingProblems: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setNutritionData((prev) => ({ ...prev, eatingProblems: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="식욕저하">식욕저하</option>
-													<option value="없음">없음</option>
-													<option value="삼킴곤란">삼킴곤란</option>
-													<option value="저작곤란">저작곤란</option>
+													<option value="">선택</option>
+													{I02_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">식사상태</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													식사형태
+													<span className="block text-[10px] font-normal text-blue-800/70">I03</span>
+												</label>
 												<select
 													value={nutritionData.eatingStatus}
-													onChange={(e) => setNutritionData(prev => ({ ...prev, eatingStatus: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setNutritionData((prev) => ({ ...prev, eatingStatus: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="일반식">일반식</option>
-													<option value="연식">연식</option>
-													<option value="유동식">유동식</option>
-													<option value="경관영양">경관영양</option>
+													<option value="">선택</option>
+													{I03_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">도구사용</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													도구사용
+													<span className="block text-[10px] font-normal text-blue-800/70">I04</span>
+												</label>
 												<select
 													value={nutritionData.toolUsage}
-													onChange={(e) => setNutritionData(prev => ({ ...prev, toolUsage: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setNutritionData((prev) => ({ ...prev, toolUsage: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="젓가락">젓가락</option>
-													<option value="숟가락">숟가락</option>
-													<option value="손">손</option>
-													<option value="도움">도움</option>
+													<option value="">선택</option>
+													{I04_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 											<div className="flex items-center gap-2">
-												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">배설양상</label>
+												<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+													배설양상
+													<span className="block text-[10px] font-normal text-blue-800/70">I05</span>
+												</label>
 												<select
 													value={nutritionData.excretionPattern}
-													onChange={(e) => setNutritionData(prev => ({ ...prev, excretionPattern: e.target.value }))}
-													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+													onChange={(e) => setNutritionData((prev) => ({ ...prev, excretionPattern: e.target.value }))}
+													className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 												>
-													<option value="정상">정상</option>
-													<option value="변비">변비</option>
-													<option value="설사">설사</option>
-													<option value="실금">실금</option>
+													<option value="">선택</option>
+													{I05_OPTIONS.map((o) => (
+														<option key={o.code} value={o.code}>
+															{o.code}. {o.label}
+														</option>
+													))}
 												</select>
 											</div>
 										</div>
 										<div className="flex items-start gap-2 mt-4">
-											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">판단근거</label>
+											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+												판단근거
+												<span className="block text-[10px] font-normal text-blue-800/70">I90</span>
+											</label>
 											<textarea
 												value={nutritionData.judgmentBasis}
-												onChange={(e) => setNutritionData(prev => ({ ...prev, judgmentBasis: e.target.value }))}
-												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px]"
+												onChange={(e) => setNutritionData((prev) => ({ ...prev, judgmentBasis: e.target.value }))}
+												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px] disabled:bg-gray-50"
 												rows={6}
 											/>
 										</div>
@@ -1367,121 +1482,182 @@ export default function NeedsAssessmentRecord() {
 								{/* 가족환경 탭 */}
 								{activeTab === '가족환경' && (
 									<>
+										<div className="flex items-center justify-end mb-1">
+											<label className="flex items-center gap-2 text-sm text-blue-900">
+												<input
+													type="checkbox"
+													checked={familyEnvironmentData.inputComplete}
+													onChange={(e) =>
+														setFamilyEnvironmentData((prev) => ({ ...prev, inputComplete: e.target.checked }))
+													}
+													className="w-4 h-4 border-blue-300 rounded"
+												/>
+												<span className="font-medium">가족환경 입력완료 (J99)</span>
+											</label>
+										</div>
 										<div className="grid grid-cols-2 gap-4">
 											<div className="space-y-4">
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">결혼여부</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														결혼여부
+														<span className="block text-[10px] font-normal text-blue-800/70">J01</span>
+													</label>
 													<select
 														value={familyEnvironmentData.maritalStatus}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, maritalStatus: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, maritalStatus: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													>
-														<option value="기혼">기혼</option>
-														<option value="미혼">미혼</option>
-														<option value="이혼">이혼</option>
-														<option value="사별">사별</option>
+														<option value="">선택</option>
+														{J01_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
 													</select>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">주수발자</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														배우자생존여부
+														<span className="block text-[10px] font-normal text-blue-800/70">J01_01</span>
+													</label>
+													<select
+														value={familyEnvironmentData.spouseSurvivalStatus}
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, spouseSurvivalStatus: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+													>
+														<option value="">선택</option>
+														{J01_01_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
+													</select>
+												</div>
+												<div className="flex items-center gap-2">
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														자녀수
+														<span className="block text-[10px] font-normal text-blue-800/70">J01_02</span>
+													</label>
+													<input
+														type="number"
+														min={0}
+														value={familyEnvironmentData.numberOfChildren}
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, numberOfChildren: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+													/>
+												</div>
+												<div className="flex items-center gap-2">
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														주수발자
+														<span className="block text-[10px] font-normal text-blue-800/70">J02</span>
+													</label>
 													<select
 														value={familyEnvironmentData.primaryCaregiver}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, primaryCaregiver: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, primaryCaregiver: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													>
-														<option value="유">유</option>
-														<option value="무">무</option>
+														<option value="">선택</option>
+														{J02_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
 													</select>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">주수발자 관계</label>
-													<select
-														value={familyEnvironmentData.primaryCaregiverRelationship}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, primaryCaregiverRelationship: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
-													>
-														<option value="자녀">자녀</option>
-														<option value="배우자">배우자</option>
-														<option value="형제자매">형제자매</option>
-														<option value="친척">친척</option>
-														<option value="기타">기타</option>
-													</select>
-												</div>
-												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">동거인</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														동거인
+														<span className="block text-[10px] font-normal text-blue-800/70">J03</span>
+													</label>
 													<select
 														value={familyEnvironmentData.cohabitant}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, cohabitant: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, cohabitant: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													>
-														<option value="자녀">자녀</option>
-														<option value="배우자">배우자</option>
-														<option value="형제자매">형제자매</option>
-														<option value="친척">친척</option>
-														<option value="혼자">혼자</option>
-														<option value="기타">기타</option>
+														<option value="">선택</option>
+														{J03_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
 													</select>
 												</div>
 											</div>
 											<div className="space-y-4">
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">자녀수</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														주수발자-연령
+														<span className="block text-[10px] font-normal text-blue-800/70">J02_01</span>
+													</label>
 													<input
-														type="text"
-														value={familyEnvironmentData.numberOfChildren}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, numberOfChildren: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
-													/>
-												</div>
-												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">주수발자 연령</label>
-													<input
-														type="text"
+														type="number"
+														min={0}
 														value={familyEnvironmentData.primaryCaregiverAge}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, primaryCaregiverAge: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, primaryCaregiverAge: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													/>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">관계기타</label>
-													<input
-														type="text"
-														value={familyEnvironmentData.otherRelationship}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, otherRelationship: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
-													/>
-												</div>
-												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">배우자 생존여부</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														주수발자-관계
+														<span className="block text-[10px] font-normal text-blue-800/70">J02_02</span>
+													</label>
 													<select
-														value={familyEnvironmentData.spouseSurvivalStatus}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, spouseSurvivalStatus: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														value={familyEnvironmentData.primaryCaregiverRelationship}
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, primaryCaregiverRelationship: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													>
-														<option value="생존">생존</option>
-														<option value="사망">사망</option>
+														<option value="">선택</option>
+														{J02_02_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
 													</select>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">주수발자 경제상태</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														관계-기타
+														<span className="block text-[10px] font-normal text-blue-800/70">J02_03</span>
+													</label>
+													<input
+														type="text"
+														value={familyEnvironmentData.otherRelationship}
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, otherRelationship: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+														maxLength={100}
+														placeholder="기타 관계 입력"
+													/>
+												</div>
+												<div className="flex items-center gap-2">
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														주수발자-경제상태
+														<span className="block text-[10px] font-normal text-blue-800/70">J02_04</span>
+													</label>
 													<select
 														value={familyEnvironmentData.primaryCaregiverEconomicStatus}
-														onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, primaryCaregiverEconomicStatus: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, primaryCaregiverEconomicStatus: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													>
-														<option value="안정">안정</option>
-														<option value="보통">보통</option>
-														<option value="불안정">불안정</option>
+														<option value="">선택</option>
+														{J02_04_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
 													</select>
 												</div>
 											</div>
 										</div>
 										<div className="flex items-start gap-2 mt-4">
-											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">판단근거</label>
+											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+												판단근거
+												<span className="block text-[10px] font-normal text-blue-800/70">J90</span>
+											</label>
 											<textarea
 												value={familyEnvironmentData.judgmentBasis}
-												onChange={(e) => setFamilyEnvironmentData(prev => ({ ...prev, judgmentBasis: e.target.value }))}
-												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px]"
+												onChange={(e) => setFamilyEnvironmentData((prev) => ({ ...prev, judgmentBasis: e.target.value }))}
+												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px] disabled:bg-gray-50"
 												rows={6}
 											/>
 										</div>
@@ -1491,104 +1667,169 @@ export default function NeedsAssessmentRecord() {
 								{/* 자원이용 탭 */}
 								{activeTab === '자원이용' && (
 									<>
+										<div className="flex items-center justify-end mb-1">
+											<label className="flex items-center gap-2 text-sm text-blue-900">
+												<input
+													type="checkbox"
+													checked={resourceUtilizationData.inputComplete}
+													onChange={(e) =>
+														setResourceUtilizationData((prev) => ({ ...prev, inputComplete: e.target.checked }))
+													}
+													className="w-4 h-4 border-blue-300 rounded"
+												/>
+												<span className="font-medium">자원이용 입력완료 (K99)</span>
+											</label>
+										</div>
 										<div className="grid grid-cols-2 gap-4">
 											<div className="space-y-4">
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">종교</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														종교
+														<span className="block text-[10px] font-normal text-blue-800/70">K01</span>
+													</label>
 													<select
 														value={resourceUtilizationData.religion}
-														onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, religion: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setResourceUtilizationData((prev) => ({ ...prev, religion: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
 													>
-														<option value="기독교">기독교</option>
-														<option value="불교">불교</option>
-														<option value="천주교">천주교</option>
-														<option value="기타">기타</option>
+														<option value="">선택</option>
+														{K01_OPTIONS.map((o) => (
+															<option key={o.code} value={o.code}>
+																{o.code}. {o.label}
+															</option>
+														))}
 													</select>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">주이용의료기관</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														주이용의료기관
+														<span className="block text-[10px] font-normal text-blue-800/70">K02</span>
+													</label>
 													<input
 														type="text"
 														value={resourceUtilizationData.primaryMedicalInstitution}
-														onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, primaryMedicalInstitution: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) =>
+															setResourceUtilizationData((prev) => ({ ...prev, primaryMedicalInstitution: e.target.value }))
+														}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+														maxLength={100}
 													/>
 												</div>
 												<div className="flex items-start gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">지역사회</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														지역사회자원
+														<span className="block text-[10px] font-normal text-blue-800/70">K03</span>
+													</label>
 													<div className="flex-1 space-y-2">
-														{['급식 및 도시락배달', '이미용'].map((service) => {
-															const serviceKey = service as keyof typeof resourceUtilizationData.communityServices;
-															return (
-																<label key={service} className="flex items-center gap-2 cursor-pointer">
-																	<input
-																		type="checkbox"
-																		checked={resourceUtilizationData.communityServices[serviceKey] || false}
-																		onChange={(e) => setResourceUtilizationData(prev => ({
-																			...prev,
-																			communityServices: {
-																				...prev.communityServices,
-																				[serviceKey]: e.target.checked
-																			}
-																		}))}
-																		className="w-4 h-4 text-blue-500 border-blue-300 rounded focus:ring-blue-500"
-																	/>
-																	<span className="text-sm text-blue-900">{service}</span>
-																</label>
-															);
-														})}
+														<label className="flex items-center gap-2 cursor-pointer">
+															<input
+																type="checkbox"
+																checked={resourceUtilizationData.communityServices['급식 및 도시락배달'] || false}
+																onChange={(e) =>
+																	setResourceUtilizationData((prev) => ({
+																		...prev,
+																		communityServices: {
+																			...prev.communityServices,
+																			'급식 및 도시락배달': e.target.checked,
+																		},
+																	}))
+																}
+																className="w-4 h-4 text-blue-500 border-blue-300 rounded focus:ring-blue-500"
+															/>
+															<span className="text-sm text-blue-900">급식 (K03_01)</span>
+														</label>
+														<label className="flex items-center gap-2 cursor-pointer">
+															<input
+																type="checkbox"
+																checked={resourceUtilizationData.communityServices['이미용'] || false}
+																onChange={(e) =>
+																	setResourceUtilizationData((prev) => ({
+																		...prev,
+																		communityServices: {
+																			...prev.communityServices,
+																			이미용: e.target.checked,
+																		},
+																	}))
+																}
+																className="w-4 h-4 text-blue-500 border-blue-300 rounded focus:ring-blue-500"
+															/>
+															<span className="text-sm text-blue-900">이미용 (K03_02)</span>
+														</label>
+														<label className="flex items-center gap-2 cursor-pointer">
+															<input
+																type="checkbox"
+																checked={resourceUtilizationData.housingImprovementProject}
+																onChange={(e) =>
+																	setResourceUtilizationData((prev) => ({
+																		...prev,
+																		housingImprovementProject: e.target.checked,
+																	}))
+																}
+																className="w-4 h-4 text-blue-500 border-blue-300 rounded focus:ring-blue-500"
+															/>
+															<span className="text-sm text-blue-900">주거 (K03_03)</span>
+														</label>
 													</div>
 												</div>
 											</div>
 											<div className="space-y-4">
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">종교 기타</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														종교-기타내역
+														<span className="block text-[10px] font-normal text-blue-800/70">K01_01</span>
+													</label>
 													<input
 														type="text"
 														value={resourceUtilizationData.religionOther}
-														onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, religionOther: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) =>
+															setResourceUtilizationData((prev) => ({ ...prev, religionOther: e.target.value }))
+														}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+														maxLength={100}
+														placeholder="기타 종교 입력"
 													/>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">전화번호</label>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														전화번호
+														<span className="block text-[10px] font-normal text-blue-800/70">K02_01</span>
+													</label>
 													<input
 														type="text"
 														value={resourceUtilizationData.phoneNumber}
-														onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, phoneNumber: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) =>
+															setResourceUtilizationData((prev) => ({ ...prev, phoneNumber: e.target.value }))
+														}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+														maxLength={20}
 													/>
 												</div>
 												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap"></label>
-													<label className="flex items-center gap-2 cursor-pointer">
-														<input
-															type="checkbox"
-															checked={resourceUtilizationData.housingImprovementProject}
-															onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, housingImprovementProject: e.target.checked }))}
-															className="w-4 h-4 text-blue-500 border-blue-300 rounded focus:ring-blue-500"
-														/>
-														<span className="text-sm text-blue-900">주거개선사업</span>
+													<label className="w-36 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+														지역사회-기타
+														<span className="block text-[10px] font-normal text-blue-800/70">K03_04</span>
 													</label>
-												</div>
-												<div className="flex items-center gap-2">
-													<label className="w-32 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">기타</label>
 													<input
 														type="text"
 														value={resourceUtilizationData.other}
-														onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, other: e.target.value }))}
-														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500"
+														onChange={(e) => setResourceUtilizationData((prev) => ({ ...prev, other: e.target.value }))}
+														className="flex-1 px-3 py-2 text-sm bg-white border border-blue-300 rounded focus:outline-none focus:border-blue-500 disabled:bg-gray-50"
+														maxLength={100}
 													/>
 												</div>
 											</div>
 										</div>
 										<div className="flex items-start gap-2 mt-4">
-											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">판단근거</label>
+											<label className="w-24 px-3 py-2 text-sm font-medium text-blue-900 bg-blue-100 border border-blue-300 rounded whitespace-nowrap">
+												판단근거
+												<span className="block text-[10px] font-normal text-blue-800/70">K90</span>
+											</label>
 											<textarea
 												value={resourceUtilizationData.judgmentBasis}
-												onChange={(e) => setResourceUtilizationData(prev => ({ ...prev, judgmentBasis: e.target.value }))}
-												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px]"
+												onChange={(e) =>
+													setResourceUtilizationData((prev) => ({ ...prev, judgmentBasis: e.target.value }))
+												}
+												className="flex-1 px-3 py-2 text-sm border border-blue-300 rounded bg-white focus:outline-none focus:border-blue-500 min-h-[150px] disabled:bg-gray-50"
 												rows={6}
 											/>
 										</div>
@@ -1688,19 +1929,29 @@ export default function NeedsAssessmentRecord() {
 										</button>
 									</>
 								) : (
-									<button
-										type="button"
-										onClick={handleEnterEditMode}
-										disabled={!selectedMember || loadingDates}
-										className="px-6 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 whitespace-nowrap disabled:opacity-50"
-									>
-										수정
-									</button>
+									<>
+										<button
+											type="button"
+											onClick={handleCreateNew}
+											disabled={!selectedMember || loadingDates}
+											className="px-6 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-700 rounded hover:bg-blue-700 whitespace-nowrap disabled:opacity-50"
+										>
+											신규생성
+										</button>
+										<button
+											type="button"
+											onClick={handleEnterEditMode}
+											disabled={!selectedMember || loadingDates || selectedDateIndex == null}
+											className="px-6 py-2 text-sm font-medium text-blue-900 bg-blue-200 border border-blue-400 rounded hover:bg-blue-300 whitespace-nowrap disabled:opacity-50"
+										>
+											수정
+										</button>
+									</>
 								)}
 								<button
 									type="button"
 									onClick={handleDelete}
-									disabled={!selectedMember || loadingDates || isEditMode}
+									disabled={!selectedMember || loadingDates || isEditMode || selectedDateIndex == null}
 									className="px-6 py-2 text-sm font-medium text-red-800 bg-red-50 border border-red-300 rounded hover:bg-red-100 whitespace-nowrap disabled:opacity-50"
 								>
 									삭제

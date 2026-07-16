@@ -125,12 +125,14 @@ const DATA_COLUMNS = [
 	'H02',
 	'H03',
 	'H90',
+	'H99',
 	'I01',
 	'I02',
 	'I03',
 	'I04',
 	'I05',
 	'I90',
+	'I99',
 	'J01',
 	'J01_01',
 	'J01_02',
@@ -141,6 +143,7 @@ const DATA_COLUMNS = [
 	'J02_04',
 	'J03',
 	'J90',
+	'J99',
 	'K01',
 	'K01_01',
 	'K02',
@@ -150,6 +153,7 @@ const DATA_COLUMNS = [
 	'K03_03',
 	'K03_04',
 	'K90',
+	'K99',
 	'L01',
 	'L01_01',
 	'L01_02',
@@ -243,16 +247,23 @@ function bindDataInputs(request, row) {
 			}
 			continue;
 		}
-		// 의사소통 H01~H03 : 코드 1,2,3
-		if (['H01', 'H02', 'H03'].includes(col)) {
-			const ch = v == null || v === '' ? '1' : String(v).trim().slice(0, 1);
-			request.input(col, sql.Char(1), ch);
+		// 의사소통 H01~H03, H99 : 코드 char(1)
+		if (['H01', 'H02', 'H03', 'H99'].includes(col)) {
+			if (v == null || v === '') {
+				request.input(col, sql.Char(1), null);
+			} else {
+				request.input(col, sql.Char(1), String(v).trim().slice(0, 1));
+			}
 			continue;
 		}
 		// 영양·가족·자원이용 일부 : 코드 1~9
-		if (['I01', 'I02', 'I03', 'I04', 'I05', 'J01', 'J01_01', 'J02', 'J02_02', 'J02_04', 'J03', 'K01'].includes(col)) {
-			const ch = v == null || v === '' ? '1' : String(v).trim().slice(0, 1);
-			request.input(col, sql.Char(1), ch);
+		// 영양 I01~I05, I99 / 가족·자원이용 일부 : 코드 1~9
+		if (['I01', 'I02', 'I03', 'I04', 'I05', 'I99', 'J01', 'J01_01', 'J02', 'J02_02', 'J02_04', 'J03', 'J99', 'K01', 'K99'].includes(col)) {
+			if (v == null || v === '') {
+				request.input(col, sql.Char(1), null);
+			} else {
+				request.input(col, sql.Char(1), String(v).trim().slice(0, 1));
+			}
 			continue;
 		}
 		// 그 외 질병·재활·간호·인지·지역사회 : Y/N
