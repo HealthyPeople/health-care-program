@@ -5,10 +5,10 @@
 export type ActivityAssessment = { activity: string; value: '○' | '△' | 'X' | '' };
 
 const ACTIVITY_ORDER = [
-	'옷 벗고 입기',
+	'옷벗고 입기',
 	'식사 하기',
 	'일어나 앉기',
-	'화장실 사용하기',
+	'화장실 이용하기',
 	'세수하기',
 	'목욕하기',
 	'옮겨 앉기',
@@ -21,6 +21,34 @@ const ACTIVITY_ORDER = [
 
 const C_KEYS = ['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07', 'C08', 'C09', 'C10', 'C11', 'C12'] as const;
 
+/** F51012 신체(C01~C12) — 화면/문서용 */
+export const PHYSICAL_ACTIVITY_ITEMS: { key: (typeof C_KEYS)[number]; label: string }[] = C_KEYS.map((key, i) => ({
+	key,
+	label: ACTIVITY_ORDER[i],
+}));
+
+export function createEmptyActivities(): ActivityAssessment[] {
+	return ACTIVITY_ORDER.map((activity) => ({ activity, value: '' }));
+}
+
+function getRowVal(row: Record<string, unknown>, key: string): unknown {
+	if (row[key] != null && row[key] !== '') return row[key];
+	const upper = key.toUpperCase();
+	const lower = key.toLowerCase();
+	if (row[upper] != null && row[upper] !== '') return row[upper];
+	if (row[lower] != null && row[lower] !== '') return row[lower];
+	const found = Object.keys(row).find((k) => k.toUpperCase() === upper);
+	return found != null ? row[found] : undefined;
+}
+
+function coerceScalar(v: unknown): string {
+	if (v == null) return '';
+	if (typeof v === 'number' && Number.isFinite(v)) return String(Math.trunc(v));
+	if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) return v.toString('utf8').trim();
+	// mssql CHAR 패딩 / 공백 제거
+	return String(v).replace(/\u0000/g, '').trim();
+}
+
 function activityToDb(v: '○' | '△' | 'X' | ''): string | null {
 	if (v === '○') return '3';
 	if (v === '△') return '2';
@@ -28,11 +56,18 @@ function activityToDb(v: '○' | '△' | 'X' | ''): string | null {
 	return null;
 }
 
+/** DB C01~C12 → 화면: 1=X, 2=△, 3=○ */
 function dbToActivity(c: unknown): '○' | '△' | 'X' | '' {
-	const s = String(c ?? '').trim();
-	if (s === '3') return '○';
-	if (s === '2') return '△';
-	if (s === '1') return 'X';
+	const s = coerceScalar(c);
+	if (!s) return '';
+	// 숫자 코드
+	if (s === '1' || s.startsWith('1')) return 'X';
+	if (s === '2' || s.startsWith('2')) return '△';
+	if (s === '3' || s.startsWith('3')) return '○';
+	// 이미 기호로 저장된 경우
+	if (s === 'X' || s === 'x' || s === '×' || s === '✕') return 'X';
+	if (s === '△' || s === '▲' || s === '^') return '△';
+	if (s === '○' || s === 'O' || s === 'o' || s === '●' || s === '◯') return '○';
 	return '';
 }
 
@@ -383,6 +418,8 @@ export type F51012UiSnapshot = {
 		height: string;
 		weight: string;
 		judgmentBasis: string;
+		/** F51012 C99 — 0: 미완료, 1: 입력완료 */
+		physicalInputComplete: boolean;
 	};
 	activities: ActivityAssessment[];
 	disease1Data: Record<string, boolean>;
@@ -440,9 +477,7 @@ export type F51012UiSnapshot = {
 };
 
 function rowStr(r: Record<string, unknown>, k: string): string {
-	const v = r[k] ?? r[k.toLowerCase()];
-	if (v == null) return '';
-	return String(v).trim();
+	return coerceScalar(getRowVal(r, k));
 }
 
 /** DB 한 행 → 화면 스냅샷 */
@@ -453,7 +488,7 @@ export function hydrateFromF51012Row(row: Record<string, unknown> | null | undef
 
 	const activities: ActivityAssessment[] = ACTIVITY_ORDER.map((activity, i) => ({
 		activity,
-		value: dbToActivity(row[C_KEYS[i]]),
+		value: dbToActivity(getRowVal(row, C_KEYS[i])),
 	}));
 
 	const disease1Data: Record<string, boolean> = {};
@@ -494,6 +529,7 @@ export function hydrateFromF51012Row(row: Record<string, unknown> | null | undef
 			height: rowStr(row, 'HEIGHT') || '0.0',
 			weight: rowStr(row, 'WEIGHT') || '0.0',
 			judgmentBasis: rowStr(row, 'C90'),
+			physicalInputComplete: rowStr(row, 'C99') === '1',
 		},
 		activities,
 		disease1Data,
@@ -595,8 +631,9 @@ export function emptySnapshot(beneficiaryName: string, creationDate: string): F5
 			height: '0.0',
 			weight: '0.0',
 			judgmentBasis: '',
+			physicalInputComplete: false,
 		},
-		activities: ACTIVITY_ORDER.map((activity) => ({ activity, value: '' })),
+		activities: createEmptyActivities(),
 		disease1Data: disease1,
 		disease2Data: disease2,
 		diseaseFormData: { pastMedicalHistory: '', currentDiagnosis: '', judgmentBasis: '' },
@@ -670,6 +707,7 @@ export function buildF51012RowPayload(
 		HEIGHT: ui.formData.height === '' ? null : Number(ui.formData.height),
 		WEIGHT: ui.formData.weight === '' ? null : Number(ui.formData.weight),
 		C90: ui.formData.judgmentBasis || null,
+		C99: ui.formData.physicalInputComplete ? '1' : '0',
 	};
 
 	C_KEYS.forEach((ck, i) => {

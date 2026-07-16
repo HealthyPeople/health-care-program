@@ -23,6 +23,7 @@ const DATA_COLUMNS = [
 	'C11',
 	'C12',
 	'C90',
+	'C99',
 	'D01_01',
 	'D01_02',
 	'D01_03',
@@ -161,7 +162,29 @@ function normalizeYmd(v) {
 	const s = String(v).trim();
 	if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 	if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
 	return null;
+}
+
+/** JSON 직렬화 전 행 정규화 (Date/Buffer/숫자 → 문자열) */
+function serializeRow(row) {
+	if (!row || typeof row !== 'object') return null;
+	const out = {};
+	for (const [k, v] of Object.entries(row)) {
+		if (v == null) {
+			out[k] = null;
+		} else if (v instanceof Date) {
+			out[k] = normalizeYmd(v.toISOString()) || v.toISOString();
+		} else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) {
+			out[k] = v.toString('utf8').trim();
+		} else if (typeof v === 'number' && Number.isFinite(v)) {
+			// C01~C12 등 char 코드가 number로 오는 경우
+			out[k] = Number.isInteger(v) ? String(v) : String(v);
+		} else {
+			out[k] = v;
+		}
+	}
+	return out;
 }
 
 function bindDataInputs(request, row) {
@@ -211,10 +234,13 @@ function bindDataInputs(request, row) {
 			request.input(col, sql.NVarChar(sql.MAX), v == null || v === '' ? null : String(v));
 			continue;
 		}
-		// 신체 활동 C01..C12 : 1=X, 2=△, 3=○
+		// 신체 활동 C01..C12, C99 : 1=완전도움, 2=부분도움, 3=완전자립 / C99 0·1
 		if (/^C\d{2}$/.test(col)) {
-			const ch = v == null || v === '' ? '1' : String(v).trim().slice(0, 1);
-			request.input(col, sql.Char(1), ch);
+			if (v == null || v === '') {
+				request.input(col, sql.Char(1), null);
+			} else {
+				request.input(col, sql.Char(1), String(v).trim().slice(0, 1));
+			}
 			continue;
 		}
 		// 의사소통 H01~H03 : 코드 1,2,3
@@ -274,15 +300,16 @@ export async function GET(req) {
 					headers: { 'Content-Type': 'application/json' },
 				});
 			}
-			request.input('rqdt', sql.Date, new Date(`${ymd}T00:00:00`));
+			// 문자열 날짜 비교 — Date 객체 timezone 이슈로 단건 누락 방지
+			request.input('rqdt', sql.VarChar(10), ymd);
 			const result = await request.query(`
         SELECT TOP 1 *
         FROM ${TABLE}
         WHERE [ANCD] = @sessionAncd
           AND CAST([PNUM] AS VARCHAR(30)) = @pnum
-          AND CAST([RQDT] AS DATE) = CAST(@rqdt AS DATE)
+          AND CONVERT(varchar(10), CAST([RQDT] AS DATE), 23) = @rqdt
       `);
-			const row = result.recordset?.[0] || null;
+			const row = serializeRow(result.recordset?.[0] || null);
 			return new Response(JSON.stringify({ success: true, data: row }), {
 				status: 200,
 				headers: { 'Content-Type': 'application/json' },
@@ -408,13 +435,13 @@ export async function DELETE(req) {
 		const request = pool.request();
 		request.input('sessionAncd', gate.sessionAncd);
 		request.input('pnum', sql.VarChar(30), String(pnum).trim());
-		request.input('rqdt', sql.Date, new Date(`${ymd}T00:00:00`));
+		request.input('rqdt', sql.VarChar(10), ymd);
 
 		await request.query(`
       DELETE FROM ${TABLE}
       WHERE [ANCD] = @sessionAncd
         AND CAST([PNUM] AS VARCHAR(30)) = @pnum
-        AND CAST([RQDT] AS DATE) = CAST(@rqdt AS DATE)
+        AND CONVERT(varchar(10), CAST([RQDT] AS DATE), 23) = @rqdt
     `);
 
 		return new Response(JSON.stringify({ success: true }), {
