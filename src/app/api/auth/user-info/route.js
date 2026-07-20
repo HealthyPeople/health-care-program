@@ -28,7 +28,7 @@ export async function GET(req) {
       });
     }
 
-    // DB에서 기관명·로그인 사원명 보강 (쿠키에 없거나 DB만 가능할 때)
+    // DB에서 기관명·관리등급·로그인 사원명 보강 (쿠키에 없거나 DB만 가능할 때)
     try {
       const pool = await connPool;
       if (pool && parsedUserInfo.ancd != null && parsedUserInfo.ancd !== '') {
@@ -52,11 +52,17 @@ export async function GET(req) {
               .input('ancd', n)
               .input('uid', String(parsedUserInfo.uid).trim())
               .query(
-                `SELECT TOP 1 [EMPNM] FROM [돌봄시설DB].[dbo].[F00120] WHERE [ANCD] = @ancd AND [UID] = @uid`
+                `SELECT TOP 1 [EMPNM], RTRIM([UGR]) AS [UGR]
+                 FROM [돌봄시설DB].[dbo].[F00120]
+                 WHERE [ANCD] = @ancd AND [UID] = @uid`
               );
-            const empnm = r2.recordset?.[0]?.EMPNM;
-            if (empnm) {
-              parsedUserInfo = { ...parsedUserInfo, empnm };
+            const row2 = r2.recordset?.[0];
+            if (row2?.EMPNM) {
+              parsedUserInfo = { ...parsedUserInfo, empnm: row2.EMPNM };
+            }
+            const ugr = row2?.UGR != null ? String(row2.UGR).trim() : '';
+            if (ugr) {
+              parsedUserInfo = { ...parsedUserInfo, ugr };
             }
           }
         }

@@ -133,6 +133,7 @@ export default function EmployeeBasicInfo() {
 	const [userEmp, setUserEmp] = useState<{ empno?: number | string; empnm?: string }>({});
 	const [isEditMode, setIsEditMode] = useState(false);
 	const [editSaveLoading, setEditSaveLoading] = useState(false);
+	const [deleteLoading, setDeleteLoading] = useState(false);
 
 	const formLocked = !isEditMode;
 	const fieldCls = (cls: string) =>
@@ -394,6 +395,68 @@ export default function EmployeeBasicInfo() {
 		setIsEditMode(false);
 	};
 
+	const handleDeleteEmployee = async () => {
+		if (!selectedEmployee || isEditMode || deleteLoading) return;
+		const name = String(selectedEmployee.EMPNM ?? "").trim() || String(selectedEmployee.EMPNO);
+
+		setDeleteLoading(true);
+		try {
+			// 사원연결로 생성된 계정 확인
+			const linkQs = new URLSearchParams({
+				ancd: String(selectedEmployee.ANCD),
+				empno: String(selectedEmployee.EMPNO),
+			});
+			const linkRes = await fetch(`/api/f00120?${linkQs.toString()}`, {
+				credentials: "include",
+				cache: "no-store",
+			});
+			const linkJson = await linkRes.json().catch(() => ({}));
+			const linkedAccounts = Array.isArray(linkJson?.data)
+				? linkJson.data
+						.map((r: { UID?: string }) => String(r?.UID ?? "").trim())
+						.filter(Boolean)
+				: [];
+
+			let confirmMsg = `사원 [${name}] (사원번호 ${selectedEmployee.EMPNO}) 정보를 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.`;
+			if (linkedAccounts.length > 0) {
+				confirmMsg += `\n\n이 사원과 사원연결작업으로 연결된 사용자 계정이 있습니다.\n연결된 계정(${linkedAccounts.join(", ")})까지 함께 삭제됩니다.`;
+			}
+
+			const ok = window.confirm(confirmMsg);
+			if (!ok) return;
+
+			const qs = new URLSearchParams({
+				ancd: String(selectedEmployee.ANCD),
+				empno: String(selectedEmployee.EMPNO),
+			});
+			const res = await fetch(`/api/f01010?${qs.toString()}`, {
+				method: "DELETE",
+				credentials: "include",
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || "삭제에 실패했습니다.");
+			}
+
+			const deletedUids = Array.isArray(json.linkedUids) ? json.linkedUids : linkedAccounts;
+			if (deletedUids.length > 0) {
+				alert(
+					`사원정보가 삭제되었습니다.\n함께 삭제된 사용자 계정: ${deletedUids.join(", ")}`
+				);
+			} else {
+				alert("사원정보가 삭제되었습니다.");
+			}
+			setSelectedEmployee(null);
+			setFormData(initialForm);
+			setIsEditMode(false);
+			await fetchEmployees(searchTerm.trim() !== "" ? searchTerm : undefined);
+		} catch (e) {
+			alert(e instanceof Error ? e.message : "삭제 중 오류가 발생했습니다.");
+		} finally {
+			setDeleteLoading(false);
+		}
+	};
+
 	const buildUpdatePayload = () => ({
 		action: "update",
 		EMPNO: selectedEmployee!.EMPNO,
@@ -621,20 +684,30 @@ export default function EmployeeBasicInfo() {
 							<button
 								type="button"
 								onClick={openCreateModal}
-								disabled={isEditMode}
+								disabled={isEditMode || deleteLoading}
 								className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
 							>
 								추가
 							</button>
 							{!isEditMode ? (
-								<button
-									type="button"
-									onClick={handleStartEdit}
-									disabled={!selectedEmployee}
-									className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
-								>
-									수정
-								</button>
+								<>
+									<button
+										type="button"
+										onClick={handleStartEdit}
+										disabled={!selectedEmployee || deleteLoading}
+										className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										수정
+									</button>
+									<button
+										type="button"
+										onClick={() => void handleDeleteEmployee()}
+										disabled={!selectedEmployee || deleteLoading}
+										className="rounded border border-red-400 bg-red-100 px-5 py-2 text-sm font-medium text-red-900 hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										{deleteLoading ? "삭제 중…" : "삭제"}
+									</button>
+								</>
 							) : (
 								<>
 									<button

@@ -21,7 +21,7 @@ type Props = {
 	uid: string;
 	initial: FacilityUserLinkDraft;
 	onCancel: () => void;
-	onSaved: () => void;
+	onSaved: (savedUid?: string) => void;
 	ancd: string | number;
 };
 
@@ -41,31 +41,40 @@ const inputClass =
 const readOnlyClass =
 	"flex-1 rounded border border-blue-300 bg-gray-50 px-3 py-2 text-sm text-blue-900 focus:outline-none";
 
+/** 사원연결작업 모달 최초 오픈 시 전부 공란/미선택 */
+export const EMPTY_LINK_DRAFT: FacilityUserLinkDraft = {
+	uid: "",
+	empno: null,
+	empnm: "",
+	ugr: "",
+	decyn: "N",
+	decpos: null,
+};
+
 export default function FacilityUserLinkModal({
 	customerName,
-	uid,
-	initial,
+	uid: _uid,
+	initial: _initial,
 	onCancel,
 	onSaved,
 	ancd,
 }: Props) {
-	const [empnm, setEmpnm] = useState(initial.empnm || "");
-	const [empno, setEmpno] = useState<number | null>(initial.empno);
-	const [ugr, setUgr] = useState(initial.ugr || "1");
-	const [decyn, setDecyn] = useState(initial.decyn === "Y");
-	const [decpos, setDecpos] = useState<number | "">(
-		initial.decpos != null && initial.decpos >= 1 && initial.decpos <= 4
-			? initial.decpos
-			: ""
-	);
+	// 모달 오픈 시 항상 공란으로 시작 (선택 행 값으로 채우지 않음)
+	const originalUid = "";
+	const [uidValue, setUidValue] = useState("");
+	const [empnm, setEmpnm] = useState("");
+	const [empno, setEmpno] = useState<number | null>(null);
+	const [ugr, setUgr] = useState("");
+	const [decyn, setDecyn] = useState(false);
+	const [decpos, setDecpos] = useState<number | "">("");
 	const [saving, setSaving] = useState(false);
 
-	const [empQuery, setEmpQuery] = useState(initial.empnm || "");
+	const [empQuery, setEmpQuery] = useState("");
 	const [suggestions, setSuggestions] = useState<EmpSuggest[]>([]);
 	const [showDropdown, setShowDropdown] = useState(false);
 	const [searchLoading, setSearchLoading] = useState(false);
 	const wrapRef = useRef<HTMLDivElement | null>(null);
-	const selectedEmpnoRef = useRef<number | null>(initial.empno);
+	const selectedEmpnoRef = useRef<number | null>(null);
 
 	const searchEmployees = useCallback(async (name: string) => {
 		setSearchLoading(true);
@@ -133,6 +142,15 @@ export default function FacilityUserLinkModal({
 	};
 
 	const handleSave = async () => {
+		const editedUid = uidValue.trim();
+		if (!editedUid) {
+			alert("사용자ID를 입력해주세요.");
+			return;
+		}
+		if (editedUid.length > 20) {
+			alert("사용자ID는 20자 이내로 입력해주세요.");
+			return;
+		}
 		if (!ugr) {
 			alert("관리등급을 선택해주세요.");
 			return;
@@ -149,7 +167,8 @@ export default function FacilityUserLinkModal({
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					ANCD: ancd,
-					UID: uid,
+					originalUID: originalUid,
+					UID: editedUid,
 					action: "linkEmployee",
 					EMPNO: empno,
 					EMPNM: empnm.trim() || null,
@@ -163,7 +182,7 @@ export default function FacilityUserLinkModal({
 				throw new Error(json?.error || "저장에 실패했습니다.");
 			}
 			alert("사용자정보가 저장되었습니다.");
-			onSaved();
+			onSaved(editedUid);
 		} catch (err) {
 			console.error(err);
 			alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
@@ -188,7 +207,15 @@ export default function FacilityUserLinkModal({
 						</div>
 						<div className="flex items-center gap-2">
 							<span className={labelClass}>사용자ID</span>
-							<input type="text" value={uid} readOnly className={readOnlyClass} />
+							<input
+								type="text"
+								value={uidValue}
+								onChange={(e) => setUidValue(e.target.value)}
+								maxLength={20}
+								placeholder="사용자ID 직접 입력"
+								className={inputClass}
+								autoComplete="off"
+							/>
 						</div>
 						<div className="flex items-start gap-2">
 							<span className={`${labelClass} mt-0`}>사원명</span>
@@ -251,6 +278,7 @@ export default function FacilityUserLinkModal({
 								onChange={(e) => setUgr(e.target.value)}
 								className={inputClass}
 							>
+								<option value="">선택</option>
 								{UGR_OPTIONS.map((o) => (
 									<option key={o.code} value={o.code}>
 										{o.label}

@@ -1,5 +1,5 @@
 import { connPool } from '../../../config/server';
-import { assertAnCdMatchesSession } from '../../../config/sessionServer';
+import { assertAnCdAccess, assertAnCdMatchesSession } from '../../../config/sessionServer';
 
 const sql = require('mssql');
 
@@ -66,8 +66,6 @@ function pickMngGu(body) {
 export async function GET(req) {
   try {
     const urlAncd = req.nextUrl.searchParams.get('ancd') || '';
-    const gate = assertAnCdMatchesSession(req, urlAncd || null);
-    if (!gate.ok) return gate.response;
 
     const pool = await connPool;
     if (!pool) {
@@ -79,6 +77,9 @@ export async function GET(req) {
         headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    const access = await assertAnCdAccess(req, pool, urlAncd || null);
+    if (!access.ok) return access.response;
 
     const searchParams = req.nextUrl.searchParams;
     const searchName = searchParams.get('name') || '';
@@ -121,7 +122,7 @@ export async function GET(req) {
     const request = pool.request();
 
     query += ` AND [ANCD] = @ancd`;
-    const sa = gate.sessionAncd;
+    const sa = access.targetAncd;
     request.input('ancd', typeof sa === 'number' ? sa : parseInt(String(sa), 10));
 
     // uid로 조회 (사원명 또는 사원번호로 매칭)
@@ -335,6 +336,115 @@ export async function POST(req) {
 		);
 	} catch (err) {
 		console.error('F01010 사원 등록 오류:', err);
+		return new Response(
+			JSON.stringify({ success: false, error: err.message, details: err.toString() }),
+			{ status: 500, headers: { 'Content-Type': 'application/json' } }
+		);
+	}
+}
+
+/**
+ * DELETE /api/f01010?empno=...
+ * 로그인 세션 ANCD + EMPNO 기준으로 F01010 삭제
+ * 사원연결(F00120.EMPNO) 계정 및 해당 UID의 프로그램매핑(F00131)도 함께 삭제
+ */
+export async function DELETE(req) {
+	try {
+		const searchParams = req.nextUrl.searchParams;
+		const ancdParam = searchParams.get('ancd');
+		const empnoRaw = searchParams.get('empno') || searchParams.get('EMPNO');
+
+		const gate = assertAnCdMatchesSession(req, ancdParam || null);
+		if (!gate.ok) return gate.response;
+
+		const empno = parseInt(String(empnoRaw ?? ''), 10);
+		if (Number.isNaN(empno)) {
+			return new Response(JSON.stringify({ success: false, error: '사원번호(empno)가 필요합니다.' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const pool = await connPool;
+		if (!pool) {
+			return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const ancd = gate.sessionAncd;
+
+		// 연결된 사용자 계정 조회
+		const linked = await pool
+			.request()
+			.input('ANCD', ancd)
+			.input('EMPNO', sql.Int, empno)
+			.query(`
+				SELECT [UID]
+				FROM [돌봄시설DB].[dbo].[F00120]
+				WHERE [ANCD] = @ANCD AND [EMPNO] = @EMPNO
+			`);
+		const linkedUids = (linked.recordset || [])
+			.map((r) => (r.UID != null ? String(r.UID).trim() : ''))
+			.filter(Boolean);
+
+		// 프로그램 매핑(F00131) 삭제
+		if (linkedUids.length) {
+			for (const uid of linkedUids) {
+				await pool
+					.request()
+					.input('ANCD', ancd)
+					.input('UID', uid)
+					.query(`
+						DELETE FROM [돌봄시설DB].[dbo].[F00131]
+						WHERE [ANCD] = @ANCD AND [UID] = @UID
+					`);
+			}
+		}
+
+		// 사용자 계정(F00120) 삭제
+		const delAccounts = await pool
+			.request()
+			.input('ANCD', ancd)
+			.input('EMPNO', sql.Int, empno)
+			.query(`
+				DELETE FROM [돌봄시설DB].[dbo].[F00120]
+				WHERE [ANCD] = @ANCD AND [EMPNO] = @EMPNO
+			`);
+		const deletedAccounts = delAccounts?.rowsAffected?.[0] ?? 0;
+
+		// 사원(F01010) 삭제
+		const result = await pool
+			.request()
+			.input('ANCD', ancd)
+			.input('EMPNO', sql.Int, empno)
+			.query(`
+				DELETE FROM ${TABLE}
+				WHERE [ANCD] = @ANCD AND [EMPNO] = @EMPNO
+			`);
+
+		const affected = result?.rowsAffected?.[0] ?? 0;
+		if (!affected) {
+			return new Response(JSON.stringify({ success: false, error: '삭제할 사원 정보가 없습니다.' }), {
+				status: 404,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				message: '사원정보가 삭제되었습니다.',
+				ancd,
+				empno,
+				deletedAccounts,
+				linkedUids,
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } }
+		);
+	} catch (err) {
+		console.error('F01010 사원 삭제 오류:', err);
 		return new Response(
 			JSON.stringify({ success: false, error: err.message, details: err.toString() }),
 			{ status: 500, headers: { 'Content-Type': 'application/json' } }

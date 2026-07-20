@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FacilityUserLinkModal, {
-	type FacilityUserLinkDraft,
+	EMPTY_LINK_DRAFT,
 } from "./FacilityUserLinkModal";
 
 interface FacilityUserRow {
@@ -20,7 +20,18 @@ type UserInfo = {
 	ancd?: string | number;
 	annm?: string;
 	uid?: string;
+	ugr?: string | number;
 };
+
+type InstitutionOption = {
+	ANCD: string | number;
+	ANNM: string;
+};
+
+function ancdKey(v: string | number | null | undefined): string {
+	if (v == null || v === "") return "";
+	return String(v).trim();
+}
 
 function formatYmd(v: unknown): string {
 	if (v == null || v === "") return "";
@@ -67,7 +78,10 @@ function mapApiRow(row: Record<string, unknown>): FacilityUserRow {
 
 export default function FacilityUserManagement() {
 	const [customerName, setCustomerName] = useState("");
+	/** 현재 조회/작업 대상 기관 */
 	const [sessionAncd, setSessionAncd] = useState<string | number | null>(null);
+	const [sessionUgr, setSessionUgr] = useState("");
+	const [institutions, setInstitutions] = useState<InstitutionOption[]>([]);
 	const [searchEmpName, setSearchEmpName] = useState("");
 	const [appliedSearch, setAppliedSearch] = useState("");
 
@@ -80,6 +94,8 @@ export default function FacilityUserManagement() {
 
 	const itemsPerPage = 10;
 	const [currentPage, setCurrentPage] = useState(1);
+
+	const isFullAdmin = sessionUgr === "1";
 
 	const loadUsers = useCallback(async (ancd: string | number, empnmFilter = "") => {
 		setLoading(true);
@@ -119,6 +135,34 @@ export default function FacilityUserManagement() {
 		}
 	}, []);
 
+	const loadInstitutions = useCallback(async (preferAncd?: string | number) => {
+		try {
+			const res = await fetch("/api/f00110?list=all", {
+				method: "GET",
+				credentials: "include",
+				cache: "no-store",
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) return;
+			const rawList = Array.isArray(json.data) ? json.data : [];
+			const list: InstitutionOption[] = rawList
+				.map((item: Record<string, unknown>): InstitutionOption => ({
+					ANCD: item.ANCD as string | number,
+					ANNM: String(item.ANNM ?? "").trim(),
+				}))
+				.filter((item) => item.ANCD != null && item.ANCD !== "" && !!item.ANNM);
+			list.sort((a, b) => a.ANNM.localeCompare(b.ANNM, "ko"));
+			setInstitutions(list);
+			if (preferAncd != null) {
+				const found = list.find((i) => ancdKey(i.ANCD) === ancdKey(preferAncd));
+				if (found?.ANNM) setCustomerName(found.ANNM);
+			}
+		} catch (err) {
+			console.error(err);
+			setInstitutions([]);
+		}
+	}, []);
+
 	const initializePage = useCallback(async () => {
 		setLoading(true);
 		setLoadError(null);
@@ -132,13 +176,26 @@ export default function FacilityUserManagement() {
 				throw new Error(userJson?.error || "로그인 정보를 확인할 수 없습니다.");
 			}
 			const user = (userJson.data || {}) as UserInfo;
-			const loginAncd = user.ancd;
-			if (loginAncd == null || loginAncd === "") {
+			const loginAncdVal = user.ancd;
+			if (loginAncdVal == null || loginAncdVal === "") {
 				throw new Error("로그인 계정의 센터(고객코드)를 확인할 수 없습니다.");
 			}
-			setSessionAncd(loginAncd);
+			const ugr = String(user.ugr ?? "").trim();
+			setSessionAncd(loginAncdVal);
+			setSessionUgr(ugr);
 			setCustomerName(user.annm ? String(user.annm) : "");
-			await loadUsers(loginAncd, "");
+
+			if (ugr === "1") {
+				await loadInstitutions(loginAncdVal);
+			} else {
+				setInstitutions([
+					{
+						ANCD: loginAncdVal,
+						ANNM: user.annm ? String(user.annm) : String(loginAncdVal),
+					},
+				]);
+			}
+			await loadUsers(loginAncdVal, "");
 		} catch (err) {
 			console.error(err);
 			const msg = err instanceof Error ? err.message : "초기화 중 오류가 발생했습니다.";
@@ -147,11 +204,22 @@ export default function FacilityUserManagement() {
 		} finally {
 			setLoading(false);
 		}
-	}, [loadUsers]);
+	}, [loadUsers, loadInstitutions]);
 
 	useEffect(() => {
 		void initializePage();
 	}, [initializePage]);
+
+	const handleInstitutionChange = (nextAncd: string) => {
+		if (!nextAncd || !isFullAdmin) return;
+		const found = institutions.find((i) => ancdKey(i.ANCD) === ancdKey(nextAncd));
+		setSessionAncd(nextAncd);
+		setCustomerName(found?.ANNM || "");
+		setSearchEmpName("");
+		setAppliedSearch("");
+		setSelectedUserId("");
+		void loadUsers(nextAncd, "");
+	};
 
 	const filteredRows = useMemo(() => {
 		const q = appliedSearch.trim().toLowerCase();
@@ -160,23 +228,6 @@ export default function FacilityUserManagement() {
 			: rows.filter((r) => r.empName.toLowerCase().includes(q));
 		return sortUserRows(base);
 	}, [rows, appliedSearch]);
-
-	const selectedRow = useMemo(
-		() => rows.find((r) => r.id === selectedUserId) || null,
-		[rows, selectedUserId]
-	);
-
-	const linkInitial: FacilityUserLinkDraft | null = useMemo(() => {
-		if (!selectedRow) return null;
-		return {
-			uid: selectedRow.id,
-			empno: selectedRow.empno,
-			empnm: selectedRow.empName,
-			ugr: selectedRow.ugr || "1",
-			decyn: selectedRow.decyn,
-			decpos: selectedRow.decpos,
-		};
-	}, [selectedRow]);
 
 	const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
 	const page = Math.min(currentPage, totalPages);
@@ -264,8 +315,8 @@ export default function FacilityUserManagement() {
 	};
 
 	const handleLinkEmployee = () => {
-		if (!selectedUserId || !linkInitial || sessionAncd == null) {
-			alert("연결할 사용자 계정을 선택해주세요.");
+		if (sessionAncd == null) {
+			alert("로그인 세션의 기관코드를 확인할 수 없습니다.");
 			return;
 		}
 		setLinkModalOpen(true);
@@ -283,12 +334,31 @@ export default function FacilityUserManagement() {
 							<span className="rounded border border-blue-300 bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 shrink-0">
 								고객명
 							</span>
-							<input
-								type="text"
-								value={customerName}
-								readOnly
-								className="flex-1 rounded border border-blue-300 bg-gray-50 px-3 py-2 text-sm text-blue-900 focus:outline-none"
-							/>
+							{isFullAdmin ? (
+								<select
+									value={ancdKey(sessionAncd)}
+									onChange={(e) => handleInstitutionChange(e.target.value)}
+									disabled={loading || institutions.length === 0}
+									className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none disabled:bg-gray-50"
+								>
+									{institutions.length === 0 ? (
+										<option value="">기관 목록 로딩…</option>
+									) : (
+										institutions.map((inst) => (
+											<option key={ancdKey(inst.ANCD)} value={ancdKey(inst.ANCD)}>
+												{inst.ANNM}
+											</option>
+										))
+									)}
+								</select>
+							) : (
+								<input
+									type="text"
+									value={customerName}
+									readOnly
+									className="flex-1 rounded border border-blue-300 bg-gray-50 px-3 py-2 text-sm text-blue-900 focus:outline-none"
+								/>
+							)}
 							{sessionAncd != null ? (
 								<span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
 									ANCD {String(sessionAncd)}
@@ -326,7 +396,7 @@ export default function FacilityUserManagement() {
 						<button
 							type="button"
 							onClick={handleLinkEmployee}
-							disabled={!selectedUserId}
+							disabled={sessionAncd == null}
 							className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
 						>
 							사원연결작업
@@ -459,16 +529,17 @@ export default function FacilityUserManagement() {
 				</div>
 			</div>
 
-			{linkModalOpen && linkInitial && sessionAncd != null ? (
+			{linkModalOpen && sessionAncd != null ? (
 				<FacilityUserLinkModal
-					key={linkInitial.uid}
+					key="link-employee-new"
 					customerName={customerName}
-					uid={linkInitial.uid}
-					initial={linkInitial}
+					uid=""
+					initial={EMPTY_LINK_DRAFT}
 					ancd={sessionAncd}
 					onCancel={() => setLinkModalOpen(false)}
-					onSaved={() => {
+					onSaved={(savedUid) => {
 						setLinkModalOpen(false);
+						if (savedUid) setSelectedUserId(savedUid);
 						refreshList();
 					}}
 				/>

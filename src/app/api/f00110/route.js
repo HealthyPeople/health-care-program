@@ -1,5 +1,5 @@
 import { connPool } from '../../../config/server';
-import { assertAnCdMatchesSession, getSessionAncd } from '../../../config/sessionServer';
+import { assertAnCdAccess, assertAnCdMatchesSession, getSessionAncd } from '../../../config/sessionServer';
 
 const TABLE_NAME = '[돌봄시설DB].[dbo].[F00110]';
 
@@ -26,15 +26,22 @@ const SELECT_COLUMNS = `
   [MSG_DUE_DD],[SRV_DESC]
 `;
 
+function normalizeRow(row) {
+  return {
+    ...row,
+    ANSDT: normalizeYmd(row.ANSDT),
+    ANEDT: normalizeYmd(row.ANEDT),
+    INDT: normalizeYmd(row.INDT),
+  };
+}
+
 export async function GET(req) {
   try {
     const searchParams = req.nextUrl.searchParams;
     const ancdParam = searchParams.get('ancd');
-
-    const gate = assertAnCdMatchesSession(req, ancdParam);
-    if (!gate.ok) return gate.response;
-
-    const targetAncd = ancdParam ?? gate.sessionAncd;
+    const listAll = ['1', 'true', 'all', 'yes'].includes(
+      String(searchParams.get('list') || '').trim().toLowerCase()
+    );
 
     const pool = await connPool;
     if (!pool) {
@@ -43,6 +50,47 @@ export async function GET(req) {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+
+    // 기관 목록 전체 (UGR=1만)
+    if (listAll) {
+      const access = await assertAnCdAccess(req, pool, null);
+      if (!access.ok) return access.response;
+      if (!access.isAdmin) {
+        // 전체권한이 아니면 본인 기관만
+        const result = await pool
+          .request()
+          .input('sessionAncd', access.sessionAncd)
+          .query(`
+            SELECT ${SELECT_COLUMNS}
+            FROM ${TABLE_NAME}
+            WHERE [ANCD] = @sessionAncd
+              AND (ISNULL([DEL], '') <> 'D')
+            ORDER BY [ANNM]
+          `);
+        const rows = (result.recordset || []).map(normalizeRow);
+        return new Response(JSON.stringify({ success: true, data: rows, count: rows.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const result = await pool.request().query(`
+        SELECT ${SELECT_COLUMNS}
+        FROM ${TABLE_NAME}
+        WHERE (ISNULL([DEL], '') <> 'D')
+        ORDER BY [ANNM]
+      `);
+      const rows = (result.recordset || []).map(normalizeRow);
+      return new Response(JSON.stringify({ success: true, data: rows, count: rows.length }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const access = await assertAnCdAccess(req, pool, ancdParam);
+    if (!access.ok) return access.response;
+
+    const targetAncd = ancdParam ?? access.sessionAncd;
 
     const query = `
       SELECT TOP 1 ${SELECT_COLUMNS}
@@ -61,12 +109,7 @@ export async function GET(req) {
       });
     }
 
-    const normalized = {
-      ...row,
-      ANSDT: normalizeYmd(row.ANSDT),
-      ANEDT: normalizeYmd(row.ANEDT),
-      INDT: normalizeYmd(row.INDT),
-    };
+    const normalized = normalizeRow(row);
 
     return new Response(JSON.stringify({ success: true, data: [normalized], count: 1 }), {
       status: 200,

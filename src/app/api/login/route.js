@@ -170,7 +170,7 @@ export async function POST(req) {
     // 정상 로그인 처리 (TESTMODE가 비활성화되었거나 허용된 IP인 경우)
     // 1단계: 고객코드(ANCD)와 사용자ID(UID)로 사용자 존재 여부 확인
     const userCheckQuery = `
-      SELECT ANCD, UID, UPW
+      SELECT ANCD, UID, UPW, UGR
       FROM [돌봄시설DB].[dbo].[F00120]
       WHERE ANCD = @ancd AND UID = @uid
     `;
@@ -200,18 +200,21 @@ export async function POST(req) {
 
     // 인증 성공
     const result = userCheckResult;
+    const loginRow = result.recordset[0];
+    const loginUgr = loginRow.UGR != null ? String(loginRow.UGR).trim() : '';
 
     // 토큰 생성 (간단한 랜덤 토큰, 실제로는 JWT 등을 사용하는 것이 좋습니다)
     const token = crypto.randomBytes(32).toString('hex');
     const expiresIn = 24 * 60 * 60 * 1000; // 24시간
     const expiresAt = new Date(Date.now() + expiresIn);
 
-    const annm = await fetchAnnmForAncd(pool, result.recordset[0].ANCD);
+    const annm = await fetchAnnmForAncd(pool, loginRow.ANCD);
 
     // 사용자 정보 저장 (세션이나 DB에 저장할 수도 있음)
     const userInfo = {
-      ancd: result.recordset[0].ANCD,
-      uid: result.recordset[0].UID,
+      ancd: loginRow.ANCD,
+      uid: loginRow.UID,
+      ugr: loginUgr,
       token,
       expiresAt: expiresAt.toISOString(),
       annm,
@@ -226,6 +229,7 @@ export async function POST(req) {
         user: {
           ancd: userInfo.ancd,
           uid: userInfo.uid,
+          ugr: userInfo.ugr || undefined,
           annm: userInfo.annm || undefined,
         },
       },
