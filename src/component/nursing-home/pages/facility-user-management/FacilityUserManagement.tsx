@@ -1,43 +1,182 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import FacilityUserLinkModal, {
+	type FacilityUserLinkDraft,
+} from "./FacilityUserLinkModal";
 
 interface FacilityUserRow {
-	id: string; // 사용자ID
-	empName: string; // 사원명
-	role: string; // 관리등급
-	pwChangedAt: string; // 패스워드변경일자 (YYYY-MM-DD)
+	id: string;
+	empName: string;
+	empno: number | null;
+	role: string;
+	ugr: string;
+	pwChangedAt: string;
+	decyn: "Y" | "N";
+	decpos: number | null;
 }
 
-const demoRows: FacilityUserRow[] = [
-	{ id: "admin_01", empName: "임종수", role: "관리자 - 전체권한", pwChangedAt: "2016-11-16" },
-	{ id: "admin_02", empName: "박여울", role: "관리자 - 전체권한", pwChangedAt: "2025-07-29" },
-	{ id: "usprg_01", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_02", empName: "임경숙", role: "사원/수급자 사용권한", pwChangedAt: "2014-09-25" },
-	{ id: "usprg_03", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_04", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_05", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_06", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_07", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_08", empName: "", role: "", pwChangedAt: "" },
-	{ id: "usprg_09", empName: "", role: "", pwChangedAt: "" },
-];
+type UserInfo = {
+	ancd?: string | number;
+	annm?: string;
+	uid?: string;
+};
+
+function formatYmd(v: unknown): string {
+	if (v == null || v === "") return "";
+	const s = String(v).trim();
+	if (!s) return "";
+	if (s.includes("T")) return s.split("T")[0].slice(0, 10);
+	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+	return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function sortUserRows(list: FacilityUserRow[]): FacilityUserRow[] {
+	return [...list].sort((a, b) => {
+		const aHas = a.empName.trim() ? 0 : 1;
+		const bHas = b.empName.trim() ? 0 : 1;
+		if (aHas !== bHas) return aHas - bHas;
+		const byName = a.empName.localeCompare(b.empName, "ko");
+		if (byName !== 0) return byName;
+		return a.id.localeCompare(b.id, "ko");
+	});
+}
+
+function mapApiRow(row: Record<string, unknown>): FacilityUserRow {
+	const ugr = String(row.UGR ?? "").trim();
+	const ugrNm = String(row.UGR_NM ?? "").trim();
+	const decynRaw = String(row.DECYN ?? "N").trim().toUpperCase();
+	const empnoRaw = row.EMPNO;
+	return {
+		id: String(row.UID ?? "").trim(),
+		empName: String(row.EMPNM ?? "").trim(),
+		empno:
+			empnoRaw != null && empnoRaw !== "" && Number.isFinite(Number(empnoRaw))
+				? Number(empnoRaw)
+				: null,
+		role: ugrNm || (ugr ? `등급 ${ugr}` : ""),
+		ugr,
+		pwChangedAt: formatYmd(row.PWDT),
+		decyn: decynRaw === "Y" ? "Y" : "N",
+		decpos:
+			row.DECPOS != null && row.DECPOS !== "" && Number.isFinite(Number(row.DECPOS))
+				? Number(row.DECPOS)
+				: null,
+	};
+}
 
 export default function FacilityUserManagement() {
-	const [customerName, setCustomerName] = useState("실습요양원");
-	const [searchUserId, setSearchUserId] = useState("admin_01");
+	const [customerName, setCustomerName] = useState("");
+	const [sessionAncd, setSessionAncd] = useState<string | number | null>(null);
+	const [searchEmpName, setSearchEmpName] = useState("");
+	const [appliedSearch, setAppliedSearch] = useState("");
 
-	const [rows, setRows] = useState<FacilityUserRow[]>(demoRows);
-	const [selectedUserId, setSelectedUserId] = useState<string>("admin_01");
+	const [rows, setRows] = useState<FacilityUserRow[]>([]);
+	const [selectedUserId, setSelectedUserId] = useState<string>("");
+	const [loading, setLoading] = useState(false);
+	const [actionBusyUid, setActionBusyUid] = useState<string | null>(null);
+	const [loadError, setLoadError] = useState<string | null>(null);
+	const [linkModalOpen, setLinkModalOpen] = useState(false);
 
 	const itemsPerPage = 10;
 	const [currentPage, setCurrentPage] = useState(1);
 
+	const loadUsers = useCallback(async (ancd: string | number, empnmFilter = "") => {
+		setLoading(true);
+		setLoadError(null);
+		try {
+			const qs = new URLSearchParams();
+			qs.set("ancd", String(ancd));
+			const q = empnmFilter.trim();
+			if (q) qs.set("empnm", q);
+
+			const res = await fetch(`/api/f00120?${qs.toString()}`, {
+				method: "GET",
+				credentials: "include",
+				cache: "no-store",
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || "사용자 계정 목록을 불러오지 못했습니다.");
+			}
+			const list = sortUserRows(
+				Array.isArray(json.data) ? json.data.map(mapApiRow) : []
+			);
+			setRows(list);
+			setSelectedUserId((prev) => {
+				if (prev && list.some((r: FacilityUserRow) => r.id === prev)) return prev;
+				return list[0]?.id || "";
+			});
+			setCurrentPage(1);
+		} catch (err) {
+			console.error(err);
+			const msg = err instanceof Error ? err.message : "사용자 계정 조회 중 오류가 발생했습니다.";
+			setLoadError(msg);
+			setRows([]);
+			setSelectedUserId("");
+		} finally {
+			setLoading(false);
+		}
+	}, []);
+
+	const initializePage = useCallback(async () => {
+		setLoading(true);
+		setLoadError(null);
+		try {
+			const userRes = await fetch("/api/auth/user-info", {
+				method: "GET",
+				credentials: "include",
+			});
+			const userJson = await userRes.json().catch(() => ({}));
+			if (!userRes.ok || !userJson?.success) {
+				throw new Error(userJson?.error || "로그인 정보를 확인할 수 없습니다.");
+			}
+			const user = (userJson.data || {}) as UserInfo;
+			const loginAncd = user.ancd;
+			if (loginAncd == null || loginAncd === "") {
+				throw new Error("로그인 계정의 센터(고객코드)를 확인할 수 없습니다.");
+			}
+			setSessionAncd(loginAncd);
+			setCustomerName(user.annm ? String(user.annm) : "");
+			await loadUsers(loginAncd, "");
+		} catch (err) {
+			console.error(err);
+			const msg = err instanceof Error ? err.message : "초기화 중 오류가 발생했습니다.";
+			setLoadError(msg);
+			setRows([]);
+		} finally {
+			setLoading(false);
+		}
+	}, [loadUsers]);
+
+	useEffect(() => {
+		void initializePage();
+	}, [initializePage]);
+
 	const filteredRows = useMemo(() => {
-		const q = searchUserId.trim().toLowerCase();
-		if (!q) return rows;
-		return rows.filter((r) => r.id.toLowerCase().includes(q));
-	}, [rows, searchUserId]);
+		const q = appliedSearch.trim().toLowerCase();
+		const base = !q
+			? rows
+			: rows.filter((r) => r.empName.toLowerCase().includes(q));
+		return sortUserRows(base);
+	}, [rows, appliedSearch]);
+
+	const selectedRow = useMemo(
+		() => rows.find((r) => r.id === selectedUserId) || null,
+		[rows, selectedUserId]
+	);
+
+	const linkInitial: FacilityUserLinkDraft | null = useMemo(() => {
+		if (!selectedRow) return null;
+		return {
+			uid: selectedRow.id,
+			empno: selectedRow.empno,
+			empnm: selectedRow.empName,
+			ugr: selectedRow.ugr || "1",
+			decyn: selectedRow.decyn,
+			decpos: selectedRow.decpos,
+		};
+	}, [selectedRow]);
 
 	const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
 	const page = Math.min(currentPage, totalPages);
@@ -45,28 +184,91 @@ export default function FacilityUserManagement() {
 	const currentRows = filteredRows.slice(startIndex, startIndex + itemsPerPage);
 
 	const handleSearch = () => {
+		const q = searchEmpName.trim();
+		setAppliedSearch(q);
 		setCurrentPage(1);
+		if (sessionAncd != null) {
+			void loadUsers(sessionAncd, q);
+		}
 	};
 
-	const handleClose = () => {
-		if (typeof window !== "undefined" && window.history.length > 1) window.history.back();
+	const refreshList = () => {
+		if (sessionAncd == null) return;
+		void loadUsers(sessionAncd, appliedSearch);
 	};
 
-	const handleDelete = () => {
-		if (!selectedUserId) return;
-		if (!confirm("선택한 사용자 계정을 삭제하시겠습니까?")) return;
-		setRows((prev) => prev.filter((r) => r.id !== selectedUserId));
-		setSelectedUserId("");
+	const handleDelete = async (uid: string, e?: React.MouseEvent) => {
+		e?.stopPropagation();
+		if (!uid || sessionAncd == null || actionBusyUid) return;
+		const ok = window.confirm(
+			`사용자ID [${uid}] 계정을 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.`
+		);
+		if (!ok) return;
+
+		setActionBusyUid(uid);
+		try {
+			const qs = new URLSearchParams({
+				ancd: String(sessionAncd),
+				uid,
+			});
+			const res = await fetch(`/api/f00120?${qs.toString()}`, {
+				method: "DELETE",
+				credentials: "include",
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || "삭제에 실패했습니다.");
+			}
+			alert(`사용자ID [${uid}] 계정이 삭제되었습니다.`);
+			refreshList();
+		} catch (err) {
+			console.error(err);
+			alert(err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다.");
+		} finally {
+			setActionBusyUid(null);
+		}
 	};
 
-	const handleResetPassword = () => {
-		if (!selectedUserId) return;
-		alert("암호초기화는 추후 연동 예정입니다.");
+	const handleResetPassword = async (uid: string, e?: React.MouseEvent) => {
+		e?.stopPropagation();
+		if (!uid || sessionAncd == null || actionBusyUid) return;
+		const ok = window.confirm(
+			`사용자ID [${uid}] 의 암호를 초기화하시겠습니까?\n초기화 시 비밀번호는 0000 으로 변경됩니다.`
+		);
+		if (!ok) return;
+
+		setActionBusyUid(uid);
+		try {
+			const res = await fetch("/api/f00120", {
+				method: "PUT",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					ANCD: sessionAncd,
+					UID: uid,
+					action: "resetPassword",
+				}),
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok || !json?.success) {
+				throw new Error(json?.error || "암호초기화에 실패했습니다.");
+			}
+			alert(`사용자ID [${uid}] 의 암호가 0000 으로 초기화되었습니다.`);
+			refreshList();
+		} catch (err) {
+			console.error(err);
+			alert(err instanceof Error ? err.message : "암호초기화 중 오류가 발생했습니다.");
+		} finally {
+			setActionBusyUid(null);
+		}
 	};
 
 	const handleLinkEmployee = () => {
-		if (!selectedUserId) return;
-		alert("사원연결작업은 추후 연동 예정입니다.");
+		if (!selectedUserId || !linkInitial || sessionAncd == null) {
+			alert("연결할 사용자 계정을 선택해주세요.");
+			return;
+		}
+		setLinkModalOpen(true);
 	};
 
 	const handleCopyAccounts = () => {
@@ -89,9 +291,14 @@ export default function FacilityUserManagement() {
 							<input
 								type="text"
 								value={customerName}
-								onChange={(e) => setCustomerName(e.target.value)}
-								className="flex-1 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								readOnly
+								className="flex-1 rounded border border-blue-300 bg-gray-50 px-3 py-2 text-sm text-blue-900 focus:outline-none"
 							/>
+							{sessionAncd != null ? (
+								<span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+									ANCD {String(sessionAncd)}
+								</span>
+							) : null}
 						</div>
 					</div>
 				</div>
@@ -100,15 +307,24 @@ export default function FacilityUserManagement() {
 				<div className="flex flex-wrap items-center gap-3">
 					<div className="flex items-center gap-2">
 						<span className="rounded border border-blue-300 bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 shrink-0">
-							사용자ID
+							사원명
 						</span>
 						<input
 							type="text"
-							value={searchUserId}
-							onChange={(e) => setSearchUserId(e.target.value)}
+							value={searchEmpName}
+							onChange={(e) => setSearchEmpName(e.target.value)}
 							onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+							placeholder="사원명 검색"
 							className="w-80 rounded border border-blue-300 bg-white px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
 						/>
+						<button
+							type="button"
+							onClick={handleSearch}
+							disabled={loading || sessionAncd == null}
+							className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
+						>
+							조회
+						</button>
 					</div>
 
 					<div className="ml-auto flex flex-wrap gap-2">
@@ -120,38 +336,16 @@ export default function FacilityUserManagement() {
 						>
 							사원연결작업
 						</button>
-						<button
-							type="button"
-							onClick={handleDelete}
-							disabled={!selectedUserId}
-							className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
-						>
-							삭제
-						</button>
-						<button
-							type="button"
-							onClick={handleResetPassword}
-							disabled={!selectedUserId}
-							className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
-						>
-							암호초기화
-						</button>
-						<button
-							type="button"
-							onClick={handleCopyAccounts}
-							className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-						>
-							사용자계정복사
-						</button>
-						<button
-							type="button"
-							onClick={handleClose}
-							className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-						>
-							닫기
-						</button>
+
 					</div>
 				</div>
+
+				{loading ? (
+					<p className="text-sm text-blue-800/70">사용자 계정을 불러오는 중…</p>
+				) : null}
+				{!loading && loadError ? (
+					<p className="text-sm text-red-700">{loadError}</p>
+				) : null}
 
 				{/* 목록 테이블 */}
 				<div className="rounded-lg border border-blue-300 bg-white overflow-hidden">
@@ -168,21 +362,25 @@ export default function FacilityUserManagement() {
 									<th className="border-r border-blue-200 px-3 py-2 text-left font-semibold text-blue-900">
 										관리등급
 									</th>
-									<th className="px-3 py-2 text-left font-semibold text-blue-900">
+									<th className="border-r border-blue-200 px-3 py-2 text-left font-semibold text-blue-900">
 										패스워드변경일자
+									</th>
+									<th className="px-3 py-2 text-center font-semibold text-blue-900 w-[220px]">
+										관리
 									</th>
 								</tr>
 							</thead>
 							<tbody>
 								{currentRows.length === 0 ? (
 									<tr>
-										<td colSpan={4} className="px-3 py-10 text-center text-blue-900/60">
-											데이터가 없습니다.
+										<td colSpan={5} className="px-3 py-10 text-center text-blue-900/60">
+											{loading ? "조회 중…" : "데이터가 없습니다."}
 										</td>
 									</tr>
 								) : (
 									currentRows.map((row) => {
 										const isSelected = row.id === selectedUserId;
+										const busy = actionBusyUid === row.id;
 										return (
 											<tr
 												key={row.id}
@@ -194,7 +392,27 @@ export default function FacilityUserManagement() {
 												<td className="border-r border-blue-100 px-3 py-2">{row.id}</td>
 												<td className="border-r border-blue-100 px-3 py-2">{row.empName}</td>
 												<td className="border-r border-blue-100 px-3 py-2">{row.role}</td>
-												<td className="px-3 py-2">{row.pwChangedAt}</td>
+												<td className="border-r border-blue-100 px-3 py-2">{row.pwChangedAt}</td>
+												<td className="px-2 py-1.5">
+													<div className="flex items-center justify-center gap-1.5">
+														<button
+															type="button"
+															onClick={(e) => void handleResetPassword(row.id, e)}
+															disabled={busy || loading}
+															className="rounded border border-blue-400 bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-900 hover:bg-blue-200 disabled:opacity-50"
+														>
+															{busy ? "처리중…" : "암호초기화"}
+														</button>
+														<button
+															type="button"
+															onClick={(e) => void handleDelete(row.id, e)}
+															disabled={busy || loading}
+															className="rounded border border-red-400 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900 hover:bg-red-200 disabled:opacity-50"
+														>
+															삭제
+														</button>
+													</div>
+												</td>
 											</tr>
 										);
 									})
@@ -245,7 +463,21 @@ export default function FacilityUserManagement() {
 					</div>
 				</div>
 			</div>
+
+			{linkModalOpen && linkInitial && sessionAncd != null ? (
+				<FacilityUserLinkModal
+					key={linkInitial.uid}
+					customerName={customerName}
+					uid={linkInitial.uid}
+					initial={linkInitial}
+					ancd={sessionAncd}
+					onCancel={() => setLinkModalOpen(false)}
+					onSaved={() => {
+						setLinkModalOpen(false);
+						refreshList();
+					}}
+				/>
+			) : null}
 		</div>
 	);
 }
-

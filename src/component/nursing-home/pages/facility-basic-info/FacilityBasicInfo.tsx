@@ -187,6 +187,13 @@ const emptyTaxForm = (): TaxInvoiceForm => ({
 	email3: "",
 });
 
+type FormSnapshot = {
+	facilityName: string;
+	customerForm: CustomerBasicForm;
+	taxForm: TaxInvoiceForm;
+	serviceForm: ServiceGuideForm;
+};
+
 export default function FacilityBasicInfo() {
 	const [activeTab, setActiveTab] = useState<TabKey>("customer");
 	const [facilityName, setFacilityName] = useState("");
@@ -195,6 +202,8 @@ export default function FacilityBasicInfo() {
 	const [loading, setLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	const [isEditing, setIsEditing] = useState(false);
+	const [editSnapshot, setEditSnapshot] = useState<FormSnapshot | null>(null);
 
 	const [customerForm, setCustomerForm] = useState<CustomerBasicForm>(emptyCustomerForm);
 	const [taxForm, setTaxForm] = useState<TaxInvoiceForm>(emptyTaxForm);
@@ -202,6 +211,8 @@ export default function FacilityBasicInfo() {
 
 	const [accountList, setAccountList] = useState<F90030Row[]>([]);
 	const [depositCodes, setDepositCodes] = useState<F01002Row[]>([]);
+
+	const fieldsDisabled = !isEditing || loading || !sessionAncd;
 
 	const mapRowToForms = useCallback((row: F00110Row, codes: F01002Row[] = depositCodes) => {
 		setFacilityName(toText(row.ANNM));
@@ -478,7 +489,48 @@ export default function FacilityBasicInfo() {
 		}
 	};
 
+	const captureSnapshot = (): FormSnapshot => ({
+		facilityName,
+		customerForm: { ...customerForm },
+		taxForm: { ...taxForm },
+		serviceForm: { ...serviceForm },
+	});
+
+	const applySnapshot = (snap: FormSnapshot) => {
+		setFacilityName(snap.facilityName);
+		setCustomerForm({ ...snap.customerForm });
+		setTaxForm({ ...snap.taxForm });
+		setServiceForm({ ...snap.serviceForm });
+	};
+
+	const handleEnterEdit = () => {
+		if (!sessionAncd) {
+			alert("로그인 센터 정보를 확인할 수 없습니다.");
+			return;
+		}
+		setEditSnapshot(captureSnapshot());
+		setIsEditing(true);
+	};
+
+	const handleCancelEdit = () => {
+		const ok = window.confirm(
+			"저장하지 않으면 수정한 내용은 저장되지 않습니다. 취소하시겠습니까?"
+		);
+		if (!ok) return;
+		if (editSnapshot) applySnapshot(editSnapshot);
+		setEditSnapshot(null);
+		setIsEditing(false);
+	};
+
+	const finishSaveSuccess = async (message: string) => {
+		alert(message);
+		if (sessionAncd) await loadFacility(sessionAncd, { accounts: accountList, codes: depositCodes });
+		setEditSnapshot(null);
+		setIsEditing(false);
+	};
+
 	const handleSaveCustomer = async () => {
+		if (!isEditing) return;
 		if (!ancd) {
 			alert("고객코드(ANCD)를 확인할 수 없습니다.");
 			return;
@@ -486,8 +538,7 @@ export default function FacilityBasicInfo() {
 		setSaving(true);
 		try {
 			await saveF00110(buildCustomerPayload());
-			alert("고객기본 정보가 저장되었습니다.");
-			if (sessionAncd) await loadFacility(sessionAncd, { accounts: accountList, codes: depositCodes });
+			await finishSaveSuccess("고객기본 정보가 저장되었습니다.");
 		} catch (err) {
 			console.error(err);
 			alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
@@ -497,6 +548,7 @@ export default function FacilityBasicInfo() {
 	};
 
 	const handleSaveTax = async () => {
+		if (!isEditing) return;
 		if (!ancd) {
 			alert("고객코드(ANCD)를 확인할 수 없습니다.");
 			return;
@@ -504,8 +556,7 @@ export default function FacilityBasicInfo() {
 		setSaving(true);
 		try {
 			await saveF00110(buildTaxPayload());
-			alert("세금계산서 정보가 저장되었습니다.");
-			if (sessionAncd) await loadFacility(sessionAncd, { accounts: accountList, codes: depositCodes });
+			await finishSaveSuccess("세금계산서 정보가 저장되었습니다.");
 		} catch (err) {
 			console.error(err);
 			alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
@@ -515,6 +566,7 @@ export default function FacilityBasicInfo() {
 	};
 
 	const handleSaveService = async () => {
+		if (!isEditing) return;
 		if (!ancd) {
 			alert("고객코드(ANCD)를 확인할 수 없습니다.");
 			return;
@@ -522,26 +574,7 @@ export default function FacilityBasicInfo() {
 		setSaving(true);
 		try {
 			await saveF00110(buildServicePayload());
-			alert("서비스안내가 저장되었습니다.");
-			if (sessionAncd) await loadFacility(sessionAncd, { accounts: accountList, codes: depositCodes });
-		} catch (err) {
-			console.error(err);
-			alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
-		} finally {
-			setSaving(false);
-		}
-	};
-
-	const handleSaveCustomerAndTax = async () => {
-		if (!ancd) {
-			alert("고객코드(ANCD)를 확인할 수 없습니다.");
-			return;
-		}
-		setSaving(true);
-		try {
-			await saveF00110({ ...buildCustomerPayload(), ...buildTaxPayload() });
-			alert("고객정보가 저장되었습니다.");
-			if (sessionAncd) await loadFacility(sessionAncd, { accounts: accountList, codes: depositCodes });
+			await finishSaveSuccess("서비스안내가 저장되었습니다.");
 		} catch (err) {
 			console.error(err);
 			alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
@@ -612,28 +645,45 @@ export default function FacilityBasicInfo() {
 						type="text"
 						value={facilityName}
 						onChange={(e) => setFacilityName(e.target.value)}
-						disabled={loading || !sessionAncd}
-						className={`${inputClass} flex-1`}
+						disabled={fieldsDisabled}
+						readOnly={!isEditing}
+						className={`${inputClass} flex-1 ${!isEditing ? "bg-gray-50" : ""}`}
 					/>
 				</div>
 
-				<div className="ml-auto flex flex-wrap gap-2">
-					<button
-						type="button"
-						onClick={() => void handleSaveCustomerAndTax()}
-						disabled={loading || saving || !sessionAncd}
-						className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
-					>
-						{saving ? "저장 중…" : "고객정보수정"}
-					</button>
-					<button
+				<div className="ml-auto flex flex-wrap items-center gap-2">
+					{!isEditing ? (
+						<p className="text-xs text-blue-800/70 mr-1">읽기모드 · 「수정」을 눌러 편집할 수 있습니다.</p>
+					) : (
+						<p className="text-xs text-green-800 mr-1">수정모드 · 변경 후 「저장」으로 반영합니다.</p>
+					)}
+					{isEditing ? (
+						<button
+							type="button"
+							onClick={handleCancelEdit}
+							disabled={loading || saving}
+							className="rounded border border-red-400 bg-red-200 px-5 py-2 text-sm font-medium text-red-900 hover:bg-red-300 disabled:opacity-50"
+						>
+							취소
+						</button>
+					) : (
+						<button
+							type="button"
+							onClick={handleEnterEdit}
+							disabled={loading || saving || !sessionAncd}
+							className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
+						>
+							수정
+						</button>
+					)}
+					{/* <button
 						type="button"
 						className="rounded border border-blue-400 bg-blue-200 px-5 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
 						disabled
 						title="별도 화면 연동 예정"
 					>
 						사용자(ID)계정
-					</button>
+					</button> */}
 					{/* <button
 						type="button"
 						onClick={handleClose}
@@ -672,6 +722,10 @@ export default function FacilityBasicInfo() {
 					})}
 				</div>
 				<div className="rounded-b rounded-tr border border-blue-300 bg-white p-4">
+					<fieldset
+						disabled={fieldsDisabled}
+						className="min-w-0 border-0 p-0 m-0 disabled:opacity-100 [&_input]:disabled:bg-gray-50 [&_select]:disabled:bg-gray-50 [&_textarea]:disabled:bg-gray-50"
+					>
 					{activeTab === "customer" && (
 						<div className="space-y-3">
 							<div className="grid grid-cols-12 gap-3">
@@ -983,7 +1037,7 @@ export default function FacilityBasicInfo() {
 								<button
 									type="button"
 									onClick={() => void handleSaveCustomer()}
-									disabled={saving || !ancd}
+									disabled={saving || !ancd || !isEditing}
 									className="min-w-28 rounded border border-blue-500 bg-blue-500 px-8 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
 								>
 									{saving ? "저장 중…" : "저장"}
@@ -1099,7 +1153,7 @@ export default function FacilityBasicInfo() {
 								<button
 									type="button"
 									onClick={() => void handleSaveTax()}
-									disabled={saving || !ancd}
+									disabled={saving || !ancd || !isEditing}
 									className="min-w-28 rounded border border-blue-500 bg-blue-500 px-8 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
 								>
 									{saving ? "저장 중…" : "저장"}
@@ -1125,7 +1179,7 @@ export default function FacilityBasicInfo() {
 								<button
 									type="button"
 									onClick={() => void handleSaveService()}
-									disabled={saving || !ancd}
+									disabled={saving || !ancd || !isEditing}
 									className="h-12 w-32 rounded border border-blue-400 bg-blue-200 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
 								>
 									{saving ? "저장 중…" : "저장"}
@@ -1133,6 +1187,7 @@ export default function FacilityBasicInfo() {
 							</div>
 						</div>
 					)}
+					</fieldset>
 				</div>
 			</div>
 		</div>
