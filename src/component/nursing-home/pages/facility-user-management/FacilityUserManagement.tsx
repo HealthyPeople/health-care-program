@@ -270,11 +270,6 @@ export default function FacilityUserManagement() {
 		}
 		setLinkModalOpen(true);
 	};
-
-	const handleCopyAccounts = () => {
-		alert("사용자계정복사는 추후 연동 예정입니다.");
-	};
-
 	return (
 		<div className="min-h-screen bg-white text-black">
 			<div className="p-4 space-y-3">
