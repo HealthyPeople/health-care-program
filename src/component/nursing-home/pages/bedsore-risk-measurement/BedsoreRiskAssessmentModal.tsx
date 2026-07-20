@@ -3,8 +3,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
 	ASSESSMENT_SECTIONS,
+	buildOpinionSummary,
 	calcTotalScore,
 	interpretScore,
+	isAutoOpinionSummary,
 	type F51013AssessmentField,
 	type F51013UiSnapshot,
 } from './f51013Mapper';
@@ -88,6 +90,28 @@ export default function BedsoreRiskAssessmentModal({
 	const scoreN = useMemo(() => calcTotalScore(codes, { requireAll: false }), [codes]);
 	const score = allSelected && scoreN > 0 ? String(scoreN) : scoreN > 0 ? String(scoreN) : '';
 	const interpretation = allSelected && scoreN > 0 ? interpretScore(scoreN) : '';
+	const autoOpinion = useMemo(
+		() => (allSelected && scoreN > 0 && interpretation ? buildOpinionSummary(scoreN, interpretation) : ''),
+		[allSelected, scoreN, interpretation]
+	);
+	const lastAutoOpinionRef = useRef('');
+
+	// 라디오 전부 선택(또는 점수 변경) 시 의견 자동 생성 — 수동 수정본은 유지
+	useEffect(() => {
+		if (!autoOpinion) return;
+		setOpinion((prev) => {
+			const prevTrim = String(prev ?? '').trim();
+			if (
+				!prevTrim ||
+				prevTrim === lastAutoOpinionRef.current ||
+				isAutoOpinionSummary(prevTrim)
+			) {
+				lastAutoOpinionRef.current = autoOpinion;
+				return autoOpinion;
+			}
+			return prev;
+		});
+	}, [autoOpinion]);
 
 	const setField = (field: F51013AssessmentField, code: string) => {
 		setCodes((prev) => ({ ...prev, [field]: code }));
@@ -299,30 +323,36 @@ export default function BedsoreRiskAssessmentModal({
 								{ASSESSMENT_SECTIONS.map((section) =>
 									section.options.map((opt, optIdx) => {
 										const selected = codes[section.field] === opt.code;
+										const selectOption = () => setField(section.field, opt.code);
 										return (
 											<tr
 												key={`${section.field}-${opt.code}`}
-												className={selected ? 'bg-blue-50' : 'bg-white'}
+												onClick={selectOption}
+												className={`cursor-pointer hover:bg-blue-50/70 ${
+													selected ? 'bg-blue-50' : 'bg-white'
+												}`}
 											>
 												{optIdx === 0 ? (
 													<td
 														rowSpan={section.options.length}
-														className="px-2 py-2 font-semibold text-center text-blue-900 align-middle border border-blue-300 bg-blue-50/80"
+														onClick={(e) => e.stopPropagation()}
+														className="px-2 py-2 font-semibold text-center text-blue-900 align-middle border border-blue-300 cursor-default bg-blue-50/80"
 													>
 														{section.category}
 													</td>
 												) : null}
-												<td className="px-2 py-2 text-blue-900 border border-blue-300">
-													{opt.code}. {opt.label}
+												<td className="px-2 py-2 text-center text-blue-900 border border-blue-300 whitespace-pre-line">
+													{`${opt.code}. ${opt.label}`}
 												</td>
-												<td className="px-2 py-2 text-center border border-blue-300">
-													<label className="inline-flex items-center justify-center cursor-pointer">
+												<td className="p-0 text-center border border-blue-300">
+													<label className="flex items-center justify-center w-full h-full min-h-[2.5rem] px-2 py-2 cursor-pointer">
 														<input
 															type="radio"
 															name={section.field}
 															checked={selected}
-															onChange={() => setField(section.field, opt.code)}
-															className="w-4 h-4 text-blue-600 border-blue-400 focus:ring-blue-500"
+															onChange={selectOption}
+															onClick={(e) => e.stopPropagation()}
+															className="w-4 h-4 text-blue-600 border-blue-400 pointer-events-none focus:ring-blue-500"
 														/>
 													</label>
 												</td>

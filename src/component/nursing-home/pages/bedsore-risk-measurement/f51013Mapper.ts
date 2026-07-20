@@ -69,7 +69,7 @@ export const A02_OPTIONS: F51013Option[] = [
 
 /** A03 활동성 */
 export const A03_OPTIONS: F51013Option[] = [
-	{ code: '1', label: '항상 침대에만 누워 있음', description: '항상 침대에만 누워 있는 질환이다.' },
+	{ code: '1', label: '항상 침대에만 \n누워 있음', description: '항상 침대에만 누워 있는 질환이다.' },
 	{
 		code: '2',
 		label: '의자에 앉아 있을 수',
@@ -147,7 +147,7 @@ export const A06_OPTIONS: F51013Option[] = [
 	},
 	{
 		code: '2',
-		label: '잠정적으로 문제 있음',
+		label: '잠정적으로 \n문제 있음',
 		description:
 			'자유로이 움직이나 약간의 도움을 필요로 한다. \n움직이는 동안 의자억제대나 린넨 또는 다른 장비에 의해 마찰이 생길 수 있다. \n의자나 침대에서 대부분 좋은 체위를 유지하고 있지만 가끔은 미끄러져 내려온다.',
 	},
@@ -254,7 +254,13 @@ export function interpretScore(total: number): string {
 
 export function buildOpinionSummary(total: number, interpretation: string): string {
 	if (!total || !interpretation) return '';
-	return `- 욕창위험도평가 ${total}점으로 ${interpretation}평가됨.`;
+	// 예: 욕창위험 평가 22점으로 위험없음으로 평가됨.
+	const interp = String(interpretation).replace(/\s+/g, '');
+	return `욕창위험 평가 ${total}점으로 ${interp}으로 평가됨.`;
+}
+
+export function isAutoOpinionSummary(text: string): boolean {
+	return /^욕창위험 평가 \d+점으로 .+으로 평가됨\.?$/.test(String(text ?? '').trim());
 }
 
 /** 신규 평가 모달 기본값 (스펙 기본: A01~A05=4, A06=3) */

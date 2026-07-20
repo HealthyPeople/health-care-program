@@ -24,7 +24,21 @@ function serializeRow(row) {
 		if (v == null) {
 			out[k] = null;
 		} else if (v instanceof Date) {
-			out[k] = v.toISOString();
+			const y = v.getUTCFullYear();
+			const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+			const d = String(v.getUTCDate()).padStart(2, '0');
+			const key = String(k).toUpperCase();
+			const dateOnlyMid =
+				v.getUTCHours() === 0 &&
+				v.getUTCMinutes() === 0 &&
+				v.getUTCSeconds() === 0 &&
+				v.getUTCMilliseconds() === 0;
+			// RQDT 등 DATE 컬럼은 yyyy-mm-dd만 (toISOString 사용 시 TZ로 하루 밀림)
+			if (key === 'RQDT' || dateOnlyMid) {
+				out[k] = `${y}-${m}-${d}`;
+			} else {
+				out[k] = v.toISOString();
+			}
 		} else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) {
 			out[k] = v.toString('utf8');
 		} else if (typeof v === 'number') {
@@ -103,7 +117,10 @@ export async function GET(req) {
 			request.input('rqdt', sql.VarChar(10), ymd);
 			const result = await request.query(`
         SELECT TOP 1
-          t.*,
+          CONVERT(varchar(10), CAST(t.[RQDT] AS DATE), 23) AS RQDT,
+          t.[ANCD], t.[PNUM], t.[RQEMP], t.[INDT],
+          t.[A01], t.[A02], t.[A03], t.[A04], t.[A05], t.[A06],
+          t.[A80], t.[A81], t.[A90], t.[A99],
           e.[EMPNM] AS RQEMP_NM
         FROM ${TABLE} t
         LEFT JOIN [돌봄시설DB].[dbo].[F01010] e
@@ -130,7 +147,10 @@ export async function GET(req) {
 		const dates = (result.recordset || []).map((r) => r.rqdt || r.RQDT).filter(Boolean);
 		return new Response(JSON.stringify({ success: true, data: dates, count: dates.length }), {
 			status: 200,
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				'Cache-Control': 'no-store, no-cache, must-revalidate',
+			},
 		});
 	} catch (err) {
 		console.error('F51013 GET 오류:', err);
@@ -174,21 +194,22 @@ export async function POST(req) {
 		const request = pool.request();
 		request.input('ANCD', sql.VarChar(30), String(gate.sessionAncd));
 		request.input('PNUM', sql.VarChar(30), String(row.PNUM ?? '').trim());
-		request.input('RQDT', sql.Date, new Date(`${ymd}T00:00:00`));
+		// Date 객체 바인딩 시 TZ로 하루 밀림 → yyyy-mm-dd 문자열 + CAST 사용
+		request.input('RQDT', sql.VarChar(10), ymd);
 
 		const merged = { ...row, ANCD: gate.sessionAncd, RQDT: ymd };
 		bindDataInputs(request, merged);
 
 		const updateSet = DATA_COLUMNS.map((c) => `[${c}] = @${c}`).join(', ');
 		const insertCols = ['[ANCD]', '[PNUM]', '[RQDT]', '[INDT]', ...DATA_COLUMNS.map((c) => `[${c}]`)];
-		const insertParams = ['@ANCD', '@PNUM', '@RQDT', 'GETDATE()', ...DATA_COLUMNS.map((c) => `@${c}`)];
+		const insertParams = ['@ANCD', '@PNUM', 'CAST(@RQDT AS DATE)', 'GETDATE()', ...DATA_COLUMNS.map((c) => `@${c}`)];
 
 		const mergeSql = `
       MERGE ${TABLE} AS t
-      USING (SELECT @ANCD AS ANCD, @PNUM AS PNUM, @RQDT AS RQDT) AS s
+      USING (SELECT @ANCD AS ANCD, @PNUM AS PNUM, CAST(@RQDT AS DATE) AS RQDT) AS s
       ON CAST(t.[ANCD] AS VARCHAR(30)) = CAST(s.ANCD AS VARCHAR(30))
          AND CAST(t.[PNUM] AS VARCHAR(30)) = CAST(s.PNUM AS VARCHAR(30))
-         AND CAST(t.[RQDT] AS DATE) = CAST(s.RQDT AS DATE)
+         AND CAST(t.[RQDT] AS DATE) = s.RQDT
       WHEN MATCHED THEN
         UPDATE SET ${updateSet}
       WHEN NOT MATCHED THEN
