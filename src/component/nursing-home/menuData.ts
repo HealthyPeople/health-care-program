@@ -221,8 +221,8 @@ export const sections3: Sections3 = {
   },
   '요양원 관리시스템': {
     'UDC 관리': [
-      { name: 'UDC 관리 페이지', link: '/nursingHome/UDC-page' },
-      { name: '사용자 코드 등록', link: '/nursingHome/user-code-registration' },
+      { name: 'UDC 관리 페이지(사용자 코드 등록 페이지 병합)', link: '/nursingHome/UDC-page' },
+      // { name: '사용자 코드 등록', link: '/nursingHome/user-code-registration' },
     ],
   },
 };

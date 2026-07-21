@@ -441,7 +441,7 @@ export default function FacilityWorkLogApproval() {
 								className={inputCls}
 							/>
 						</div>
-						<div className="flex items-center gap-2 rounded border border-blue-300 bg-white px-3 py-3">
+						{/* <div className="flex items-center gap-2 rounded border border-blue-300 bg-white px-3 py-3">
 							<span className={labelCls}>결재일자</span>
 							<input
 								type="date"
@@ -449,7 +449,7 @@ export default function FacilityWorkLogApproval() {
 								onChange={(e) => setSelectedDate(e.target.value)}
 								className={inputCls}
 							/>
-						</div>
+						</div> */}
 
 					</div>
 				</div>
