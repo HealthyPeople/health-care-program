@@ -91,6 +91,8 @@ export default function FacilityUserManagement() {
 	const [actionBusyUid, setActionBusyUid] = useState<string | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [linkModalOpen, setLinkModalOpen] = useState(false);
+	const [editModalOpen, setEditModalOpen] = useState(false);
+	const [editTarget, setEditTarget] = useState<FacilityUserRow | null>(null);
 
 	const itemsPerPage = 10;
 	const [currentPage, setCurrentPage] = useState(1);
@@ -321,6 +323,17 @@ export default function FacilityUserManagement() {
 		}
 		setLinkModalOpen(true);
 	};
+
+	const handleEditUser = (row: FacilityUserRow, e?: React.MouseEvent) => {
+		e?.stopPropagation();
+		if (sessionAncd == null) {
+			alert("로그인 세션의 기관코드를 확인할 수 없습니다.");
+			return;
+		}
+		setSelectedUserId(row.id);
+		setEditTarget(row);
+		setEditModalOpen(true);
+	};
 	return (
 		<div className="min-h-screen bg-white text-black">
 			<div className="p-4 space-y-3">
@@ -430,7 +443,7 @@ export default function FacilityUserManagement() {
 									<th className="border-r border-blue-200 px-3 py-2 text-left font-semibold text-blue-900">
 										패스워드변경일자
 									</th>
-									<th className="px-3 py-2 text-center font-semibold text-blue-900 w-[220px]">
+									<th className="px-3 py-2 text-center font-semibold text-blue-900 w-[280px]">
 										관리
 									</th>
 								</tr>
@@ -460,6 +473,14 @@ export default function FacilityUserManagement() {
 												<td className="border-r border-blue-100 px-3 py-2">{row.pwChangedAt}</td>
 												<td className="px-2 py-1.5">
 													<div className="flex items-center justify-center gap-1.5">
+														<button
+															type="button"
+															onClick={(e) => handleEditUser(row, e)}
+															disabled={busy || loading}
+															className="rounded border border-blue-400 bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-900 hover:bg-blue-200 disabled:opacity-50"
+														>
+															수정
+														</button>
 														<button
 															type="button"
 															onClick={(e) => void handleResetPassword(row.id, e)}
@@ -532,6 +553,7 @@ export default function FacilityUserManagement() {
 			{linkModalOpen && sessionAncd != null ? (
 				<FacilityUserLinkModal
 					key="link-employee-new"
+					mode="create"
 					customerName={customerName}
 					uid=""
 					initial={EMPTY_LINK_DRAFT}
@@ -539,6 +561,34 @@ export default function FacilityUserManagement() {
 					onCancel={() => setLinkModalOpen(false)}
 					onSaved={(savedUid) => {
 						setLinkModalOpen(false);
+						if (savedUid) setSelectedUserId(savedUid);
+						refreshList();
+					}}
+				/>
+			) : null}
+
+			{editModalOpen && sessionAncd != null && editTarget ? (
+				<FacilityUserLinkModal
+					key={`edit-user-${editTarget.id}`}
+					mode="edit"
+					customerName={customerName}
+					uid={editTarget.id}
+					initial={{
+						uid: editTarget.id,
+						empno: editTarget.empno,
+						empnm: editTarget.empName,
+						ugr: editTarget.ugr,
+						decyn: editTarget.decyn,
+						decpos: editTarget.decpos,
+					}}
+					ancd={sessionAncd}
+					onCancel={() => {
+						setEditModalOpen(false);
+						setEditTarget(null);
+					}}
+					onSaved={(savedUid) => {
+						setEditModalOpen(false);
+						setEditTarget(null);
 						if (savedUid) setSelectedUserId(savedUid);
 						refreshList();
 					}}

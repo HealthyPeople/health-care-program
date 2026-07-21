@@ -23,6 +23,8 @@ type Props = {
 	onCancel: () => void;
 	onSaved: (savedUid?: string) => void;
 	ancd: string | number;
+	/** create: 신규 등록(공란), edit: 기존 계정 수정 */
+	mode?: "create" | "edit";
 };
 
 export const UGR_OPTIONS = [
@@ -53,28 +55,33 @@ export const EMPTY_LINK_DRAFT: FacilityUserLinkDraft = {
 
 export default function FacilityUserLinkModal({
 	customerName,
-	uid: _uid,
-	initial: _initial,
+	uid,
+	initial,
 	onCancel,
 	onSaved,
 	ancd,
+	mode = "create",
 }: Props) {
-	// 모달 오픈 시 항상 공란으로 시작 (선택 행 값으로 채우지 않음)
-	const originalUid = "";
-	const [uidValue, setUidValue] = useState("");
-	const [empnm, setEmpnm] = useState("");
-	const [empno, setEmpno] = useState<number | null>(null);
-	const [ugr, setUgr] = useState("");
-	const [decyn, setDecyn] = useState(false);
-	const [decpos, setDecpos] = useState<number | "">("");
+	const isEdit = mode === "edit";
+	const originalUid = isEdit ? String(uid || initial.uid || "").trim() : "";
+	const [uidValue, setUidValue] = useState(() =>
+		isEdit ? String(uid || initial.uid || "").trim() : ""
+	);
+	const [empnm, setEmpnm] = useState(() => (isEdit ? initial.empnm || "" : ""));
+	const [empno, setEmpno] = useState<number | null>(() => (isEdit ? initial.empno : null));
+	const [ugr, setUgr] = useState(() => (isEdit ? initial.ugr || "" : ""));
+	const [decyn, setDecyn] = useState(() => (isEdit ? initial.decyn === "Y" : false));
+	const [decpos, setDecpos] = useState<number | "">(() =>
+		isEdit && initial.decpos != null ? initial.decpos : ""
+	);
 	const [saving, setSaving] = useState(false);
 
-	const [empQuery, setEmpQuery] = useState("");
+	const [empQuery, setEmpQuery] = useState(() => (isEdit ? initial.empnm || "" : ""));
 	const [suggestions, setSuggestions] = useState<EmpSuggest[]>([]);
 	const [showDropdown, setShowDropdown] = useState(false);
 	const [searchLoading, setSearchLoading] = useState(false);
 	const wrapRef = useRef<HTMLDivElement | null>(null);
-	const selectedEmpnoRef = useRef<number | null>(null);
+	const selectedEmpnoRef = useRef<number | null>(isEdit ? initial.empno : null);
 
 	const searchEmployees = useCallback(async (name: string) => {
 		setSearchLoading(true);
@@ -167,9 +174,9 @@ export default function FacilityUserLinkModal({
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					ANCD: ancd,
-					originalUID: originalUid,
+					originalUID: originalUid || undefined,
 					UID: editedUid,
-					action: "linkEmployee",
+					action: isEdit ? "update" : "linkEmployee",
 					EMPNO: empno,
 					EMPNM: empnm.trim() || null,
 					UGR: ugr,
@@ -181,7 +188,7 @@ export default function FacilityUserLinkModal({
 			if (!res.ok || !json?.success) {
 				throw new Error(json?.error || "저장에 실패했습니다.");
 			}
-			alert("사용자정보가 저장되었습니다.");
+			alert(isEdit ? "사용자정보가 수정되었습니다." : "사용자정보가 저장되었습니다.");
 			onSaved(editedUid);
 		} catch (err) {
 			console.error(err);
@@ -195,7 +202,7 @@ export default function FacilityUserLinkModal({
 		<div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
 			<div className="w-full max-w-3xl overflow-hidden rounded-lg border border-blue-400 bg-white shadow-xl">
 				<div className="border-b border-blue-300 bg-blue-100 px-4 py-3 text-center text-lg font-semibold text-blue-900">
-					사용자정보(ID) 등록
+					{isEdit ? "사용자정보(ID) 수정" : "사용자정보(ID) 등록"}
 				</div>
 
 				<div className="grid gap-4 p-4 md:grid-cols-[1.15fr_0.85fr]">
@@ -213,7 +220,8 @@ export default function FacilityUserLinkModal({
 								onChange={(e) => setUidValue(e.target.value)}
 								maxLength={20}
 								placeholder="사용자ID 직접 입력"
-								className={inputClass}
+								readOnly={isEdit}
+								className={isEdit ? readOnlyClass : inputClass}
 								autoComplete="off"
 							/>
 						</div>

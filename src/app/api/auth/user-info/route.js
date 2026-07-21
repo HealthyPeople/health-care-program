@@ -52,7 +52,8 @@ export async function GET(req) {
               .input('ancd', n)
               .input('uid', String(parsedUserInfo.uid).trim())
               .query(
-                `SELECT TOP 1 [EMPNM], RTRIM([UGR]) AS [UGR]
+                `SELECT TOP 1 [EMPNO], [EMPNM], RTRIM([UGR]) AS [UGR],
+                        RTRIM([DECYN]) AS [DECYN], [DECPOS]
                  FROM [돌봄시설DB].[dbo].[F00120]
                  WHERE [ANCD] = @ancd AND [UID] = @uid`
               );
@@ -60,9 +61,24 @@ export async function GET(req) {
             if (row2?.EMPNM) {
               parsedUserInfo = { ...parsedUserInfo, empnm: row2.EMPNM };
             }
+            if (row2?.EMPNO != null && row2.EMPNO !== '') {
+              parsedUserInfo = { ...parsedUserInfo, empno: row2.EMPNO };
+            }
             const ugr = row2?.UGR != null ? String(row2.UGR).trim() : '';
             if (ugr) {
               parsedUserInfo = { ...parsedUserInfo, ugr };
+            }
+            if (row2?.DECYN != null) {
+              parsedUserInfo = {
+                ...parsedUserInfo,
+                decyn: String(row2.DECYN).trim().toUpperCase() === 'Y' ? 'Y' : 'N',
+              };
+            }
+            if (row2?.DECPOS != null && row2.DECPOS !== '') {
+              const pos = Number(row2.DECPOS);
+              if (Number.isFinite(pos)) {
+                parsedUserInfo = { ...parsedUserInfo, decpos: pos };
+              }
             }
           }
         }
