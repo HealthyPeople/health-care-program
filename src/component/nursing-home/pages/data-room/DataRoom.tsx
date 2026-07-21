@@ -211,25 +211,12 @@ export default function DataRoom() {
 
 						<button
 							type="button"
-							onClick={handleSearch}
-							className="w-28 rounded border border-blue-400 bg-blue-200 px-6 py-3 text-base font-medium text-blue-900 hover:bg-blue-300"
-						>
-							검색
-						</button>
-						<button
-							type="button"
 							onClick={() => setIsUploadOpen(true)}
 							className="w-28 rounded border border-blue-400 bg-blue-200 px-6 py-3 text-base font-medium text-blue-900 hover:bg-blue-300"
 						>
-							등록
+							신규 등록
 						</button>
-						<button
-							type="button"
-							onClick={handleClose}
-							className="w-28 rounded border border-blue-400 bg-blue-200 px-6 py-3 text-base font-medium text-blue-900 hover:bg-blue-300"
-						>
-							닫기
-						</button>
+
 					</div>
 				</div>
 
