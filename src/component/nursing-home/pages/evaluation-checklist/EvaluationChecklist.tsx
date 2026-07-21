@@ -257,7 +257,7 @@ export default function EvaluationChecklist() {
 		<div className="min-h-screen bg-white text-black">
 			<div className="p-4 space-y-4">
 				{/* 상단 */}
-				<div className="flex items-stretch gap-3">
+				<div className="flex flex-col items-stretch gap-3">
 					<div className="flex-1 rounded border border-blue-300 bg-blue-100 px-6 py-4 text-center text-2xl font-semibold text-blue-900">
 						평가 체크리스트
 					</div>
@@ -329,13 +329,6 @@ export default function EvaluationChecklist() {
 
 						<button
 							type="button"
-							onClick={handleSearch}
-							className="w-24 rounded border border-blue-400 bg-blue-200 px-6 py-3 text-base font-medium text-blue-900 hover:bg-blue-300"
-						>
-							검색
-						</button>
-						<button
-							type="button"
 							onClick={handleNew}
 							className="w-24 rounded border border-blue-400 bg-blue-200 px-6 py-3 text-base font-medium text-blue-900 hover:bg-blue-300"
 						>
@@ -363,13 +356,7 @@ export default function EvaluationChecklist() {
 						>
 							출력
 						</button>
-						<button
-							type="button"
-							onClick={handleClose}
-							className="w-24 rounded border border-blue-400 bg-blue-200 px-6 py-3 text-base font-medium text-blue-900 hover:bg-blue-300"
-						>
-							닫기
-						</button>
+
 					</div>
 				</div>
 
