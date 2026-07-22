@@ -305,3 +305,110 @@ export async function POST(req) {
 		});
 	}
 }
+
+function monthRangeFromSalmm(salmm) {
+	const y = parseInt(salmm.slice(0, 4), 10);
+	const m = parseInt(salmm.slice(4, 6), 10);
+	const lastDay = new Date(y, m, 0).getDate();
+	const pad = (n) => String(n).padStart(2, '0');
+	return {
+		frdt: `${y}-${pad(m)}-01`,
+		todt: `${y}-${pad(m)}-${pad(lastDay)}`,
+	};
+}
+
+/**
+ * 급여계산 — Usp_P40100 실행
+ * PUT /api/f40100
+ * body: { salmm: 'YYYYMM'|'YYYY-MM', pnum: number|string, wonflag?: 0|1|boolean }
+ * - 전체계산: pnum = 9999999
+ * - 개별계산: pnum = 선택한 수급자 PNUM
+ * ANCD는 로그인 세션 값만 사용
+ */
+export async function PUT(req) {
+	try {
+		const searchParams = req.nextUrl.searchParams;
+		const body = await req.json().catch(() => ({}));
+		const salmmRaw = body?.salmm ?? body?.SALMM ?? searchParams.get('salmm') ?? '';
+		const ancdParam = body?.ancd ?? searchParams.get('ancd') ?? null;
+		const pnumRaw = body?.pnum ?? body?.PNUM ?? searchParams.get('pnum');
+		const wonflagRaw = body?.wonflag ?? body?.WONFLAG ?? body?.pv_wonflag;
+
+		const gate = assertAnCdMatchesSession(req, ancdParam);
+		if (!gate.ok) return gate.response;
+
+		const salmm = normalizeSalmm(salmmRaw);
+		if (!salmm) {
+			return new Response(
+				JSON.stringify({ success: false, error: 'salmm(YYYYMM) 파라미터가 필요합니다' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		if (pnumRaw == null || String(pnumRaw).trim() === '') {
+			return new Response(
+				JSON.stringify({ success: false, error: 'pnum 파라미터가 필요합니다' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		const pnum = Number(String(pnumRaw).trim());
+		if (!Number.isFinite(pnum)) {
+			return new Response(
+				JSON.stringify({ success: false, error: 'pnum 형식이 올바르지 않습니다' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		let wonflag = 0;
+		if (wonflagRaw === true || wonflagRaw === 1 || wonflagRaw === '1' || wonflagRaw === 'Y' || wonflagRaw === 'y') {
+			wonflag = 1;
+		}
+
+		const { frdt, todt } = monthRangeFromSalmm(salmm);
+		const pool = await connPool;
+		if (!pool) {
+			return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const ancd = Number(gate.sessionAncd);
+		if (!Number.isFinite(ancd)) {
+			return new Response(
+				JSON.stringify({ success: false, error: '세션 기관코드(ANCD)가 올바르지 않습니다' }),
+				{ status: 401, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		await pool
+			.request()
+			.input('pv_ancd', sql.Int, ancd)
+			.input('pv_salmm', sql.Char(6), salmm)
+			.input('pv_frdt', sql.Date, frdt)
+			.input('pv_todt', sql.Date, todt)
+			.input('pv_wonflag', sql.Int, wonflag)
+			.input('pv_pnum', sql.Int, pnum)
+			.execute('[돌봄시설DB].[dbo].[Usp_P40100]');
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				ancd,
+				salmm,
+				frdt,
+				todt,
+				wonflag,
+				pnum,
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } }
+		);
+	} catch (err) {
+		console.error('Usp_P40100 급여계산 오류:', err);
+		return new Response(
+			JSON.stringify({ success: false, error: err.message, details: String(err) }),
+			{ status: 500, headers: { 'Content-Type': 'application/json' } }
+		);
+	}
+}
