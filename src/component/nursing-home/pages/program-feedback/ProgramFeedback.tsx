@@ -454,7 +454,7 @@ export default function ProgramFeedback() {
 	return (
 		<div className="flex flex-col min-h-screen text-black bg-white">
 			<div className="flex items-center justify-between p-4 border-b border-blue-200 bg-blue-50 print:hidden">
-				<h1 className="text-xl font-semibold text-blue-900">프로그램 의견수렴 및 반영(신규페이지)</h1>
+				<h1 className="text-xl font-semibold text-blue-900">프로그램 의견수렴 및 반영</h1>
 					<h1 className="text-xl font-semibold text-blue-900">F14041_PROGRAM_FEEDBACK 신규테이블 생성 </h1>
 				<div className="flex flex-wrap items-center gap-3">
 					<div className="flex items-center gap-2">

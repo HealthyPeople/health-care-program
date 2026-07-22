@@ -22,6 +22,8 @@ interface FormState {
 	outpatientPrice: string;
 }
 
+type ModalMode = "create" | "edit";
+
 const GRADE_OPTIONS = [
 	{ value: "1", label: "1등급" },
 	{ value: "2", label: "2등급" },
@@ -33,10 +35,8 @@ const GRADE_OPTIONS = [
 ];
 
 const ITEMS_PER_PAGE = 14;
-/** 하단 페이지 번호 버튼 — 한 번에 표시할 개수 */
 const PAGE_NUMBER_BLOCK = 5;
 
-/** SDT 등 날짜를 YYYY-MM-DD(예: 2024-01-01)로 통일 */
 function formatSdt(v: unknown): string {
 	if (v == null || v === "") return "";
 	const s = String(v).trim();
@@ -88,7 +88,8 @@ function rowToForm(row: F40010Row): FormState {
 export default function GradeSalaryTable() {
 	const [salaryRows, setSalaryRows] = useState<F40010Row[]>([]);
 	const [formData, setFormData] = useState<FormState>(emptyForm);
-	const [selectedKey, setSelectedKey] = useState<string | null>(null);
+	const [modalMode, setModalMode] = useState<ModalMode | null>(null);
+	const [editingRow, setEditingRow] = useState<F40010Row | null>(null);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [pageWindowStart, setPageWindowStart] = useState(1);
 	const [loading, setLoading] = useState(false);
@@ -110,11 +111,6 @@ export default function GradeSalaryTable() {
 	const currentRows = useMemo(
 		() => salaryRows.slice(startIndex, startIndex + ITEMS_PER_PAGE),
 		[salaryRows, startIndex],
-	);
-
-	const selectedRow = useMemo(
-		() => (selectedKey ? salaryRows.find((r) => rowKey(r) === selectedKey) ?? null : null),
-		[salaryRows, selectedKey],
 	);
 
 	const loadRows = useCallback(async () => {
@@ -160,10 +156,23 @@ export default function GradeSalaryTable() {
 		setPageWindowStart((s) => Math.min(s, maxPageWindowStart));
 	}, [totalPages, maxPageWindowStart]);
 
-	const handleRowSelect = (row: F40010Row) => {
-		const key = rowKey(row);
-		setSelectedKey(key);
+	const closeModal = () => {
+		setModalMode(null);
+		setEditingRow(null);
+		setFormData(emptyForm());
+	};
+
+	const handleOpenCreate = () => {
+		setEditingRow(null);
+		setFormData(emptyForm());
+		setModalMode("create");
+	};
+
+	const handleOpenEdit = (row: F40010Row, e: React.MouseEvent) => {
+		e.stopPropagation();
+		setEditingRow(row);
 		setFormData(rowToForm(row));
+		setModalMode("edit");
 	};
 
 	const handleSave = async () => {
@@ -192,8 +201,7 @@ export default function GradeSalaryTable() {
 				throw new Error(json?.error || "저장에 실패했습니다.");
 			}
 			await loadRows();
-			const key = rowKey({ SDT: formData.applyDate, P_GRD: formData.grade });
-			setSelectedKey(key);
+			closeModal();
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : "저장 중 오류가 발생했습니다.";
 			setError(msg);
@@ -203,11 +211,8 @@ export default function GradeSalaryTable() {
 		}
 	};
 
-	const handleDelete = async () => {
-		if (!selectedRow) {
-			alert("삭제할 항목을 목록에서 선택해 주세요.");
-			return;
-		}
+	const handleDelete = async (row: F40010Row, e: React.MouseEvent) => {
+		e.stopPropagation();
 		if (!confirm("정말 삭제하시겠습니까?")) return;
 
 		setSaving(true);
@@ -219,32 +224,25 @@ export default function GradeSalaryTable() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					action: "delete",
-					SDT: formatSdt(selectedRow.SDT),
-					P_GRD: normalizePGrdForSelect(selectedRow.P_GRD) || selectedRow.P_GRD,
+					SDT: formatSdt(row.SDT),
+					P_GRD: normalizePGrdForSelect(row.P_GRD) || row.P_GRD,
 				}),
 			});
 			const json = await res.json();
 			if (!res.ok || !json?.success) {
 				throw new Error(json?.error || "삭제에 실패했습니다.");
 			}
-			setSelectedKey(null);
-			setFormData(emptyForm());
+			if (editingRow && rowKey(editingRow) === rowKey(row)) {
+				closeModal();
+			}
 			await loadRows();
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : "삭제 중 오류가 발생했습니다.";
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다.";
 			setError(msg);
 			alert(msg);
 		} finally {
 			setSaving(false);
 		}
-	};
-
-	const handleCopyBenefits = () => {
-		alert("준비중입니다");
-	};
-
-	const handleClose = () => {
-		// TODO: 닫기
 	};
 
 	const handlePageChange = (page: number) => {
@@ -268,15 +266,23 @@ export default function GradeSalaryTable() {
 		}
 	};
 
-	const handleNewEntry = () => {
-		setSelectedKey(null);
-		setFormData(emptyForm());
-	};
+	const isEdit = modalMode === "edit";
+	const pkLocked = isEdit;
 
 	return (
 		<div className="flex flex-col min-h-screen bg-white text-black">
 			<div className="border-b border-blue-200 bg-blue-50/50 px-6 py-4">
-				<h1 className="text-center text-lg font-semibold text-blue-900">수급자 급여단가 관리</h1>
+				<div className="relative flex items-center justify-center">
+					<h1 className="text-lg font-semibold text-blue-900">수급자 급여단가 관리</h1>
+					<button
+						type="button"
+						onClick={handleOpenCreate}
+						disabled={saving}
+						className="absolute right-0 rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
+					>
+						신규생성
+					</button>
+				</div>
 			</div>
 
 			{error && (
@@ -285,7 +291,7 @@ export default function GradeSalaryTable() {
 				</div>
 			)}
 
-			<div className="flex flex-1 gap-4 p-4">
+			<div className="flex flex-1 flex-col p-4">
 				<div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-blue-300 bg-white">
 					<div className="flex-1 overflow-auto">
 						<table className="w-full text-sm">
@@ -300,34 +306,30 @@ export default function GradeSalaryTable() {
 									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
 										입원단가
 									</th>
-									<th className="px-3 py-2 text-center font-semibold text-blue-900">외박단가</th>
+									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
+										외박단가
+									</th>
+									<th className="px-3 py-2 text-center font-semibold text-blue-900 w-40">관리</th>
 								</tr>
 							</thead>
 							<tbody>
 								{loading ? (
 									<tr>
-										<td colSpan={4} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={5} className="px-3 py-8 text-center text-blue-900/60">
 											불러오는 중...
 										</td>
 									</tr>
 								) : currentRows.length === 0 ? (
 									<tr>
-										<td colSpan={4} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={5} className="px-3 py-8 text-center text-blue-900/60">
 											급여단가 데이터가 없습니다.
 										</td>
 									</tr>
 								) : (
 									currentRows.map((row) => {
 										const key = rowKey(row);
-										const isSelected = selectedKey === key;
 										return (
-											<tr
-												key={key}
-												onClick={() => handleRowSelect(row)}
-												className={`cursor-pointer border-b border-blue-50 hover:bg-blue-50/50 ${
-													isSelected ? "bg-blue-100" : ""
-												}`}
-											>
+											<tr key={key} className="border-b border-blue-50 hover:bg-blue-50/50">
 												<td className="border-r border-blue-100 px-3 py-2 text-center">
 													{formatSdt(row.SDT)}
 												</td>
@@ -337,7 +339,29 @@ export default function GradeSalaryTable() {
 												<td className="border-r border-blue-100 px-3 py-2 text-center">
 													{formatAmount(row.BAAMT)}
 												</td>
-												<td className="px-3 py-2 text-center">{formatAmount(row.OUTAMT)}</td>
+												<td className="border-r border-blue-100 px-3 py-2 text-center">
+													{formatAmount(row.OUTAMT)}
+												</td>
+												<td className="px-3 py-2 text-center">
+													<div className="flex items-center justify-end gap-1">
+														<button
+															type="button"
+															onClick={(e) => handleOpenEdit(row, e)}
+															disabled={saving}
+															className="rounded border border-green-400 bg-green-100 px-2.5 py-1 text-xs font-medium text-green-900 hover:bg-green-200 disabled:opacity-50"
+														>
+															수정
+														</button>
+														<button
+															type="button"
+															onClick={(e) => handleDelete(row, e)}
+															disabled={saving}
+															className="rounded border border-red-400 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900 hover:bg-red-200 disabled:opacity-50"
+														>
+															삭제
+														</button>
+													</div>
+												</td>
 											</tr>
 										);
 									})
@@ -407,37 +431,23 @@ export default function GradeSalaryTable() {
 						</div>
 					)}
 				</div>
+			</div>
 
-				<div className="flex w-[40%] flex-col gap-4 rounded-lg border border-blue-300 bg-blue-50/30 p-4">
-					<div className="flex gap-3">
-						<div className="flex flex-col gap-2">
-							{/* <button
-								type="button"
-								onClick={handleNewEntry}
-								disabled={saving}
-								className="rounded border border-blue-400 bg-white px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-100 whitespace-nowrap disabled:opacity-50"
-							>
-								신규
-							</button> */}
-							<button
-								type="button"
-								onClick={handleSave}
-								disabled={saving}
-								className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 whitespace-nowrap disabled:opacity-50"
-							>
-								&lt;= 저장
-							</button>
-							<button
-								type="button"
-								onClick={handleDelete}
-								disabled={saving || !selectedRow}
-								className="rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300 whitespace-nowrap disabled:opacity-50"
-							>
-								삭제 =&gt;
-							</button>
+			{modalMode && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+					<div
+						className="w-full max-w-md rounded-lg border border-blue-300 bg-white shadow-lg"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="grade-salary-modal-title"
+					>
+						<div className="border-b border-blue-200 bg-blue-50 px-4 py-3">
+							<h2 id="grade-salary-modal-title" className="text-base font-semibold text-blue-900">
+								{isEdit ? "급여단가 수정" : "급여단가 신규생성"}
+							</h2>
 						</div>
 
-						<div className="flex flex-1 flex-col gap-3">
+						<div className="flex flex-col gap-3 p-4">
 							<div className="flex items-center gap-2">
 								<label className="w-24 shrink-0 text-sm font-medium text-blue-900">적용 일자</label>
 								<input
@@ -446,7 +456,8 @@ export default function GradeSalaryTable() {
 									onChange={(e) =>
 										setFormData((prev) => ({ ...prev, applyDate: e.target.value }))
 									}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									disabled={pkLocked || saving}
+									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none disabled:bg-gray-50"
 								/>
 							</div>
 							<div className="flex items-center gap-2">
@@ -456,7 +467,8 @@ export default function GradeSalaryTable() {
 									onChange={(e) =>
 										setFormData((prev) => ({ ...prev, grade: e.target.value }))
 									}
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									disabled={pkLocked || saving}
+									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none disabled:bg-gray-50"
 								>
 									{GRADE_OPTIONS.map((opt) => (
 										<option key={opt.value} value={opt.value}>
@@ -477,7 +489,8 @@ export default function GradeSalaryTable() {
 										}))
 									}
 									placeholder="예: 93,070"
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									disabled={saving}
+									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none disabled:opacity-50"
 								/>
 							</div>
 							<div className="flex items-center gap-2">
@@ -492,30 +505,33 @@ export default function GradeSalaryTable() {
 										}))
 									}
 									placeholder="예: 46,540"
-									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+									disabled={saving}
+									className="flex-1 rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none disabled:opacity-50"
 								/>
 							</div>
 						</div>
-					</div>
 
-					<div className="flex gap-2">
-						<button
-							type="button"
-							onClick={handleCopyBenefits}
-							className="flex-1 rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-						>
-							급여 복사
-						</button>
-						{/* <button
-							type="button"
-							onClick={handleClose}
-							className="flex-1 rounded border border-blue-400 bg-blue-200 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-300"
-						>
-							닫기
-						</button> */}
+						<div className="flex justify-end gap-2 border-t border-blue-200 bg-blue-50/40 px-4 py-3">
+							<button
+								type="button"
+								onClick={closeModal}
+								disabled={saving}
+								className="rounded border border-gray-400 bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-200 disabled:opacity-50"
+							>
+								취소
+							</button>
+							<button
+								type="button"
+								onClick={handleSave}
+								disabled={saving}
+								className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
+							>
+								{saving ? "저장 중..." : "저장"}
+							</button>
+						</div>
 					</div>
 				</div>
-			</div>
+			)}
 		</div>
 	);
 }
