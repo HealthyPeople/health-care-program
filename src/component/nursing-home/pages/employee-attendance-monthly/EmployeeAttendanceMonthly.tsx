@@ -58,9 +58,14 @@ export default function EmployeeAttendanceMonthly() {
 	const [startDateStr, setStartDateStr] = useState(() => getMonthStart(now.getFullYear(), now.getMonth()));
 	const [endDateStr, setEndDateStr] = useState(() => getMonthEnd(now.getFullYear(), now.getMonth()));
 
-	// 선택한 사원의 월별 근태 목록
 	const [attendanceList, setAttendanceList] = useState<AttendanceRow[]>([]);
 	const [loadingAttendance, setLoadingAttendance] = useState(false);
+	/** 출력용 선택 키: `${ANCD}-${EMPNO}` */
+	const [selectedPrintKeys, setSelectedPrintKeys] = useState<Set<string>>(new Set());
+	const [printing, setPrinting] = useState(false);
+
+	const employeeKey = (emp: Pick<Employee, "ANCD" | "EMPNO">) =>
+		`${emp.ANCD}-${emp.EMPNO}`;
 
 	function formatDateStr(d: Date): string {
 		const y = d.getFullYear();
@@ -189,19 +194,52 @@ export default function EmployeeAttendanceMonthly() {
 		setSelectedEmployee(employee);
 	};
 
+	const togglePrintSelect = (employee: Employee) => {
+		const key = employeeKey(employee);
+		setSelectedPrintKeys((prev) => {
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			return next;
+		});
+	};
+
+	const allFilteredSelected =
+		filteredEmployees.length > 0 &&
+		filteredEmployees.every((emp) => selectedPrintKeys.has(employeeKey(emp)));
+
+	const handleSelectAll = () => {
+		if (filteredEmployees.length === 0) return;
+		if (allFilteredSelected) {
+			setSelectedPrintKeys(new Set());
+		} else {
+			setSelectedPrintKeys(new Set(filteredEmployees.map(employeeKey)));
+		}
+	};
+
 	// 검색
 	const handleSearch = () => {
 		setCurrentPage(1);
 		fetchEmployees(searchTerm.trim() !== "" ? searchTerm : undefined);
 	};
 
-	const [printing, setPrinting] = useState(false);
-
 	const handlePrint = async () => {
 		if (startDateStr > endDateStr) {
 			alert("시작일이 종료일보다 늦을 수 없습니다.");
 			return;
 		}
+		if (selectedPrintKeys.size === 0) {
+			alert("출력할 직원을 선택해 주세요.");
+			return;
+		}
+		const selectedEmployees = filteredEmployees.filter((emp) =>
+			selectedPrintKeys.has(employeeKey(emp))
+		);
+		if (selectedEmployees.length === 0) {
+			alert("선택한 직원이 현재 필터 목록에 없습니다. 다시 선택해 주세요.");
+			return;
+		}
+
 		setPrinting(true);
 		try {
 			const url = `/api/f02010?startDate=${encodeURIComponent(startDateStr)}&endDate=${encodeURIComponent(endDateStr)}`;
@@ -232,12 +270,9 @@ export default function EmployeeAttendanceMonthly() {
 					JOBSH: row.JOBSH,
 				});
 			}
-			const filteredKeys = new Set(
-				filteredEmployees.map((e) => `${e.ANCD}-${e.EMPNO}`),
-			);
-			const sections = filteredEmployees
+			const sections = selectedEmployees
 				.map((emp) => {
-					const key = `${emp.ANCD}-${emp.EMPNO}`;
+					const key = employeeKey(emp);
 					const bucket = byEmployee.get(key);
 					if (!bucket || bucket.rows.length === 0) return null;
 					return {
@@ -247,14 +282,7 @@ export default function EmployeeAttendanceMonthly() {
 				})
 				.filter((s): s is NonNullable<typeof s> => s != null);
 			if (sections.length === 0) {
-				const hasAny = allRows.some((r) =>
-					filteredKeys.has(`${r.ANCD}-${r.EMPNO}`),
-				);
-				if (!hasAny && allRows.length > 0) {
-					alert("현재 필터 조건에 해당하는 사원의 근태 데이터가 없습니다.");
-				} else {
-					alert("출력할 근태 데이터가 없습니다.");
-				}
+				alert("선택한 직원의 출력할 근태 데이터가 없습니다.");
 				return;
 			}
 			const html = buildMonthlyAttendancePrintHtml(startDateStr, endDateStr, sections);
@@ -365,14 +393,6 @@ export default function EmployeeAttendanceMonthly() {
 					>
 						검색
 					</button> */}
-					<button
-						type="button"
-						onClick={handlePrint}
-						disabled={printing}
-						className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
-					>
-						{printing ? "출력 준비중..." : "근태출력"}
-					</button>
 					{/* <button
 						type="button"
 						onClick={handleClose}
@@ -386,9 +406,32 @@ export default function EmployeeAttendanceMonthly() {
 			{/* 메인: 좌측 직원 목록 + 우측 근태 상세 */}
 			<div className="flex flex-1 gap-4 p-4 overflow-hidden">
 				{/* 왼쪽: 직원 목록 (사원명, 근무상태, 핸드폰번호) */}
-				<div className="w-96 shrink-0 flex flex-col overflow-hidden rounded-lg border border-blue-300 bg-white">
+				<div className="w-[420px] shrink-0 flex flex-col overflow-hidden rounded-lg border border-blue-300 bg-white">
 					<div className="border-b border-blue-300 bg-blue-100 px-3 py-2 font-semibold text-blue-900">
 						직원 목록
+					</div>
+					<div className="flex flex-wrap items-center gap-2 border-b border-blue-200 bg-blue-50/60 px-3 py-2">
+						<button
+							type="button"
+							onClick={handleSelectAll}
+							disabled={filteredEmployees.length === 0}
+							className="rounded border border-blue-400 bg-white px-3 py-1 text-xs font-medium text-blue-900 hover:bg-blue-100 disabled:opacity-50"
+						>
+							{allFilteredSelected ? "전체해제" : "전체선택"}
+						</button>
+						<button
+							type="button"
+							onClick={handlePrint}
+							disabled={printing || filteredEmployees.length === 0}
+							className="rounded border border-blue-400 bg-blue-200 px-3 py-1 text-xs font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
+						>
+							{printing
+								? "출력 준비중..."
+								: selectedPrintKeys.size > 0
+									? `근태출력 (${selectedPrintKeys.size})`
+									: "근태출력"}
+						</button>
+						<span className="text-[11px] text-blue-900/70">체크한 직원만 출력</span>
 					</div>
 					<div className="px-3 py-2 border-b border-blue-100">
 						<input
@@ -418,13 +461,23 @@ export default function EmployeeAttendanceMonthly() {
 						<table className="w-full text-sm">
 							<thead className="sticky top-0 z-10 border-b border-blue-200 bg-blue-100">
 								<tr>
-									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
+									<th className="border-r border-blue-200 px-1 py-2 text-center font-semibold text-blue-900 w-8">
+										<input
+											type="checkbox"
+											checked={allFilteredSelected}
+											onChange={handleSelectAll}
+											disabled={filteredEmployees.length === 0}
+											className="rounded border-blue-400"
+											title="전체선택"
+										/>
+									</th>
+									<th className="border-r border-blue-200 px-2 py-2 text-center font-semibold text-blue-900">
 										사원명
 									</th>
-									<th className="border-r border-blue-200 px-3 py-2 text-center font-semibold text-blue-900">
+									<th className="border-r border-blue-200 px-2 py-2 text-center font-semibold text-blue-900">
 										근무상태
 									</th>
-									<th className="px-3 py-2 text-center font-semibold text-blue-900">
+									<th className="px-2 py-2 text-center font-semibold text-blue-900">
 										핸드폰번호
 									</th>
 								</tr>
@@ -432,13 +485,13 @@ export default function EmployeeAttendanceMonthly() {
 							<tbody>
 								{loading ? (
 									<tr>
-										<td colSpan={3} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={4} className="px-3 py-8 text-center text-blue-900/60">
 											로딩 중...
 										</td>
 									</tr>
 								) : filteredEmployees.length === 0 ? (
 									<tr>
-										<td colSpan={3} className="px-3 py-8 text-center text-blue-900/60">
+										<td colSpan={4} className="px-3 py-8 text-center text-blue-900/60">
 											사원 데이터가 없습니다
 										</td>
 									</tr>
@@ -447,21 +500,34 @@ export default function EmployeeAttendanceMonthly() {
 										const isSelected =
 											selectedEmployee?.ANCD === employee.ANCD &&
 											selectedEmployee?.EMPNO === employee.EMPNO;
+										const rowKey = employeeKey(employee);
+										const isChecked = selectedPrintKeys.has(rowKey);
 										return (
 											<tr
-												key={`${employee.ANCD}-${employee.EMPNO}`}
+												key={rowKey}
 												onClick={() => handleSelectEmployee(employee)}
 												className={`border-b border-blue-50 cursor-pointer hover:bg-blue-50/50 ${
 													isSelected ? "bg-blue-100" : ""
 												}`}
 											>
-												<td className="border-r border-blue-100 px-3 py-2 text-center">
+												<td
+													className="border-r border-blue-100 px-1 py-2 text-center"
+													onClick={(e) => e.stopPropagation()}
+												>
+													<input
+														type="checkbox"
+														checked={isChecked}
+														onChange={() => togglePrintSelect(employee)}
+														className="rounded border-blue-400"
+													/>
+												</td>
+												<td className="border-r border-blue-100 px-2 py-2 text-center">
 													{employee.EMPNM || "-"}
 												</td>
-												<td className="border-r border-blue-100 px-3 py-2 text-center">
+												<td className="border-r border-blue-100 px-2 py-2 text-center">
 													{getWorkStatusText(employee.JOBST)}
 												</td>
-												<td className="px-3 py-2 text-center">
+												<td className="px-2 py-2 text-center">
 													{employee.EMPHP || "-"}
 												</td>
 											</tr>

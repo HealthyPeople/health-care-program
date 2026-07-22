@@ -30,20 +30,28 @@ function nbsp(v: string): string {
 	return t ? escapeHtml(t) : "&nbsp;";
 }
 
-/** 목록·출력용 근무구분 텍스트 */
+/** 목록·출력용 근무구분 텍스트
+ * WGU: 1=근무, 2=연차, 3=월차, 4=정기휴무, 5=대휴, 6=병가, 7=경조사, 9=결근
+ */
 export function classifyAttendanceDisplay(row: AttendancePrintRow): string {
 	const wgu = String(row.WGU ?? "").trim();
 	const hodes = String(row.HODES ?? "").trim();
-	if (!wgu) return "근무";
-	if (wgu === "4") return "정기휴일";
-	if (wgu === "6") return "결근";
-	if (wgu === "2") return hodes.includes("월") ? "월차" : "년차";
-	if (wgu === "5") return hodes.includes("월") ? "월차" : "년차";
-	if (wgu === "9") {
-		if (/병/.test(hodes)) return "병가";
-		if (/경조/.test(hodes)) return "경조사";
-		return "대휴";
-	}
+	if (!wgu || wgu === "1") return "근무";
+	if (wgu === "2") return "연차";
+	if (wgu === "3") return "월차";
+	if (wgu === "4") return "정기휴무";
+	if (wgu === "5") return "대휴";
+	if (wgu === "6") return "병가";
+	if (wgu === "7") return "경조사";
+	if (wgu === "9") return "결근";
+	// 구 코드 호환
+	if (/월/.test(hodes)) return "월차";
+	if (/연|년/.test(hodes)) return "연차";
+	if (/대휴/.test(hodes)) return "대휴";
+	if (/병/.test(hodes)) return "병가";
+	if (/경조/.test(hodes)) return "경조사";
+	if (/결근/.test(hodes)) return "결근";
+	if (/정기/.test(hodes)) return "정기휴무";
 	return "근무";
 }
 
@@ -55,7 +63,7 @@ function classifyAttendanceSummary(row: AttendancePrintRow): string {
 }
 
 function buildSummaryCounts(rows: AttendancePrintRow[]): Record<string, number> {
-	const keys = ["출근", "년차", "월차", "정기휴일", "병가", "대휴", "경조사", "결근"];
+	const keys = ["출근", "연차", "월차", "정기휴무", "대휴", "병가", "경조사", "결근"];
 	const counts: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
 	for (const row of rows) {
 		const key = classifyAttendanceSummary(row);
@@ -94,11 +102,11 @@ export function buildDailyAttendancePrintHtml(
 
 	const summaryLine = [
 		"출근",
-		"년차",
+		"연차",
 		"월차",
-		"정기휴일",
-		"병가",
+		"정기휴무",
 		"대휴",
+		"병가",
 		"경조사",
 		"결근",
 	]
@@ -230,12 +238,11 @@ export interface MonthlyEmployeePrintSection {
 }
 
 function buildMonthlySummaryDisplay(counts: Record<string, number>): { line1: string; line2: string } {
-	const 연차 = counts["년차"] ?? 0;
 	const line1 = [
 		`출근: ${counts["출근"] ?? 0}`,
-		`연차: ${연차}`,
+		`연차: ${counts["연차"] ?? 0}`,
 		`월차: ${counts["월차"] ?? 0}`,
-		`정기휴일: ${counts["정기휴일"] ?? 0}`,
+		`정기휴무: ${counts["정기휴무"] ?? 0}`,
 		`대휴: ${counts["대휴"] ?? 0}`,
 	].join("&nbsp;&nbsp;&nbsp;&nbsp;");
 	const line2 = [
