@@ -1,5 +1,26 @@
-import { connPool } from '../../../config/server';
+import { connPool, sql } from '../../../config/server';
 import { assertAnCdMatchesSession } from '../../../config/sessionServer';
+
+function normalizeYyyymm(raw) {
+	const yyyymm = String(raw || '').replace(/\D/g, '');
+	if (!/^\d{6}$/.test(yyyymm)) return '';
+	const y = parseInt(yyyymm.slice(0, 4), 10);
+	const m = parseInt(yyyymm.slice(4, 6), 10);
+	if (!Number.isFinite(y) || m < 1 || m > 12) return '';
+	return yyyymm;
+}
+
+function monthRangeFromYyyymm(yyyymm) {
+	const y = parseInt(yyyymm.slice(0, 4), 10);
+	const m = parseInt(yyyymm.slice(4, 6), 10);
+	const frdt = new Date(y, m - 1, 1);
+	const todt = new Date(y, m, 0);
+	const pad = (n) => String(n).padStart(2, '0');
+	return {
+		frdt: `${y}-${pad(m)}-01`,
+		todt: `${y}-${pad(m)}-${pad(todt.getDate())}`,
+	};
+}
 
 // F14090 (월 집계) 조회
 // GET /api/f14090?yyyymm=YYYYMM
@@ -173,5 +194,72 @@ export async function POST(req) {
       headers: { 'Content-Type': 'application/json' }
     });
   }
+}
+
+/**
+ * 서비스실적집계 — Usp_P14090 실행
+ * PUT /api/f14090  body: { yyyymm: 'YYYYMM' }
+ * ANCD는 로그인 세션 값만 사용 (클라이언트 ancd 무시/검증)
+ */
+export async function PUT(req) {
+	try {
+		const searchParams = req.nextUrl.searchParams;
+		const body = await req.json().catch(() => ({}));
+		const yyyymmRaw = body?.yyyymm ?? body?.YYYYMM ?? searchParams.get('yyyymm') ?? '';
+		const ancdParam = body?.ancd ?? searchParams.get('ancd') ?? null;
+
+		const gate = assertAnCdMatchesSession(req, ancdParam);
+		if (!gate.ok) return gate.response;
+
+		const yyyymm = normalizeYyyymm(yyyymmRaw);
+		if (!yyyymm) {
+			return new Response(
+				JSON.stringify({ success: false, error: 'yyyymm(YYYYMM) 파라미터가 필요합니다' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		const { frdt, todt } = monthRangeFromYyyymm(yyyymm);
+		const pool = await connPool;
+		if (!pool) {
+			return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const ancd = Number(gate.sessionAncd);
+		if (!Number.isFinite(ancd)) {
+			return new Response(
+				JSON.stringify({ success: false, error: '세션 기관코드(ANCD)가 올바르지 않습니다' }),
+				{ status: 401, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		await pool
+			.request()
+			.input('pv_ancd', sql.Int, ancd)
+			.input('pv_yyyymm', sql.Char(6), yyyymm)
+			.input('pv_frdt', sql.Date, frdt)
+			.input('pv_todt', sql.Date, todt)
+			.execute('[돌봄시설DB].[dbo].[Usp_P14090]');
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				ancd,
+				yyyymm,
+				frdt,
+				todt,
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } }
+		);
+	} catch (err) {
+		console.error('Usp_P14090 집계 오류:', err);
+		return new Response(
+			JSON.stringify({ success: false, error: err.message, details: err.toString() }),
+			{ status: 500, headers: { 'Content-Type': 'application/json' } }
+		);
+	}
 }
 

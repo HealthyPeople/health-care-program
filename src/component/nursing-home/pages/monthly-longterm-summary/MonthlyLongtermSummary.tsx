@@ -124,7 +124,7 @@ export default function MonthlyLongtermSummary() {
 		fetchPerformanceData();
 	};
 
-	// 서비스실적집계
+	// 서비스실적집계 — 로그인 기관(ANCD) 한정 Usp_P14090 실행
 	const handleAggregate = async () => {
 		if (!confirm('서비스실적을 집계하시겠습니까?')) {
 			return;
@@ -132,19 +132,23 @@ export default function MonthlyLongtermSummary() {
 
 		setLoading(true);
 		try {
-			const yearMonth = `${selectedYear}-${selectedMonth.padStart(2, '0')}`;
-			// TODO: 실제 API 엔드포인트로 변경 필요
-			// const response = await fetch('/api/monthly-longterm-summary/aggregate', {
-			// 	method: 'POST',
-			// 	headers: { 'Content-Type': 'application/json' },
-			// 	body: JSON.stringify({ yearMonth })
-			// });
+			const yyyymm = `${selectedYear}${selectedMonth.padStart(2, '0')}`;
+			const response = await fetch('/api/f14090', {
+				method: 'PUT',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ yyyymm }),
+			});
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok || !result?.success) {
+				throw new Error(result?.error || '서비스실적 집계에 실패했습니다.');
+			}
 
 			alert('서비스실적이 집계되었습니다.');
 			await fetchPerformanceData();
 		} catch (err) {
 			console.error('서비스실적 집계 오류:', err);
-			alert('서비스실적 집계 중 오류가 발생했습니다.');
+			alert(err instanceof Error ? err.message : '서비스실적 집계 중 오류가 발생했습니다.');
 		} finally {
 			setLoading(false);
 		}
@@ -974,9 +978,10 @@ export default function MonthlyLongtermSummary() {
 							</button>
 							<button
 								onClick={handleAggregate}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								disabled={loading}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50"
 							>
-								서비스실적집계(미개발)
+								서비스실적집계
 							</button>
 							<button
 								onClick={handleClose}
