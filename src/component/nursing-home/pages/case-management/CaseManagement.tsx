@@ -62,10 +62,91 @@ export default function CaseManagement() {
 	const itemsPerPage = 10;
 	const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 	const [hasProgramAccess, setHasProgramAccess] = useState<boolean>(true);
+	const [checkedKeys, setCheckedKeys] = useState<string[]>([]);
 
 	// 기간 필터
 	const [startDate, setStartDate] = useState<string>('');
 	const [endDate, setEndDate] = useState<string>('');
+
+	const getCaseKey = (caseItem: CaseData) => {
+		const mdt = formatDateYmd(String(caseItem.MDT ?? ''));
+		const mpnm = String(caseItem.MPNM ?? '').trim();
+		return `${mdt}__${mpnm}`;
+	};
+
+	const escapeHtml = (s: string) =>
+		String(s ?? '')
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
+
+	const buildCasePrintPage = (caseItem: CaseData) => {
+		const meetingDate = escapeHtml(formatDateYmd(caseItem.MDT || '') || '-');
+		const startTime = escapeHtml(caseItem.STM || '-');
+		const endTime = escapeHtml(caseItem.ETM || '-');
+		const location = escapeHtml(caseItem.MPL || '-');
+		const beneficiary = escapeHtml(caseItem.MPNM || '-');
+		const grade = escapeHtml(caseItem.MPGRD || '-');
+		const age = escapeHtml(caseItem.MPAGE || '-');
+		const reason = escapeHtml(caseItem.MDOC || '');
+		const content = escapeHtml(caseItem.MDES || '');
+		const result = escapeHtml(caseItem.MRES || '');
+		const attendees = escapeHtml(caseItem.MNM || '-');
+		const reflectionDate = escapeHtml(formatDateYmd(caseItem.MODT || '') || '-');
+		const reflectionContent = escapeHtml(caseItem.MODES || '-');
+
+		return `
+	<div class="print-container page-break">
+		<h1 style="text-align: center; font-size: 18pt; margin-bottom: 20px;">사례관리</h1>
+		<table class="info-table">
+			<tr>
+				<td class="label">회의일자</td>
+				<td class="value">${meetingDate}</td>
+				<td class="label">회의시간</td>
+				<td class="value">${startTime} ~ ${endTime}</td>
+			</tr>
+			<tr>
+				<td class="label">회의장소</td>
+				<td class="value" colspan="3">${location}</td>
+			</tr>
+			<tr>
+				<td class="label">수급자</td>
+				<td class="value">${beneficiary}</td>
+				<td class="label">수급자등급</td>
+				<td class="value">${grade}</td>
+			</tr>
+			<tr>
+				<td class="label">수급자나이</td>
+				<td class="value" colspan="3">${age}</td>
+			</tr>
+		</table>
+		<div class="content-section">
+			<div class="section-title">선정사유</div>
+			<div class="section-content">${reason}</div>
+		</div>
+		<div class="content-section">
+			<div class="section-title">회의내용</div>
+			<div class="section-content">${content}</div>
+		</div>
+		<div class="content-section">
+			<div class="section-title">회의결과</div>
+			<div class="section-content">${result}</div>
+		</div>
+		<table class="info-table">
+			<tr>
+				<td class="label">회의참석자</td>
+				<td class="value" colspan="3">${attendees}</td>
+			</tr>
+			<tr>
+				<td class="label">반영일자</td>
+				<td class="value">${reflectionDate}</td>
+				<td class="label">반영내용</td>
+				<td class="value">${reflectionContent}</td>
+			</tr>
+		</table>
+	</div>`;
+	};
 
 	// 폼 데이터
 	const [formData, setFormData] = useState({
@@ -128,6 +209,7 @@ export default function CaseManagement() {
 			const ancd = userInfo?.ancd;
 			if (!ancd) {
 				setCaseList([]);
+				setCheckedKeys([]);
 				return;
 			}
 
@@ -149,23 +231,25 @@ export default function CaseManagement() {
 					URDT: formatDateYmd(r?.URDT),
 				}))
 			);
+			setCheckedKeys([]);
 		} catch (err) {
 			console.error('사례 목록 조회 오류:', err);
 			setCaseList([]);
+			setCheckedKeys([]);
 		} finally {
 			setLoading(false);
 		}
 	};
 
 	useEffect(() => {
-		// 최초 진입 시: 오늘 기준 최근 1년
+		// 최초 진입 시: 당월 전체 (예: 7월이면 7/1 ~ 7/31)
 		const today = new Date();
-		const end = formatDateYmd(today.toISOString());
-		const oneYearAgo = new Date(today);
-		oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-		const start = formatDateYmd(oneYearAgo.toISOString());
-		setStartDate(start);
-		setEndDate(end);
+		const y = today.getFullYear();
+		const m = today.getMonth() + 1;
+		const lastDay = new Date(y, m, 0).getDate();
+		const pad = (n: number) => String(n).padStart(2, '0');
+		setStartDate(`${y}-${pad(m)}-01`);
+		setEndDate(`${y}-${pad(m)}-${pad(lastDay)}`);
 
 		fetchUserAndPermission();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,6 +267,18 @@ export default function CaseManagement() {
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const endIndex = startIndex + itemsPerPage;
 	const currentCases = caseList.slice(startIndex, endIndex);
+
+	const pageKeys = currentCases.map((c) => getCaseKey(c));
+	const allPageChecked =
+		pageKeys.length > 0 && pageKeys.every((k) => checkedKeys.includes(k));
+
+	const toggleAllPageChecked = () => {
+		if (allPageChecked) {
+			setCheckedKeys((prev) => prev.filter((k) => !pageKeys.includes(k)));
+		} else {
+			setCheckedKeys((prev) => Array.from(new Set([...prev, ...pageKeys])));
+		}
+	};
 
 	const handlePageChange = (page: number) => {
 		setCurrentPage(page);
@@ -426,10 +522,11 @@ export default function CaseManagement() {
 		}
 	};
 
-	// 출력
-	const handlePrint = async () => {
-		if (!selectedCase) {
-			alert('출력할 사례를 선택해주세요.');
+	// 출력 (체크한 항목)
+	const handlePrint = () => {
+		const targets = caseList.filter((c) => checkedKeys.includes(getCaseKey(c)));
+		if (targets.length === 0) {
+			alert('출력할 사례를 체크해주세요.');
 			return;
 		}
 
@@ -438,6 +535,8 @@ export default function CaseManagement() {
 			alert('팝업이 차단되었습니다. 팝업 차단을 해제해주세요.');
 			return;
 		}
+
+		const pagesHtml = targets.map((c) => buildCasePrintPage(c)).join('\n');
 
 		const printHTML = `
 <!DOCTYPE html>
@@ -468,6 +567,14 @@ export default function CaseManagement() {
 			max-width: 210mm;
 			margin: 0 auto;
 			padding: 0;
+		}
+		.page-break {
+			page-break-after: always;
+			break-after: page;
+		}
+		.page-break:last-child {
+			page-break-after: auto;
+			break-after: auto;
 		}
 		.info-table {
 			width: 100%;
@@ -518,60 +625,7 @@ export default function CaseManagement() {
 	</style>
 </head>
 <body>
-	<div class="print-container">
-		<h1 style="text-align: center; font-size: 18pt; margin-bottom: 20px;">사례관리</h1>
-		
-		<table class="info-table">
-			<tr>
-				<td class="label">회의일자</td>
-				<td class="value">${formData.meetingDate || '-'}</td>
-				<td class="label">회의시간</td>
-				<td class="value">${formData.meetingStartTime || '-'} ~ ${formData.meetingEndTime || '-'}</td>
-			</tr>
-			<tr>
-				<td class="label">회의장소</td>
-				<td class="value" colspan="3">${formData.meetingLocation || '-'}</td>
-			</tr>
-			<tr>
-				<td class="label">수급자</td>
-				<td class="value">${formData.beneficiary || '-'}</td>
-				<td class="label">수급자등급</td>
-				<td class="value">${formData.beneficiaryGrade || '-'}</td>
-			</tr>
-			<tr>
-				<td class="label">수급자나이</td>
-				<td class="value" colspan="3">${formData.beneficiaryAge || '-'}</td>
-			</tr>
-		</table>
-
-		<div class="content-section">
-			<div class="section-title">선정사유</div>
-			<div class="section-content">${formData.selectionReason || ''}</div>
-		</div>
-
-		<div class="content-section">
-			<div class="section-title">회의내용</div>
-			<div class="section-content">${formData.meetingContent || ''}</div>
-		</div>
-
-		<div class="content-section">
-			<div class="section-title">회의결과</div>
-			<div class="section-content">${formData.meetingResult || ''}</div>
-		</div>
-
-		<table class="info-table">
-			<tr>
-				<td class="label">회의참석자</td>
-				<td class="value" colspan="3">${formData.meetingAttendees || '-'}</td>
-			</tr>
-			<tr>
-				<td class="label">반영일자</td>
-				<td class="value">${formData.reflectionDate || '-'}</td>
-				<td class="label">반영내용</td>
-				<td class="value">${formData.reflectionContent || '-'}</td>
-			</tr>
-		</table>
-	</div>
+	${pagesHtml}
 	<script>
 		window.onload = function() {
 			window.print();
@@ -585,6 +639,12 @@ export default function CaseManagement() {
 		printWindow.document.close();
 	};
 
+	const toggleChecked = (key: string) => {
+		setCheckedKeys((prev) =>
+			prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+		);
+	};
+
 	// 닫기
 	const handleClose = () => {
 		// TODO: 모달이나 페이지 닫기 로직 구현
@@ -595,32 +655,9 @@ export default function CaseManagement() {
 		<div className="min-h-screen text-black bg-white">
 			{/* 상단 헤더 */}
 			<div className="p-4 border-b border-blue-200 bg-blue-50">
-				<div className="flex items-center justify-between">
-					<h1 className="text-2xl font-bold text-blue-900">사례관리</h1>
-					<div className="flex items-center gap-4">
-						<div className="flex items-center gap-2">
-							<button
-								onClick={handleAdd}
-								disabled={!hasProgramAccess || isEditMode}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								생성
-							</button>
-							<button
-								onClick={handleModify}
-								disabled={!hasProgramAccess || isEditMode || !selectedCase}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								수정
-							</button>
-							<button
-								onClick={handleDelete}
-								disabled={!hasProgramAccess || isEditMode || !selectedCase}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								삭제
-							</button>
-						</div>
+				<div className="flex items-center justify-between gap-4">
+					<h1 className="text-2xl font-bold text-blue-900 shrink-0">사례관리</h1>
+					<div className="flex flex-wrap items-center justify-end gap-4">
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900">기간</label>
 							<input
@@ -639,17 +676,26 @@ export default function CaseManagement() {
 						</div>
 						<div className="flex items-center gap-2">
 							<button
-								onClick={handleSearch}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+								onClick={handleAdd}
+								disabled={!hasProgramAccess || isEditMode}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								검색
+								추가
 							</button>
-							{/* <button
-								onClick={handleClose}
-								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+							<button
+								onClick={handleModify}
+								disabled={!hasProgramAccess || isEditMode || !selectedCase}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								닫기
-							</button> */}
+								수정
+							</button>
+							<button
+								onClick={handleDelete}
+								disabled={!hasProgramAccess || isEditMode || !selectedCase}
+								className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								삭제
+							</button>
 						</div>
 					</div>
 				</div>
@@ -659,8 +705,33 @@ export default function CaseManagement() {
 			<div className="flex h-[calc(100vh-120px)]">
 				{/* 좌측 패널: 사례 목록 */}
 				<div className="flex flex-col w-1/3 bg-white border-r border-blue-200">
-					<div className="p-2 border-b border-blue-200 bg-blue-50">
-						<div className="grid grid-cols-2 gap-2 text-xs font-semibold text-blue-900">
+					<div className="flex items-center justify-between gap-2 p-2 border-b border-blue-200 bg-blue-50">
+						<div className="text-sm font-semibold text-blue-900">
+							사례 목록
+							{checkedKeys.length > 0 ? (
+								<span className="ml-1 font-normal text-blue-700">({checkedKeys.length}건 선택)</span>
+							) : null}
+						</div>
+						<button
+							type="button"
+							onClick={handlePrint}
+							className="px-3 py-1 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
+						>
+							출력
+						</button>
+					</div>
+					<div className="p-2 border-b border-blue-200 bg-blue-50/70">
+						<div className="grid grid-cols-[28px_1fr_1fr] gap-2 text-xs font-semibold text-blue-900 items-center">
+							<div className="flex justify-center">
+								<input
+									type="checkbox"
+									checked={allPageChecked}
+									onChange={toggleAllPageChecked}
+									disabled={currentCases.length === 0}
+									className="h-4 w-4 accent-blue-600"
+									title="현재 페이지 전체 선택"
+								/>
+							</div>
 							<div className="text-center">일자</div>
 							<div className="text-center">선정사유</div>
 						</div>
@@ -671,20 +742,37 @@ export default function CaseManagement() {
 						) : caseList.length === 0 ? (
 							<div className="p-4 text-center text-blue-900/60">사례 데이터가 없습니다</div>
 						) : (
-							currentCases.map((caseItem, index) => (
-								<div
-									key={index}
-									onClick={() => handleSelectCase(caseItem)}
-									className={`p-2 border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
-										selectedCase?.MDT === caseItem.MDT ? 'bg-blue-100' : ''
-									}`}
-								>
-									<div className="grid grid-cols-2 gap-2 text-xs">
-										<div className="text-blue-900">{formatDateYmd(caseItem.MDT || '') || '-'}</div>
-										<div className="text-blue-900 truncate">{caseItem.MDOC || '-'}</div>
+							currentCases.map((caseItem, index) => {
+								const key = getCaseKey(caseItem);
+								const checked = checkedKeys.includes(key);
+								return (
+									<div
+										key={`${key}-${index}`}
+										onClick={() => handleSelectCase(caseItem)}
+										className={`p-2 border-b border-blue-50 hover:bg-blue-50 cursor-pointer ${
+											selectedCase?.MDT === caseItem.MDT ? 'bg-blue-100' : ''
+										}`}
+									>
+										<div className="grid grid-cols-[28px_1fr_1fr] gap-2 text-xs items-center">
+											<div
+												className="flex justify-center"
+												onClick={(e) => e.stopPropagation()}
+											>
+												<input
+													type="checkbox"
+													checked={checked}
+													onChange={() => toggleChecked(key)}
+													className="h-4 w-4 accent-blue-600"
+												/>
+											</div>
+											<div className="text-blue-900">
+												{formatDateYmd(caseItem.MDT || '') || '-'}
+											</div>
+											<div className="text-blue-900 truncate">{caseItem.MDOC || '-'}</div>
+										</div>
 									</div>
-								</div>
-							))
+								);
+							})
 						)}
 					</div>
 					{/* 페이지네이션 */}
@@ -990,19 +1078,6 @@ export default function CaseManagement() {
 									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
 								>
 									삭제
-								</button>
-								{/* <button
-									onClick={handleRegisterReflection}
-									disabled={!hasProgramAccess}
-									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-								>
-									반영내용등록
-								</button> */}
-								<button
-									onClick={handlePrint}
-									className="px-4 py-1.5 text-sm border border-blue-400 rounded bg-blue-200 hover:bg-blue-300 text-blue-900 font-medium"
-								>
-									출력
 								</button>
 							</>
 						) : (
