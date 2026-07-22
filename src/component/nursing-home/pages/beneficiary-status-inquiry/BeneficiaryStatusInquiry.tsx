@@ -461,12 +461,10 @@ export default function BeneficiaryStatusInquiry() {
 			{/* 메인 컨텐츠 영역 */}
 			<div className="flex h-[calc(100vh-120px)]">
 				{/* 좌측 패널: 수급자 목록 */}
-				<div className="flex flex-col w-1/4 p-4 bg-white border-r border-blue-200">
-					{/* 필터 헤더 */}
+				{/* <div className="flex flex-col w-1/4 p-4 bg-white border-r border-blue-200">
 					<div className="mb-3">
 						<h3 className="mb-2 text-sm font-semibold text-blue-900">수급자 목록</h3>
 						<div className="space-y-2">
-							{/* 이름 검색 */}
 							<div className="space-y-1">
 								<div className="text-xs text-blue-900/80">이름 검색</div>
 								<input 
@@ -476,7 +474,6 @@ export default function BeneficiaryStatusInquiry() {
 									onChange={(e) => setSearchTerm(e.target.value)}
 								/>
 							</div>
-							{/* 현황 필터 */}
 							<div className="space-y-1">
 								<div className="text-xs text-blue-900/80">현황</div>
 								<select
@@ -489,7 +486,6 @@ export default function BeneficiaryStatusInquiry() {
 									<option value="퇴소">퇴소</option>
 								</select>
 							</div>
-							{/* 등급 필터 */}
 							<div className="space-y-1">
 								<div className="text-xs text-blue-900/80">등급</div>
 								<select
@@ -506,7 +502,6 @@ export default function BeneficiaryStatusInquiry() {
 									<option value="9">인지지원</option>
 								</select>
 							</div>
-							{/* 층수 필터 */}
 							<div className="space-y-1">
 								<div className="text-xs text-blue-900/80">층수</div>
 								<select
@@ -526,7 +521,6 @@ export default function BeneficiaryStatusInquiry() {
 						</div>
 					</div>
 
-					{/* 수급자 목록 테이블 */}
 					<div className="flex flex-col overflow-hidden bg-white border border-blue-300 rounded-lg">
 						<div className="overflow-y-auto">
 							<table className="w-full text-xs">
@@ -577,7 +571,6 @@ export default function BeneficiaryStatusInquiry() {
 								</tbody>
 							</table>
 						</div>
-						{/* 페이지네이션 */}
 						{totalPages > 1 && (
 							<div className="p-2 bg-white border-t border-blue-200">
 								<div className="flex items-center justify-center gap-1">
@@ -631,7 +624,7 @@ export default function BeneficiaryStatusInquiry() {
 							</div>
 						)}
 					</div>
-				</div>
+				</div> */}
 
 				{/* 우측 패널: 요약 테이블 및 메인 데이터 테이블 */}
 				<div className="flex-1 p-4 overflow-auto">
