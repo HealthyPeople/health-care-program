@@ -148,6 +148,64 @@ function toDateStr(v) {
 	return `${y}-${m}-${day}`;
 }
 
+function daysBetween(start, end) {
+	const a = new Date(`${start}T12:00:00`);
+	const b = new Date(`${end}T12:00:00`);
+	return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+function addDaysISO(dateStr, days) {
+	const d = new Date(`${dateStr}T12:00:00`);
+	d.setDate(d.getDate() + days);
+	return toDateStr(d);
+}
+
+function addMonthsISO(dateStr, months) {
+	const [y, m, day] = dateStr.split('-').map((n) => parseInt(n, 10));
+	const target = new Date(y, m - 1 + months, 1, 12);
+	const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+	target.setDate(Math.min(day, lastDay));
+	return toDateStr(target);
+}
+
+function addYearsISO(dateStr, years) {
+	return addMonthsISO(dateStr, years * 12);
+}
+
+/**
+ * 반복 일정 발생일 목록 생성
+ * @returns {{ start: string, end: string }[]}
+ */
+function buildRepeatOccurrences(schDate, schEndDate, repeatType, repeatUntil) {
+	const start0 = schDate;
+	const end0 = schEndDate || schDate;
+	const duration = Math.max(0, daysBetween(start0, end0));
+	const type = String(repeatType || 'none').trim().toLowerCase();
+	const until = toDateStr(repeatUntil) || start0;
+
+	const list = [{ start: start0, end: end0 }];
+	if (!type || type === 'none' || type === 'once') return list;
+	if (until < start0) return list;
+
+	const maxCount =
+		type === 'weekly' ? 53 : type === 'monthly' ? 36 : type === 'yearly' ? 10 : 1;
+
+	let curStart = start0;
+	for (let i = 0; i < maxCount - 1; i++) {
+		let nextStart = '';
+		if (type === 'weekly') nextStart = addDaysISO(curStart, 7);
+		else if (type === 'monthly') nextStart = addMonthsISO(curStart, 1);
+		else if (type === 'yearly') nextStart = addYearsISO(curStart, 1);
+		else break;
+
+		if (!nextStart || nextStart > until) break;
+		const nextEnd = addDaysISO(nextStart, duration);
+		list.push({ start: nextStart, end: nextEnd });
+		curStart = nextStart;
+	}
+	return list;
+}
+
 function mapRow(r) {
 	const start = toDateStr(r.SCH_DATE ?? r.SCH_START_DATE);
 	const end = toDateStr(r.SCH_END_DATE) || start;
@@ -299,6 +357,14 @@ export async function POST(req) {
 		const title = truncStr(body?.TITLE ?? body?.title ?? '', 200);
 		const content = body?.CONTENT ?? body?.content ?? '';
 		const schType = truncStr(body?.SCH_TYPE ?? body?.schType ?? body?.type ?? '', 50);
+		const repeatType = String(
+			body?.REPEAT_TYPE ?? body?.repeatType ?? body?.repeat ?? 'none'
+		)
+			.trim()
+			.toLowerCase();
+		const repeatUntil = toDateStr(
+			body?.REPEAT_UNTIL ?? body?.repeatUntil ?? body?.until ?? ''
+		);
 		const userName = await resolveUserName(req, pool, sessionAncd);
 
 		if (!schDate) {
@@ -321,18 +387,43 @@ export async function POST(req) {
 			});
 		}
 
-		const request = pool.request();
-		request.input('ANCD', sessionAncd);
-		request.input('SCH_DATE', schDate);
-		request.input('SCH_END_DATE', schEndDate);
-		request.input('TITLE', title);
-		request.input('CONTENT', content);
-		request.input('SCH_TYPE', schType || null);
-		request.input('USER_ID', userName);
+		const validRepeat = ['none', 'once', 'weekly', 'monthly', 'yearly'].includes(repeatType);
+		if (!validRepeat) {
+			return new Response(
+				JSON.stringify({ success: false, error: '반복 유형이 올바르지 않습니다' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+		if (
+			!Number.isFinite(asSeq) &&
+			(repeatType === 'weekly' || repeatType === 'monthly' || repeatType === 'yearly')
+		) {
+			if (!repeatUntil) {
+				return new Response(
+					JSON.stringify({ success: false, error: '반복 종료일(REPEAT_UNTIL)은 필수입니다' }),
+					{ status: 400, headers: { 'Content-Type': 'application/json' } }
+				);
+			}
+			if (repeatUntil < schDate) {
+				return new Response(
+					JSON.stringify({ success: false, error: '반복 종료일은 시작일보다 빠를 수 없습니다' }),
+					{ status: 400, headers: { 'Content-Type': 'application/json' } }
+				);
+			}
+		}
 
 		let asSeqOut = null;
+		let createdCount = 0;
 
 		if (Number.isFinite(asSeq)) {
+			const request = pool.request();
+			request.input('ANCD', sessionAncd);
+			request.input('SCH_DATE', schDate);
+			request.input('SCH_END_DATE', schEndDate);
+			request.input('TITLE', title);
+			request.input('CONTENT', content);
+			request.input('SCH_TYPE', schType || null);
+			request.input('USER_ID', userName);
 			request.input('AS_SEQ', asSeq);
 			const upd = await request.query(`
         UPDATE ${TABLE}
@@ -355,23 +446,43 @@ export async function POST(req) {
 				});
 			}
 			asSeqOut = asSeq;
+			createdCount = 1;
 		} else {
-			const ins = await request.query(`
-        INSERT INTO ${TABLE} (
-          [ANCD], [SCH_DATE], [SCH_END_DATE], [TITLE], [CONTENT], [SCH_TYPE], [REG_ID], [REG_DATE]
-        )
-        OUTPUT INSERTED.[AS_SEQ]
-        VALUES (
-          @ANCD, @SCH_DATE, @SCH_END_DATE, @TITLE, @CONTENT, @SCH_TYPE, @USER_ID, GETDATE()
-        );
-      `);
-			asSeqOut = ins.recordset?.[0]?.AS_SEQ ?? null;
+			const occurrences = buildRepeatOccurrences(schDate, schEndDate, repeatType, repeatUntil);
+			const insertedSeqs = [];
+			for (const occ of occurrences) {
+				const ins = await pool
+					.request()
+					.input('ANCD', sessionAncd)
+					.input('SCH_DATE', occ.start)
+					.input('SCH_END_DATE', occ.end)
+					.input('TITLE', title)
+					.input('CONTENT', content)
+					.input('SCH_TYPE', schType || null)
+					.input('USER_ID', userName)
+					.query(`
+            INSERT INTO ${TABLE} (
+              [ANCD], [SCH_DATE], [SCH_END_DATE], [TITLE], [CONTENT], [SCH_TYPE], [REG_ID], [REG_DATE]
+            )
+            OUTPUT INSERTED.[AS_SEQ]
+            VALUES (
+              @ANCD, @SCH_DATE, @SCH_END_DATE, @TITLE, @CONTENT, @SCH_TYPE, @USER_ID, GETDATE()
+            );
+          `);
+				const seq = ins.recordset?.[0]?.AS_SEQ ?? null;
+				if (seq != null) insertedSeqs.push(seq);
+			}
+			asSeqOut = insertedSeqs[0] ?? null;
+			createdCount = insertedSeqs.length;
 		}
 
-		return new Response(JSON.stringify({ success: true, asSeq: asSeqOut }), {
-			status: 200,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return new Response(
+			JSON.stringify({ success: true, asSeq: asSeqOut, count: createdCount }),
+			{
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
 	} catch (err) {
 		console.error('ANNUAL_SCHEDULE 저장 오류:', err);
 		return new Response(JSON.stringify({ success: false, error: err.message, details: err.toString() }), {

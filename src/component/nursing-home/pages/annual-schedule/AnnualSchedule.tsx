@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import {
+	buildAnnualScheduleCalendarPrintHtml,
+	buildAnnualScheduleListPrintHtml,
+	openPrintPreviewWindow,
+} from "./annualSchedulePrint";
 
 interface ScheduleItem {
 	id: number;
@@ -12,6 +17,25 @@ interface ScheduleItem {
 }
 
 const SCHEDULE_TYPES = ["행사", "휴무", "교육", "기타"];
+
+const REPEAT_OPTIONS = [
+	{ value: "none", label: "반복 없음" },
+	{ value: "weekly", label: "매주" },
+	{ value: "monthly", label: "매월" },
+	{ value: "yearly", label: "매년" },
+] as const;
+
+type RepeatType = (typeof REPEAT_OPTIONS)[number]["value"];
+
+const emptyForm = () => ({
+	date: "",
+	endDate: "",
+	title: "",
+	content: "",
+	type: "",
+	repeatType: "none" as RepeatType,
+	repeatUntil: "",
+});
 
 function formatDate(date: Date): string {
 	const year = date.getFullYear();
@@ -132,13 +156,13 @@ export default function AnnualSchedule() {
 	const [selectedSchedule, setSelectedSchedule] = useState<ScheduleItem | null>(null);
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [isEditMode, setIsEditMode] = useState(false);
-	const [formData, setFormData] = useState({
-		date: "",
-		endDate: "",
-		title: "",
-		content: "",
-		type: "",
-	});
+	const [facilityName, setFacilityName] = useState("");
+	const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+	const [printMode, setPrintMode] = useState<"calendar" | "list">("calendar");
+	const [printYear, setPrintYear] = useState(new Date().getFullYear());
+	const [printMonths, setPrintMonths] = useState<number[]>([new Date().getMonth() + 1]);
+	const [printing, setPrinting] = useState(false);
+	const [formData, setFormData] = useState(emptyForm);
 
 	const filteredSchedules = useMemo(
 		() =>
@@ -227,6 +251,16 @@ export default function AnnualSchedule() {
 			alert("종료일은 시작일보다 빠를 수 없습니다.");
 			return;
 		}
+		if (!isEditMode && formData.repeatType !== "none") {
+			if (!formData.repeatUntil) {
+				alert("반복 종료일을 입력해주세요.");
+				return;
+			}
+			if (formData.repeatUntil < formData.date) {
+				alert("반복 종료일은 시작일보다 빠를 수 없습니다.");
+				return;
+			}
+		}
 
 		setSaving(true);
 		try {
@@ -239,6 +273,9 @@ export default function AnnualSchedule() {
 			};
 			if (isEditMode && selectedSchedule?.id) {
 				payload.AS_SEQ = selectedSchedule.id;
+			} else if (formData.repeatType !== "none") {
+				payload.REPEAT_TYPE = formData.repeatType;
+				payload.REPEAT_UNTIL = formData.repeatUntil;
 			}
 
 			const response = await fetch("/api/annual-schedule", {
@@ -251,7 +288,14 @@ export default function AnnualSchedule() {
 			if (!response.ok || !result.success) {
 				throw new Error(result.error || "저장에 실패했습니다.");
 			}
-			alert(isEditMode ? "일정이 수정되었습니다." : "일정이 등록되었습니다.");
+			const count = Number(result.count) || 1;
+			if (isEditMode) {
+				alert("일정이 수정되었습니다.");
+			} else if (count > 1) {
+				alert(`반복 일정 ${count}건이 등록되었습니다.`);
+			} else {
+				alert("일정이 등록되었습니다.");
+			}
 			handleCloseModal();
 			await fetchSchedules();
 		} catch (err) {
@@ -292,11 +336,10 @@ export default function AnnualSchedule() {
 		setSelectedSchedule(null);
 		const d = formatDate(new Date(selectedYear, selectedMonth - 1, 1));
 		setFormData({
+			...emptyForm(),
 			date: d,
 			endDate: d,
-			title: "",
-			content: "",
-			type: "",
+			repeatUntil: `${selectedYear}-12-31`,
 		});
 		setIsModalOpen(true);
 	};
@@ -305,6 +348,7 @@ export default function AnnualSchedule() {
 		setIsEditMode(true);
 		setSelectedSchedule(schedule);
 		setFormData({
+			...emptyForm(),
 			date: schedule.date,
 			endDate: schedule.endDate || schedule.date,
 			title: schedule.title,
@@ -317,7 +361,7 @@ export default function AnnualSchedule() {
 	const handleCloseModal = () => {
 		setIsModalOpen(false);
 		setIsEditMode(false);
-		setFormData({ date: "", endDate: "", title: "", content: "", type: "" });
+		setFormData(emptyForm());
 	};
 
 	const handleSelectSchedule = (schedule: ScheduleItem) => {
@@ -329,14 +373,108 @@ export default function AnnualSchedule() {
 		setSelectedSchedule(null);
 		const d = formatDate(date);
 		setFormData({
+			...emptyForm(),
 			date: d,
 			endDate: d,
-			title: "",
-			content: "",
-			type: "",
+			repeatUntil: `${selectedYear}-12-31`,
 		});
 		setIsModalOpen(true);
 	};
+
+	const handleOpenPrintModal = (mode: "calendar" | "list") => {
+		setPrintMode(mode);
+		setPrintYear(selectedYear);
+		setPrintMonths([selectedMonth]);
+		setIsPrintModalOpen(true);
+	};
+
+	const handleClosePrintModal = () => {
+		if (printing) return;
+		setIsPrintModalOpen(false);
+	};
+
+	const togglePrintMonth = (month: number) => {
+		setPrintMonths((prev) => {
+			if (prev.includes(month)) {
+				return prev.filter((m) => m !== month).sort((a, b) => a - b);
+			}
+			return [...prev, month].sort((a, b) => a - b);
+		});
+	};
+
+	const handleToggleAllPrintMonths = () => {
+		setPrintMonths((prev) =>
+			prev.length === 12 ? [] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+		);
+	};
+
+	const handleConfirmPrint = async () => {
+		const selected = [...printMonths].sort((a, b) => a - b);
+		if (selected.length === 0) {
+			alert("출력할 월을 하나 이상 선택해주세요.");
+			return;
+		}
+		const months = selected.map((month) => ({ year: printYear, month }));
+		const first = months[0];
+		const last = months[months.length - 1];
+		const startDate = `${first.year}-${String(first.month).padStart(2, "0")}-01`;
+		const lastDay = new Date(last.year, last.month, 0).getDate();
+		const endDate = `${last.year}-${String(last.month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+		setPrinting(true);
+		try {
+			const response = await fetch(
+				`/api/annual-schedule?startDate=${startDate}&endDate=${endDate}`,
+				{ credentials: "include" }
+			);
+			const result = await response.json();
+			if (!response.ok || !result.success) {
+				throw new Error(result.error || "일정 조회에 실패했습니다.");
+			}
+			const schedules = (result.data || []).map(
+				(r: {
+					SCH_DATE?: string;
+					SCH_START_DATE?: string;
+					SCH_END_DATE?: string;
+					TITLE: string;
+					CONTENT?: string;
+					SCH_TYPE?: string;
+				}) => {
+					const start = String(r.SCH_DATE ?? r.SCH_START_DATE ?? "").slice(0, 10);
+					const end = String(r.SCH_END_DATE ?? start).slice(0, 10) || start;
+					return {
+						date: start,
+						endDate: end,
+						title: r.TITLE || "",
+						content: r.CONTENT || "",
+						type: r.SCH_TYPE || "",
+					};
+				}
+			);
+
+			const printData = {
+				facilityName,
+				months,
+				schedules,
+			};
+			const html =
+				printMode === "calendar"
+					? buildAnnualScheduleCalendarPrintHtml(printData)
+					: buildAnnualScheduleListPrintHtml(printData);
+			openPrintPreviewWindow(html);
+			setIsPrintModalOpen(false);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : "출력 중 오류가 발생했습니다.");
+		} finally {
+			setPrinting(false);
+		}
+	};
+
+	const printRangeLabel = useMemo(() => {
+		if (printMonths.length === 0) return "선택된 월 없음";
+		const sorted = [...printMonths].sort((a, b) => a - b);
+		return `${printYear}년 ${sorted.map((m) => `${m}월`).join(", ")}`;
+	}, [printYear, printMonths]);
 
 	const handleMonthChange = (delta: number) => {
 		let newMonth = selectedMonth + delta;
@@ -378,6 +516,27 @@ export default function AnnualSchedule() {
 		fetchSchedules();
 		setSelectedSchedule(null);
 	}, [selectedYear]);
+
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const res = await fetch("/api/auth/user-info", {
+					credentials: "include",
+					cache: "no-store",
+				});
+				const json = await res.json();
+				if (!cancelled && json?.success && json?.data?.annm) {
+					setFacilityName(String(json.data.annm));
+				}
+			} catch {
+				/* ignore */
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	return (
 		<div className="flex flex-col min-h-screen bg-white text-black">
@@ -421,12 +580,25 @@ export default function AnnualSchedule() {
 					<div className="flex gap-2">
 						<button
 							type="button"
+							onClick={() => handleOpenPrintModal("calendar")}
+							className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+						>
+							달력형 출력
+						</button>
+						<button
+							type="button"
+							onClick={() => handleOpenPrintModal("list")}
+							className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+						>
+							목록형 출력
+						</button>
+						<button
+							type="button"
 							onClick={handleOpenModal}
 							className="rounded border border-blue-500 bg-blue-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-600"
 						>
 							일정 등록
 						</button>
-
 					</div>
 				</div>
 			</div>
@@ -649,6 +821,104 @@ export default function AnnualSchedule() {
 				</div>
 			</div>
 
+			{isPrintModalOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+					<div className="w-full max-w-md rounded-lg border border-blue-300 bg-white shadow-lg">
+						<div className="border-b border-blue-200 bg-blue-100 px-5 py-3 flex items-center justify-between">
+							<h2 className="text-base font-semibold text-blue-900">
+								{printMode === "calendar" ? "달력형 출력" : "목록형 출력"}
+							</h2>
+							<button
+								type="button"
+								onClick={handleClosePrintModal}
+								disabled={printing}
+								className="rounded border border-blue-400 bg-blue-200 px-3 py-1 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
+							>
+								닫기
+							</button>
+						</div>
+						<div className="p-5 space-y-4">
+							<div className="flex items-center gap-2">
+								<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+									년도
+								</label>
+								<select
+									value={printYear}
+									onChange={(e) => setPrintYear(parseInt(e.target.value, 10))}
+									className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+								>
+									{Array.from({ length: 21 }, (_, i) => new Date().getFullYear() - 10 + i).map(
+										(y) => (
+											<option key={y} value={y}>
+												{y}년
+											</option>
+										)
+									)}
+								</select>
+							</div>
+							<div>
+								<div className="mb-2 flex items-center justify-between gap-2">
+									<label className="px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+										월 선택
+									</label>
+									<button
+										type="button"
+										onClick={handleToggleAllPrintMonths}
+										className="rounded border border-blue-400 bg-blue-200 px-2 py-1 text-xs font-medium text-blue-900 hover:bg-blue-300"
+									>
+										{printMonths.length === 12 ? "전체 해제" : "전체 선택"}
+									</button>
+								</div>
+								<div className="grid grid-cols-4 gap-2 rounded border border-blue-200 bg-white p-3">
+									{Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+										const checked = printMonths.includes(m);
+										return (
+											<label
+												key={m}
+												className={`flex cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-sm ${
+													checked
+														? "border-blue-400 bg-blue-100 text-blue-900"
+														: "border-blue-200 bg-white text-blue-900/80"
+												}`}
+											>
+												<input
+													type="checkbox"
+													checked={checked}
+													onChange={() => togglePrintMonth(m)}
+													className="h-4 w-4 accent-blue-600"
+												/>
+												<span>{m}월</span>
+											</label>
+										);
+									})}
+								</div>
+							</div>
+							<div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+								출력 기간: <span className="font-semibold">{printRangeLabel}</span>
+							</div>
+						</div>
+						<div className="border-t border-blue-200 bg-blue-50 px-5 py-3 flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={handleClosePrintModal}
+								disabled={printing}
+								className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
+							>
+								취소
+							</button>
+							<button
+								type="button"
+								onClick={handleConfirmPrint}
+								disabled={printing}
+								className="rounded border border-blue-500 bg-blue-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+							>
+								{printing ? "준비 중..." : "출력"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{isModalOpen && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
 					<div className="w-full max-w-2xl rounded-lg border border-blue-300 bg-white shadow-lg">
@@ -701,6 +971,52 @@ export default function AnnualSchedule() {
 							<p className="text-xs text-blue-900/60 -mt-2 pl-28">
 								하루 일정이면 시작일·종료일을 같게 두세요.
 							</p>
+							{!isEditMode && (
+								<>
+									<div className="flex items-center gap-2">
+										<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+											반복
+										</label>
+										<select
+											value={formData.repeatType}
+											onChange={(e) =>
+												setFormData({
+													...formData,
+													repeatType: e.target.value as RepeatType,
+												})
+											}
+											className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+										>
+											{REPEAT_OPTIONS.map((opt) => (
+												<option key={opt.value} value={opt.value}>
+													{opt.label}
+												</option>
+											))}
+										</select>
+									</div>
+									{formData.repeatType !== "none" && (
+										<div className="flex items-center gap-2">
+											<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
+												반복 종료
+											</label>
+											<input
+												type="date"
+												value={formData.repeatUntil}
+												min={formData.date || undefined}
+												onChange={(e) =>
+													setFormData({ ...formData, repeatUntil: e.target.value })
+												}
+												className="flex-1 rounded border border-blue-300 bg-white px-2 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+											/>
+										</div>
+									)}
+									{formData.repeatType !== "none" && (
+										<p className="text-xs text-blue-900/60 -mt-2 pl-28">
+											반복 종료일까지 동일 일정이 각각 등록됩니다.
+										</p>
+									)}
+								</>
+							)}
 							<div className="flex items-center gap-2">
 								<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
 									제목
