@@ -17,6 +17,7 @@ interface ScheduleItem {
 }
 
 const SCHEDULE_TYPES = ["행사", "휴무", "교육", "기타"];
+const LIST_PAGE_SIZE = 5;
 
 const REPEAT_OPTIONS = [
 	{ value: "none", label: "반복 없음" },
@@ -162,6 +163,7 @@ export default function AnnualSchedule() {
 	const [printYear, setPrintYear] = useState(new Date().getFullYear());
 	const [printMonths, setPrintMonths] = useState<number[]>([new Date().getMonth() + 1]);
 	const [printing, setPrinting] = useState(false);
+	const [listPage, setListPage] = useState(1);
 	const [formData, setFormData] = useState(emptyForm);
 
 	const filteredSchedules = useMemo(
@@ -171,6 +173,25 @@ export default function AnnualSchedule() {
 			),
 		[scheduleList, selectedYear, selectedMonth]
 	);
+
+	const listTotalPages = Math.max(1, Math.ceil(filteredSchedules.length / LIST_PAGE_SIZE));
+	const showListPagination = filteredSchedules.length > LIST_PAGE_SIZE;
+
+	const pagedSchedules = useMemo(() => {
+		const page = Math.min(Math.max(1, listPage), listTotalPages);
+		const start = (page - 1) * LIST_PAGE_SIZE;
+		return filteredSchedules.slice(start, start + LIST_PAGE_SIZE);
+	}, [filteredSchedules, listPage, listTotalPages]);
+
+	useEffect(() => {
+		setListPage(1);
+	}, [selectedYear, selectedMonth, scheduleList]);
+
+	useEffect(() => {
+		if (listPage > listTotalPages) {
+			setListPage(listTotalPages);
+		}
+	}, [listPage, listTotalPages]);
 
 	const monthDates = useMemo(() => {
 		const dates: Date[] = [];
@@ -760,6 +781,40 @@ export default function AnnualSchedule() {
 					<div className="border-b border-blue-200 bg-blue-100 px-3 py-2 font-semibold text-blue-900 shrink-0">
 						일정 목록 ({filteredSchedules.length}개)
 					</div>
+					{showListPagination && (
+						<div className="border-b border-blue-200 bg-blue-50 px-2 py-2 flex items-center justify-center gap-1 shrink-0">
+							<button
+								type="button"
+								onClick={() => setListPage((p) => Math.max(1, p - 1))}
+								disabled={listPage <= 1}
+								className="rounded border border-blue-400 bg-blue-200 px-2 py-1 text-xs font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-40"
+							>
+								◀
+							</button>
+							{Array.from({ length: listTotalPages }, (_, i) => i + 1).map((pageNum) => (
+								<button
+									key={pageNum}
+									type="button"
+									onClick={() => setListPage(pageNum)}
+									className={`min-w-[1.75rem] rounded border px-1.5 py-1 text-xs font-medium ${
+										listPage === pageNum
+											? "border-blue-500 bg-blue-500 text-white"
+											: "border-blue-400 bg-blue-200 text-blue-900 hover:bg-blue-300"
+									}`}
+								>
+									{pageNum}
+								</button>
+							))}
+							<button
+								type="button"
+								onClick={() => setListPage((p) => Math.min(listTotalPages, p + 1))}
+								disabled={listPage >= listTotalPages}
+								className="rounded border border-blue-400 bg-blue-200 px-2 py-1 text-xs font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-40"
+							>
+								▶
+							</button>
+						</div>
+					)}
 					<div className="flex-1 overflow-auto min-h-0">
 						{loading ? (
 							<div className="px-3 py-8 text-center text-blue-900/60">로딩 중...</div>
@@ -767,7 +822,7 @@ export default function AnnualSchedule() {
 							<div className="px-3 py-8 text-center text-blue-900/60">일정이 없습니다</div>
 						) : (
 							<div className="p-2 space-y-2">
-								{filteredSchedules.map((schedule) => (
+								{pagedSchedules.map((schedule) => (
 									<div
 										key={schedule.id}
 										onClick={() => handleSelectSchedule(schedule)}
