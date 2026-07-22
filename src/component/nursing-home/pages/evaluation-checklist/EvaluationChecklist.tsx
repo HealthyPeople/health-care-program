@@ -114,6 +114,7 @@ export default function EvaluationChecklist() {
 
 	const [docs, setDocs] = useState<ChecklistDoc[]>(demoDocs);
 	const [selectedDocId, setSelectedDocId] = useState<string>(demoDocs[0]?.id || "");
+	const [isNoticeOpen, setIsNoticeOpen] = useState<boolean>(true);
 
 	const filteredDocs = useMemo(() => {
 		const q = query.trim();
@@ -636,6 +637,39 @@ export default function EvaluationChecklist() {
 					</div>
 				</div>
 			</div>
+
+			{isNoticeOpen && (
+				<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+					<div className="w-full max-w-lg rounded-lg border border-blue-300 bg-white shadow-xl overflow-hidden">
+						<div className="flex items-center justify-between border-b border-blue-200 bg-blue-100 px-4 py-3">
+							<div className="text-base font-semibold text-blue-900">평가체크리스트 안내</div>
+							<button
+								type="button"
+								onClick={() => setIsNoticeOpen(false)}
+								className="rounded border border-blue-400 bg-blue-200 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+							>
+								닫기
+							</button>
+						</div>
+						<div className="p-5 space-y-4">
+							<p className="text-sm leading-relaxed text-blue-900 whitespace-pre-wrap">
+								평가체크리스트는 새롭게 데이터 테이블이 구성되어야 하는데요, 항목이 많아 정의되어야
+								하는 컬럼명이 복잡하므로 무엇을 어떤 기준으로 어떤 값으로 평가하는지에 대한
+								가이드가 필요하여 이에 대한 회의가 필요합니다. 때문에 아직 개발중입니다.
+							</p>
+							<div className="flex justify-end pt-1">
+								<button
+									type="button"
+									onClick={() => setIsNoticeOpen(false)}
+									className="rounded border border-blue-500 bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600"
+								>
+									확인
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

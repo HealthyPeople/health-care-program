@@ -73,6 +73,7 @@ export default function DataRoom() {
 
 	const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
 	const [isDetailOpen, setIsDetailOpen] = useState<boolean>(false);
+	const [isNoticeOpen, setIsNoticeOpen] = useState<boolean>(true);
 
 	const filteredFiles = useMemo(() => {
 		const q = query.trim();
@@ -432,6 +433,42 @@ export default function DataRoom() {
 					</div>
 				</div>
 			</div>
+
+			{/* 진입 안내 모달 */}
+			{isNoticeOpen && (
+				<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+					<div className="w-full max-w-lg rounded-lg border border-blue-300 bg-white shadow-xl overflow-hidden">
+						<div className="flex items-center justify-between border-b border-blue-200 bg-blue-100 px-4 py-3">
+							<div className="text-base font-semibold text-blue-900">자료실 안내</div>
+							<button
+								type="button"
+								onClick={() => setIsNoticeOpen(false)}
+								className="rounded border border-blue-400 bg-blue-200 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+							>
+								닫기
+							</button>
+						</div>
+						<div className="p-5 space-y-4">
+							<p className="text-sm leading-relaxed text-blue-900 whitespace-pre-wrap">
+								자료실 페이지는 애저에 블랍, 즉 데이터 파일이 저장되는 유료 공간을 구입하고 파일의
+								경로표기 데이터만 호스트웨이의 DB서버에 저장하는 것이 파일을 저장하고 다운로드
+								하기에 좋습니다. 이를 위해서는 비용이 발생하여 논의가 필요합니다. 때문에 아직 개발중입니다.
+
+
+							</p>
+							<div className="flex justify-end pt-1">
+								<button
+									type="button"
+									onClick={() => setIsNoticeOpen(false)}
+									className="rounded border border-blue-500 bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600"
+								>
+									확인
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* 상세 모달 */}
 			{isDetailOpen && selectedFile && (
