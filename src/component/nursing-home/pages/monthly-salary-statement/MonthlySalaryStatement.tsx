@@ -76,7 +76,7 @@ function openPrintPreviewWindow(html: string): void {
 	}, 250);
 }
 
-function computeOccurrenceColumnSums(rows: StatementRow[]) {
+function computeOccurrenceColumnSums(rows: V40100PrintRow[]) {
 	let sumNha = 0;
 	let sumSal2 = 0;
 	let sumB1 = 0;
@@ -89,38 +89,44 @@ function computeOccurrenceColumnSums(rows: StatementRow[]) {
 	let sumEsal = 0;
 	let sumBurden = 0;
 	for (const row of rows) {
-		sumNha += parseRowAmount(row.nhaContribution);
-		sumSal2 += parseRowAmount(row.recipientContribution);
-		sumB1 += parseRowAmount(row.nonBenefitMeal);
-		sumB2 += parseRowAmount(row.nonBenefitSnack);
-		sumB3 += parseRowAmount(row.outpatientFee);
-		sumB4 += parseRowAmount(row.beautyCost);
-		sumB6 += parseRowAmount(row.roomUpgradeFee);
-		sumMed += parseRowAmount(row.contractedMedical);
-		sumRx += parseRowAmount(row.contractedPrescription);
-		sumEsal += parseRowAmount(row.otherCostsRecipient);
-		sumBurden += parseRowAmount(row.recipientBurdenTotal);
+		sumNha += Number(row.nhaContribution || 0);
+		sumSal2 += Number(row.recipientContribution || 0);
+		sumB1 += Number(row.nonBenefitMeal || 0);
+		sumB2 += Number(row.nonBenefitSnack || 0);
+		sumB3 += Number(row.nonBenefitMedical || 0);
+		sumB4 += Number(row.beautyCost || 0);
+		sumB6 += Number(row.roomUpgradeFee || 0);
+		sumMed += Number(row.contractedMedical || 0);
+		sumRx += Number(row.contractedPrescription || 0);
+		sumEsal += Number(row.otherCost || 0);
+		sumBurden += Number(row.recipientBurdenTotal || 0);
 	}
 	return { sumNha, sumSal2, sumB1, sumB2, sumB3, sumB4, sumB6, sumMed, sumRx, sumEsal, sumBurden };
 }
 
-function renderOccurrencePrintDataRow(row: StatementRow): string {
-	const idDisp = row.recognitionNo.trim() ? escapeHtml(row.recognitionNo) : "-";
+function moneyKoNum(n: number): string {
+	return Number(n || 0).toLocaleString("ko-KR");
+}
+
+function renderOccurrencePrintDataRow(row: V40100PrintRow): string {
+	const idDisp = String(row.recognitionNo || "").trim()
+		? escapeHtml(String(row.recognitionNo).trim())
+		: "-";
 	return `<tr>
 				<td class="nm">${escapeHtml(row.recipient || "-")}</td>
 				<td class="t">${escapeHtml(row.grade || "-")}</td>
 				<td class="t id">${idDisp}</td>
-				<td class="n">${moneyKo(row.nhaContribution)}</td>
-				<td class="n">${moneyKo(row.recipientContribution)}</td>
-				<td class="n">${moneyKo(row.nonBenefitMeal)}</td>
-				<td class="n">${moneyKo(row.nonBenefitSnack)}</td>
-				<td class="n">${moneyKo(row.outpatientFee)}</td>
-				<td class="n">${moneyKo(row.beautyCost)}</td>
-				<td class="n">${moneyKo(row.roomUpgradeFee)}</td>
-				<td class="n">${moneyKo(row.contractedMedical)}</td>
-				<td class="n">${moneyKo(row.contractedPrescription)}</td>
-				<td class="n">${moneyKo(row.otherCostsRecipient)}</td>
-				<td class="n">${moneyKo(row.recipientBurdenTotal)}</td>
+				<td class="n">${moneyKoNum(row.nhaContribution)}</td>
+				<td class="n">${moneyKoNum(row.recipientContribution)}</td>
+				<td class="n">${moneyKoNum(row.nonBenefitMeal)}</td>
+				<td class="n">${moneyKoNum(row.nonBenefitSnack)}</td>
+				<td class="n">${moneyKoNum(row.nonBenefitMedical)}</td>
+				<td class="n">${moneyKoNum(row.beautyCost)}</td>
+				<td class="n">${moneyKoNum(row.roomUpgradeFee)}</td>
+				<td class="n">${moneyKoNum(row.contractedMedical)}</td>
+				<td class="n">${moneyKoNum(row.contractedPrescription)}</td>
+				<td class="n">${moneyKoNum(row.otherCost)}</td>
+				<td class="n">${moneyKoNum(row.recipientBurdenTotal)}</td>
 			</tr>`;
 }
 
@@ -148,12 +154,35 @@ const OCCURRENCE_TABLE_HEAD = `<colgroup>
 				</tr>
 			</thead>`;
 
-/** 수급자급여 발생내역서 R40100A — 가로 A4, 브라우저 자연 페이지 분할(페이지 꽉 채움) */
-function buildSalaryOccurrencePrintHtml(payYearMonth: string, rows: StatementRow[]): string {
+/** V40100 수급자급여 발생내역 (API 매핑) */
+interface V40100PrintRow {
+	PNUM: string;
+	SALMM: string;
+	yearMonthLabel: string;
+	recipient: string;
+	grade: string;
+	recognitionNo: string;
+	nhaContribution: number;
+	recipientContribution: number;
+	nonBenefitMeal: number;
+	nonBenefitSnack: number;
+	nonBenefitMedical: number;
+	beautyCost: number;
+	roomUpgradeFee: number;
+	contractedMedical: number;
+	contractedPrescription: number;
+	otherCost: number;
+	recipientBurdenTotal: number;
+}
+
+/** 수급자급여 발생내역서 R40100A — V40100 기준, 가로 A4 */
+function buildSalaryOccurrencePrintHtml(payYearMonth: string, rows: V40100PrintRow[]): string {
+	const periodFromRow = rows.find((r) => String(r.yearMonthLabel || "").trim())?.yearMonthLabel?.trim();
 	const period =
-		payYearMonth.length >= 7
+		periodFromRow ||
+		(payYearMonth.length >= 7
 			? `(${payYearMonth.slice(0, 4)}-${payYearMonth.slice(5, 7)}월분)`
-			: `(${escapeHtml(payYearMonth)}월분)`;
+			: `(${payYearMonth}월분)`);
 
 	const sums = computeOccurrenceColumnSums(rows);
 	const fmtSum = (n: number) => n.toLocaleString("ko-KR");
@@ -264,6 +293,22 @@ interface StatementLedgerPrintForm {
 	receiveContent: string;
 }
 
+/** V40100D 명세서 발부대장 (API 매핑) */
+interface V40100DPrintRow {
+	PNUM: string;
+	SALMM: string;
+	yearMonthLabel: string;
+	status: string;
+	recipient: string;
+	recipientBurden: number;
+	deliverer: string;
+	receiver: string;
+	receiveContent: string;
+	sGu: string;
+	deliveryMethod: string;
+	issueDate: string;
+}
+
 const LEDGER_DEFAULT_RECEIVE =
 	"소식지, 급여제공기록지, 급여비용명세서, 식단표, 프로그램계획표";
 const LEDGER_DEFAULT_DELIVERER = "너싱홈 해원";
@@ -312,21 +357,26 @@ const LEDGER_TABLE_HEAD = `<colgroup>
 	</tr>
 </thead>`;
 
-/** 장기요양급여비용 명세서 발부대장 — 가로 A4, 브라우저 자연 페이지 분할(페이지 꽉 채움) */
+/** 장기요양급여비용 명세서 발부대장 — V40100D 기준, 가로 A4 */
 function buildStatementLedgerPrintHtml(
 	payYearMonth: string,
-	rows: StatementRow[],
+	rows: V40100DPrintRow[],
 	form: StatementLedgerPrintForm,
 	issueDateOverride?: string
 ): string {
+	const periodFromRow = rows.find((r) => String(r.yearMonthLabel || "").trim())?.yearMonthLabel?.trim();
 	const period =
-		payYearMonth.length >= 7
+		periodFromRow ||
+		(payYearMonth.length >= 7
 			? `(${payYearMonth.slice(0, 4)}-${payYearMonth.slice(5, 7)}월분)`
-			: `(${escapeHtml(payYearMonth)})`;
+			: `(${payYearMonth})`);
+
+	const issueFromView = rows.find((r) => /^\d{4}-\d{2}-\d{2}$/.test(String(r.issueDate || "").trim()))
+		?.issueDate;
 	const issueDate =
 		issueDateOverride && /^\d{4}-\d{2}-\d{2}$/.test(issueDateOverride)
 			? issueDateOverride
-			: lastDayOfPayYearMonth(payYearMonth);
+			: issueFromView || lastDayOfPayYearMonth(payYearMonth);
 
 	const useGlobalReceiver = form.recipientName.trim() !== "";
 
@@ -336,16 +386,26 @@ function buildStatementLedgerPrintHtml(
 			: rows
 					.map((row, j) => {
 						const serial = j + 1;
-						const copay = parseRowAmount(row.recipientBurdenTotal).toLocaleString("ko-KR");
-						const rowDelivery = deliveryMethodPrintLabel(row.sGu || form.deliveryMethod);
-						const rowDeliverer = (row.snm || form.deliverer || LEDGER_DEFAULT_DELIVERER).trim();
-						const rowEnm = (row.enm || "").trim();
+						const copay = Number(row.recipientBurden || 0).toLocaleString("ko-KR");
+						const rowDelivery =
+							String(row.deliveryMethod || "").trim() ||
+							deliveryMethodPrintLabel(row.sGu || form.deliveryMethod);
+						const rowDeliverer = (
+							row.deliverer ||
+							form.deliverer ||
+							LEDGER_DEFAULT_DELIVERER
+						).trim();
+						const rowEnm = (row.receiver || "").trim();
 						const recvName = rowEnm
 							? escapeHtml(rowEnm)
 							: useGlobalReceiver
 								? escapeHtml(form.recipientName.trim())
 								: escapeHtml(row.recipient || "-");
-						const rowRdes = (row.rdes || form.receiveContent || LEDGER_DEFAULT_RECEIVE).trim();
+						const rowRdes = (
+							row.receiveContent ||
+							form.receiveContent ||
+							LEDGER_DEFAULT_RECEIVE
+						).trim();
 						return `<tr>
 				<td class="ld-c">${serial}</td>
 				<td class="ld-c">${escapeHtml(row.recipient || "-")}</td>
@@ -382,22 +442,17 @@ body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 9pt
 .ld-tbl thead { display: table-header-group; }
 .ld-tbl tbody { display: table-row-group; }
 .ld-tbl tr { page-break-inside: avoid; break-inside: avoid; }
-.ld-tbl th, .ld-tbl td { border: 1px solid #000; padding: 2px 3px; vertical-align: middle; word-break: break-word; }
-.ld-tbl thead th { background: #f0f0f0; font-weight: 700; text-align: center; font-size: 8.5pt; padding: 3px 2px; }
-.ld-tbl tbody td.ld-c { text-align: center; }
-.ld-tbl tbody td.ld-r { text-align: right; font-variant-numeric: tabular-nums; padding-right: 4px; }
-.ld-tbl tbody td.ld-l { text-align: left; font-size: 8pt; line-height: 1.25; vertical-align: middle; }
+.ld-tbl th, .ld-tbl td { border: 1px solid #000; padding: 5px 4px; vertical-align: middle; font-size: 9pt; }
+.ld-tbl th { background: #e8e8e8; font-weight: 700; text-align: center; }
+.ld-c { text-align: center; }
+.ld-r { text-align: right; font-variant-numeric: tabular-nums; padding-right: 6px; }
+.ld-l { text-align: left; padding-left: 6px; }
 .ld-print-foot {
-	position: fixed;
-	left: 0;
-	right: 0;
-	bottom: 0;
+	margin-top: 8px;
 	display: flex;
 	justify-content: space-between;
-	align-items: center;
-	padding: 0 2mm;
-	font-size: 9.5pt;
-	background: #fff;
+	font-size: 9pt;
+	page-break-inside: avoid;
 }
 .ld-print-foot .ld-pg::after { content: counter(page); }
 @media print {
@@ -596,16 +651,6 @@ function mergeF40100FacilityFromF00110(
 	};
 }
 
-function facilityDisplayFromRow(row: StatementRow) {
-	const angh = row.angh || F24_FACILITY.code;
-	const annm = row.annm || F24_FACILITY.name;
-	const anadd = row.anadd || F24_FACILITY.address;
-	const taxnum = row.taxnum || F24_FACILITY.businessNo;
-	const taxown = row.taxown || F24_FACILITY.representative;
-	const antel = row.antel;
-	return { angh, annm, anadd, taxnum, taxown, antel };
-}
-
 function firstDayOfPayYearMonth(payYearMonth: string): string {
 	if (payYearMonth.length < 7) return "";
 	const y = payYearMonth.slice(0, 4);
@@ -638,33 +683,132 @@ function formatSalmmFooterDate(payYearMonth: string): string {
 	return `&nbsp;&nbsp;&nbsp;&nbsp;년 &nbsp;&nbsp;월 &nbsp;&nbsp;&nbsp;일`;
 }
 
-/** 한 명분 본문(페이지 래퍼는 바깥에서 감쌈) */
-function buildBenefitStatement24Body(payYearMonth: string, row: StatementRow): string {
-	const periodFrom = firstDayOfPayYearMonth(payYearMonth);
-	const periodTo = lastDayOfPayYearMonth(payYearMonth);
+/** V40100E 월별 급여명세서 (API 매핑) */
+interface V40100EPrintRow {
+	PNUM: string;
+	SALMM: string;
+	recipient: string;
+	recognitionNo: string;
+	periodFrom: string;
+	periodTo: string;
+	orgCode: string;
+	orgName: string;
+	orgAddr: string;
+	orgBizNo: string;
+	orgOwner: string;
+	orgTel: string;
+	bankAccount: string;
+	otherCostDesc: string;
+	daysUsed: number;
+	nhaContribution: number;
+	recipientContribution: number;
+	mealFee: number;
+	nonBenefitSnack: number;
+	nonBenefitMedical: number;
+	beautyCost: number;
+	roomUpgradeFee: number;
+	contractedMedical: number;
+	contractedPrescription: number;
+	otherCost: number;
+	/** 퇴소 여부 (뷰에 없으면 StatementRow 보조) */
+	pSt?: string;
+}
+
+function statementRowToV40100EFallback(
+	payYearMonth: string,
+	row: StatementRow
+): V40100EPrintRow {
+	const sal1 = parseRowAmount(row.nhaContribution);
+	const sal2 = parseRowAmount(row.recipientContribution);
+	const meal = parseRowAmount(row.nonBenefitMeal);
+	const snack = parseRowAmount(row.nonBenefitSnack);
+	const medical = parseRowAmount(row.outpatientFee);
+	const beauty = parseRowAmount(row.beautyCost);
+	const room = parseRowAmount(row.roomUpgradeFee);
+	const cMed = parseRowAmount(row.contractedMedical);
+	const cRx = parseRowAmount(row.contractedPrescription);
+	const other =
+		parseRowAmount(row.bathFee) +
+		parseRowAmount(row.dementiaFee) +
+		parseRowAmount(row.otherCostsRecipient);
+	return {
+		PNUM: row.pnum,
+		SALMM: payYearMonthToSalmm(payYearMonth) || "",
+		recipient: row.recipient,
+		recognitionNo: row.recognitionNo,
+		periodFrom: firstDayOfPayYearMonth(payYearMonth),
+		periodTo: lastDayOfPayYearMonth(payYearMonth),
+		orgCode: row.angh,
+		orgName: row.annm,
+		orgAddr: row.anadd,
+		orgBizNo: row.taxnum,
+		orgOwner: row.taxown,
+		orgTel: row.antel,
+		bankAccount: "",
+		otherCostDesc: "",
+		daysUsed: daysInPayMonth(payYearMonth),
+		nhaContribution: sal1,
+		recipientContribution: sal2,
+		mealFee: meal,
+		nonBenefitSnack: snack,
+		nonBenefitMedical: medical,
+		beautyCost: beauty,
+		roomUpgradeFee: room,
+		contractedMedical: cMed,
+		contractedPrescription: cRx,
+		otherCost: other,
+		pSt: row.pSt,
+	};
+}
+
+function formatYmdDisp(ymd: string): string {
+	const s = String(ymd || "").trim();
+	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+	if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+	return s;
+}
+
+/** 한 명분 본문(페이지 래퍼는 바깥에서 감쌈) — V40100E 기준 */
+function buildBenefitStatement24Body(
+	payYearMonth: string,
+	row: V40100EPrintRow
+): string {
+	const salmm = row.SALMM || payYearMonthToSalmm(payYearMonth) || "";
+	const periodFrom = formatYmdDisp(row.periodFrom) || firstDayOfPayYearMonth(payYearMonth);
+	const periodTo = formatYmdDisp(row.periodTo) || lastDayOfPayYearMonth(payYearMonth);
 	const periodRange =
 		periodFrom && periodTo ? `${periodFrom} ~ ${periodTo}` : escapeHtml(payYearMonth);
 
 	const chkOut = row.pSt === "9" ? "■" : "□";
 	const chkMid = "□";
 
-	const sal1 = parseRowAmount(row.nhaContribution);
-	const sal2 = parseRowAmount(row.recipientContribution);
+	const sal1 = row.nhaContribution;
+	const sal2 = row.recipientContribution;
 	const v3 = sal1 + sal2;
 
-	const v4 = parseRowAmount(row.nonBenefitMeal);
-	const v5 = parseRowAmount(row.roomUpgradeFee);
-	const v6 = parseRowAmount(row.beautyCost);
-	const v7a = parseRowAmount(row.outpatientFee);
-	const v7b = parseRowAmount(row.contractedMedical);
-	const v7c = parseRowAmount(row.contractedPrescription);
-	const v8 = parseRowAmount(row.bathFee) + parseRowAmount(row.dementiaFee) + parseRowAmount(row.nonBenefitSnack) + parseRowAmount(row.otherCostsRecipient);
+	const v4 = row.mealFee;
+	const v5 = row.roomUpgradeFee;
+	const v6 = row.beautyCost;
+	const v7a = row.nonBenefitMedical;
+	const v7b = row.contractedMedical;
+	const v7c = row.contractedPrescription;
+	const v8 = row.otherCost + row.nonBenefitSnack;
+	const v8Label = row.otherCostDesc || "기타";
 	const v10 = v4 + v5 + v6 + v7a + v7b + v7c + v8;
 	const v11 = v3 + v10;
 	const v12 = sal2 + v10;
-	const days = daysInPayMonth(payYearMonth);
+	const days = row.daysUsed > 0 ? row.daysUsed : daysInPayMonth(payYearMonth);
 
-	const recognition = row.recognitionNo.trim() || "—";
+	const recognition = String(row.recognitionNo || "").trim() || "—";
+	const orgCode = row.orgCode || F24_FACILITY.code;
+	const orgName = row.orgName || F24_FACILITY.name;
+	const orgAddr = row.orgAddr || F24_FACILITY.address;
+	const orgBiz = row.orgBizNo || F24_FACILITY.businessNo;
+	const orgOwner = row.orgOwner || F24_FACILITY.representative;
+	const bankLine = row.bankAccount
+		? `입금통장정보 : ${row.bankAccount}`
+		: F24_FACILITY.bankLine;
+	const footerYm = salmm.length === 6 ? `${salmm.slice(0, 4)}-${salmm.slice(4, 6)}` : payYearMonth;
 
 	const MAIN_BODY_ROWS = 12;
 	const innerCalc = `<table class="f24-innercalc" cellspacing="0">
@@ -708,15 +852,15 @@ function buildBenefitStatement24Body(payYearMonth: string, row: StatementRow): s
 <table class="f24-info" cellspacing="0">
 	<tr>
 		<td class="f24-lb">장기요양기관기호</td>
-		<td class="f24-val">${escapeHtml(F24_FACILITY.code)}</td>
+		<td class="f24-val">${escapeHtml(orgCode)}</td>
 		<td class="f24-lb">장기요양기관명</td>
-		<td class="f24-val" colspan="3">${escapeHtml(F24_FACILITY.name)}</td>
+		<td class="f24-val" colspan="3">${escapeHtml(orgName)}</td>
 	</tr>
 	<tr>
 		<td class="f24-lb">주소</td>
-		<td class="f24-val" colspan="3">${escapeHtml(F24_FACILITY.address)}</td>
+		<td class="f24-val" colspan="3">${escapeHtml(orgAddr)}</td>
 		<td class="f24-lb">사업자등록번호</td>
-		<td class="f24-val">${escapeHtml(F24_FACILITY.businessNo)}</td>
+		<td class="f24-val">${escapeHtml(orgBiz)}</td>
 	</tr>
 	<tr>
 		<td class="f24-lb">성명</td>
@@ -790,7 +934,7 @@ function buildBenefitStatement24Body(payYearMonth: string, row: StatementRow): s
 			<td class="f24-r">${fmtAmt0Blank(v7c)}</td>
 		</tr>
 		<tr>
-			<td class="f24-item">수액1 ⑧</td>
+			<td class="f24-item">${escapeHtml(v8Label)} ⑧</td>
 			<td class="f24-r">${fmtAmt0Blank(v8)}</td>
 		</tr>
 		<tr>
@@ -828,11 +972,11 @@ function buildBenefitStatement24Body(payYearMonth: string, row: StatementRow): s
 	</tr>
 </table>
 
-<div class="f24-bank">${escapeHtml(F24_FACILITY.bankLine)}</div>
-<div class="f24-date">${formatSalmmFooterDate(payYearMonth)}</div>
+<div class="f24-bank">${escapeHtml(bankLine)}</div>
+<div class="f24-date">${formatSalmmFooterDate(footerYm)}</div>
 <div class="f24-foot2">
-	<span>장기요양기관명 : ${escapeHtml(F24_FACILITY.name)}</span>
-	<span class="f24-rep">대표자명 : ${escapeHtml(F24_FACILITY.representative)}</span>
+	<span>장기요양기관명 : ${escapeHtml(orgName)}</span>
+	<span class="f24-rep">대표자명 : ${escapeHtml(orgOwner)}</span>
 </div>
 <div class="f24-notes">${fineBullets}</div>
 </div>
@@ -1209,14 +1353,38 @@ function maskResidentIdFromBirthday(birthdayDisp: string): string {
 	return "—";
 }
 
-/** 장기요양급여비 납부확인서 [별지 제25호] — 인쇄용 전체 HTML */
-function buildPaymentConfirmation25Body(payYearMonth: string, row: StatementRow): string {
-	const year =
-		payYearMonth.length >= 4 ? payYearMonth.slice(0, 4) : String(new Date().getFullYear());
+/** V40100G 연간 납부확인 집계 (API 매핑) */
+interface V40100GMonthAmt {
+	month: number;
+	nhaContribution: number;
+	recipientContribution: number;
+	nonBenefit: number;
+	total: number;
+	recipientBurdenTotal: number;
+}
+
+interface V40100GPrintRow {
+	PNUM: string;
+	SALYY: string;
+	recipient: string;
+	rrn: string;
+	birthday: string;
+	orgCode: string;
+	orgName: string;
+	orgAddr: string;
+	orgBizNo: string;
+	orgOwner: string;
+	orgTel: string;
+	ANGH: string;
+	months: V40100GMonthAmt[];
+}
+
+function statementRowToV40100GFallback(
+	payYearMonth: string,
+	row: StatementRow
+): V40100GPrintRow {
 	const mo =
 		payYearMonth.length >= 7 ? parseInt(payYearMonth.slice(5, 7), 10) : NaN;
-	const moIdx = Number.isFinite(mo) && mo >= 1 && mo <= 12 ? mo - 1 : -1;
-
 	const sal1 = parseRowAmount(row.nhaContribution);
 	const sal2 = parseRowAmount(row.recipientContribution);
 	const v4 = parseRowAmount(row.nonBenefitMeal);
@@ -1230,35 +1398,104 @@ function buildPaymentConfirmation25Body(payYearMonth: string, row: StatementRow)
 		parseRowAmount(row.dementiaFee) +
 		parseRowAmount(row.nonBenefitSnack) +
 		parseRowAmount(row.otherCostsRecipient);
-	const v10 = v4 + v5 + v6 + v7a + v7b + v7c + v8;
-	const total1 = sal1 + sal2 + v10;
-	const total5 = parseRowAmount(row.recipientBurdenTotal);
-	const payDateStr = lastDayOfPayYearMonth(payYearMonth);
+	const nonBenefit = v4 + v5 + v6 + v7a + v7b + v7c + v8;
+	const months: V40100GMonthAmt[] = [];
+	for (let m = 1; m <= 12; m++) {
+		if (Number.isFinite(mo) && m === mo) {
+			months.push({
+				month: m,
+				nhaContribution: sal1,
+				recipientContribution: sal2,
+				nonBenefit,
+				total: sal1 + sal2 + nonBenefit,
+				recipientBurdenTotal: sal2 + nonBenefit,
+			});
+		} else {
+			months.push({
+				month: m,
+				nhaContribution: 0,
+				recipientContribution: 0,
+				nonBenefit: 0,
+				total: 0,
+				recipientBurdenTotal: 0,
+			});
+		}
+	}
+	return {
+		PNUM: row.pnum,
+		SALYY: payYearMonth.slice(0, 4),
+		recipient: row.recipient,
+		rrn: "",
+		birthday: row.birthday,
+		orgCode: row.angh,
+		orgName: row.annm,
+		orgAddr: row.anadd,
+		orgBizNo: row.taxnum,
+		orgOwner: row.taxown,
+		orgTel: row.antel,
+		ANGH: row.angh,
+		months,
+	};
+}
+
+/** 장기요양급여비 납부확인서 [별지 제25호] — V40100G 기준 본문 */
+function buildPaymentConfirmation25Body(
+	payYearMonth: string,
+	row: V40100GPrintRow
+): string {
+	const year =
+		(row.SALYY && String(row.SALYY).replace(/\D/g, "").slice(0, 4)) ||
+		(payYearMonth.length >= 4 ? payYearMonth.slice(0, 4) : String(new Date().getFullYear()));
 	const footerDate = formatSalmmFooterDate(payYearMonth);
 
-	const monthCells: { c1: string; c2: string; c3: string; c4: string; c5: string; c6: string; c7: string; c8: string; c9: string }[] = [];
+	const monthCells: {
+		c1: string;
+		c2: string;
+		c3: string;
+		c4: string;
+		c5: string;
+		c6: string;
+		c7: string;
+		c8: string;
+		c9: string;
+	}[] = [];
 	let sum1 = 0;
 	let sum2 = 0;
 	let sum3tot = 0;
 	let sum4nb = 0;
 	let sum5 = 0;
+
 	for (let i = 0; i < 12; i++) {
-		if (i === moIdx) {
-			sum1 += total1;
-			sum2 += sal1;
-			sum3tot += sal2;
-			sum4nb += v10;
-			sum5 += total5;
+		const m =
+			row.months?.[i] ??
+			({
+				month: i + 1,
+				nhaContribution: 0,
+				recipientContribution: 0,
+				nonBenefit: 0,
+				total: 0,
+				recipientBurdenTotal: 0,
+			} as V40100GMonthAmt);
+		const hasData =
+			m.nhaContribution !== 0 ||
+			m.recipientContribution !== 0 ||
+			m.nonBenefit !== 0;
+		if (hasData) {
+			sum1 += m.total;
+			sum2 += m.nhaContribution;
+			sum3tot += m.recipientContribution;
+			sum4nb += m.nonBenefit;
+			sum5 += m.recipientBurdenTotal;
 			monthCells.push({
-				c1: fmtAmt0Blank(total1),
-				c2: fmtAmt0Blank(sal1),
-				c3: fmtAmt0Blank(sal2),
+				c1: fmtAmt0Blank(m.total),
+				c2: fmtAmt0Blank(m.nhaContribution),
+				c3: fmtAmt0Blank(m.recipientContribution),
 				c4: "",
 				c5: "",
 				c6: "",
-				c7: fmtAmt0Blank(v10),
-				c8: fmtAmt0Blank(total5),
-				c9: payDateStr,
+				c7: fmtAmt0Blank(m.nonBenefit),
+				c8: fmtAmt0Blank(m.recipientBurdenTotal),
+				c9: "",
 			});
 		} else {
 			monthCells.push({
@@ -1276,12 +1513,18 @@ function buildPaymentConfirmation25Body(payYearMonth: string, row: StatementRow)
 	}
 
 	const f25IncomeDeductionTotal = fmtAmt0Blank(sum3tot);
-	const rrn = escapeHtml(maskResidentIdFromBirthday(row.birthday));
-	const fac = facilityDisplayFromRow(row);
-	const uniqueLine = `${escapeHtml(fac.angh)} (${escapeHtml(fac.taxnum)})`;
-	const addrLine = fac.antel
-		? `${escapeHtml(fac.anadd)} (전화번호: ${escapeHtml(fac.antel)})`
-		: `${escapeHtml(fac.anadd)} (전화번호: )`;
+	const rrnRaw = String(row.rrn || "").trim();
+	const rrn = escapeHtml(rrnRaw || maskResidentIdFromBirthday(row.birthday));
+	const orgCode = row.orgCode || row.ANGH || F24_FACILITY.code;
+	const orgName = row.orgName || F24_FACILITY.name;
+	const orgAddr = row.orgAddr || F24_FACILITY.address;
+	const orgBiz = row.orgBizNo || F24_FACILITY.businessNo;
+	const orgOwner = row.orgOwner || F24_FACILITY.representative;
+	const orgTel = row.orgTel || "";
+	const uniqueLine = `${escapeHtml(orgCode)} (${escapeHtml(orgBiz)})`;
+	const addrLine = orgTel
+		? `${escapeHtml(orgAddr)} (전화번호: ${escapeHtml(orgTel)})`
+		: `${escapeHtml(orgAddr)} (전화번호: )`;
 
 	const bodyRows = monthCells
 		.map(
@@ -1327,7 +1570,7 @@ function buildPaymentConfirmation25Body(payYearMonth: string, row: StatementRow)
 	</tr>
 	<tr>
 		<td class="f25-lb">장기요양기관명</td>
-		<td class="f25-v">${escapeHtml(fac.annm)}</td>
+		<td class="f25-v">${escapeHtml(orgName)}</td>
 		<td class="f25-lb">고유번호<br/><span class="f25-sm">(사업자 등록번호)</span></td>
 		<td class="f25-v">${uniqueLine}</td>
 	</tr>
@@ -1337,7 +1580,7 @@ function buildPaymentConfirmation25Body(payYearMonth: string, row: StatementRow)
 	</tr>
 	<tr>
 		<td class="f25-lb">대표자 성명</td>
-		<td class="f25-v" colspan="3">${escapeHtml(fac.taxown)}</td>
+		<td class="f25-v" colspan="3">${escapeHtml(orgOwner)}</td>
 	</tr>
 </table>
 
@@ -1464,7 +1707,10 @@ ${bodyPages}
 </html>`;
 }
 
-function buildPaymentConfirmation25PrintHtml(payYearMonth: string, rows: StatementRow[]): string {
+function buildPaymentConfirmation25PrintHtml(
+	payYearMonth: string,
+	rows: V40100GPrintRow[]
+): string {
 	const body = rows
 		.map((row) => `<div class="f25-page">${buildPaymentConfirmation25Body(payYearMonth, row)}</div>`)
 		.join("");
@@ -1567,43 +1813,97 @@ export default function MonthlySalaryStatement() {
 		});
 	};
 
-	const printOccurrence = useCallback(() => {
-		if (filteredRows.length === 0) {
-			alert(
-				statementRows.length === 0
-					? "급여년월을 선택한 뒤 검색해 주세요."
-					: "출력할 행이 없습니다. 수급자 조건을 확인해 주세요."
-			);
+	const printOccurrence = useCallback(async () => {
+		const salmm = payYearMonthToSalmm(payYearMonth);
+		if (!salmm) {
+			alert("급여년월을 선택해 주세요.");
 			return;
 		}
-		const html = buildSalaryOccurrencePrintHtml(payYearMonth, filteredRows);
-		openPrintPreviewWindow(html);
-	}, [payYearMonth, filteredRows, statementRows.length]);
+		try {
+			const res = await fetch(`/api/v40100?salmm=${encodeURIComponent(salmm)}`);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || "V40100(발생내역서) 조회에 실패했습니다.");
+				return;
+			}
+			let list: V40100PrintRow[] = Array.isArray(json.data) ? json.data : [];
+			const q = recipientFilter.trim().toLowerCase();
+			if (q) {
+				list = list.filter(
+					(r) =>
+						r.recipient.toLowerCase().includes(q) ||
+						String(r.PNUM ?? "")
+							.toLowerCase()
+							.includes(q)
+				);
+			}
+			if (list.length === 0) {
+				alert(
+					q
+						? "수급자 조건에 맞는 발생내역 데이터가 없습니다."
+						: "해당 급여년월에 출력할 발생내역 데이터가 없습니다."
+				);
+				return;
+			}
+			const html = buildSalaryOccurrencePrintHtml(payYearMonth, list);
+			openPrintPreviewWindow(html);
+		} catch (e) {
+			console.error(e);
+			alert(e instanceof Error ? e.message : "발생내역서 출력 중 오류가 발생했습니다.");
+		}
+	}, [payYearMonth, recipientFilter]);
 
-	const printLedger = useCallback(() => {
-		if (filteredRows.length === 0) {
-			alert(
-				statementRows.length === 0
-					? "급여년월을 선택한 뒤 검색해 주세요."
-					: "출력할 행이 없습니다. 수급자 조건을 확인해 주세요."
-			);
+	const printLedger = useCallback(async () => {
+		const salmm = payYearMonthToSalmm(payYearMonth);
+		if (!salmm) {
+			alert("급여년월을 선택해 주세요.");
 			return;
 		}
-		const html = buildStatementLedgerPrintHtml(
-			payYearMonth,
-			filteredRows,
-			{
-				deliveryMethod: formData.deliveryMethod,
-				deliverer: formData.deliverer,
-				recipientName: formData.recipientName,
-				receiveContent: formData.receiveContent,
-			},
-			facilityIssueDate || undefined
-		);
-		openPrintPreviewWindow(html);
-	}, [payYearMonth, filteredRows, statementRows.length, formData, facilityIssueDate]);
+		try {
+			const res = await fetch(`/api/v40100d?salmm=${encodeURIComponent(salmm)}`);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || "V40100D(발부대장) 조회에 실패했습니다.");
+				return;
+			}
+			let list: V40100DPrintRow[] = Array.isArray(json.data) ? json.data : [];
+			const q = recipientFilter.trim().toLowerCase();
+			if (q) {
+				list = list.filter(
+					(r) =>
+						r.recipient.toLowerCase().includes(q) ||
+						String(r.PNUM ?? "")
+							.toLowerCase()
+							.includes(q)
+				);
+			}
+			if (list.length === 0) {
+				alert(
+					q
+						? "수급자 조건에 맞는 발부대장 데이터가 없습니다."
+						: "해당 급여년월에 출력할 발부대장 데이터가 없습니다."
+				);
+				return;
+			}
+			const html = buildStatementLedgerPrintHtml(
+				payYearMonth,
+				list,
+				{
+					deliveryMethod: formData.deliveryMethod,
+					deliverer: formData.deliverer,
+					recipientName: formData.recipientName,
+					receiveContent: formData.receiveContent,
+				},
+				facilityIssueDate || undefined
+			);
+			openPrintPreviewWindow(html);
+		} catch (e) {
+			console.error(e);
+			alert(e instanceof Error ? e.message : "발부대장 출력 중 오류가 발생했습니다.");
+		}
+	}, [payYearMonth, recipientFilter, formData, facilityIssueDate]);
 
-	const printBenefitStatement = useCallback(() => {
+	const printBenefitStatement = useCallback(async () => {
 		const selectedRows = statementRows.filter((r) => checkedPnums.has(r.pnum));
 		if (selectedRows.length === 0) {
 			alert(
@@ -1611,13 +1911,45 @@ export default function MonthlySalaryStatement() {
 			);
 			return;
 		}
-		const body = selectedRows
-			.map((row) => `<div class="f24-page">${buildBenefitStatement24Body(payYearMonth, row)}</div>`)
-			.join("");
-		openPrintPreviewWindow(wrapF24PrintHtml(body));
+		const salmm = payYearMonthToSalmm(payYearMonth);
+		if (!salmm) {
+			alert("급여년월을 선택해 주세요.");
+			return;
+		}
+		try {
+			const pnums = selectedRows.map((r) => r.pnum).join(",");
+			const res = await fetch(
+				`/api/v40100e?salmm=${encodeURIComponent(salmm)}&pnums=${encodeURIComponent(pnums)}`
+			);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || "V40100E(급여명세서) 조회에 실패했습니다.");
+				return;
+			}
+			const list: V40100EPrintRow[] = Array.isArray(json.data) ? json.data : [];
+			const byPnum = new Map<string, V40100EPrintRow>();
+			for (const d of list) {
+				const k = String(d.PNUM ?? "").trim();
+				if (k) byPnum.set(k, d);
+			}
+			const printRows = selectedRows.map((sr) => {
+				const fromView = byPnum.get(String(sr.pnum).trim());
+				if (fromView) {
+					return { ...fromView, pSt: fromView.pSt || sr.pSt };
+				}
+				return statementRowToV40100EFallback(payYearMonth, sr);
+			});
+			const body = printRows
+				.map((row) => `<div class="f24-page">${buildBenefitStatement24Body(payYearMonth, row)}</div>`)
+				.join("");
+			openPrintPreviewWindow(wrapF24PrintHtml(body));
+		} catch (e) {
+			console.error(e);
+			alert(e instanceof Error ? e.message : "급여명세서 출력 중 오류가 발생했습니다.");
+		}
 	}, [payYearMonth, statementRows, checkedPnums]);
 
-	const printPaymentConfirmation = useCallback(() => {
+	const printPaymentConfirmation = useCallback(async () => {
 		const selectedRows = statementRows.filter((r) => checkedPnums.has(r.pnum));
 		if (selectedRows.length === 0) {
 			alert(
@@ -1625,30 +1957,58 @@ export default function MonthlySalaryStatement() {
 			);
 			return;
 		}
-		const html = buildPaymentConfirmation25PrintHtml(payYearMonth, selectedRows);
-		openPrintPreviewWindow(html);
+		const year = payYearMonth.length >= 4 ? payYearMonth.slice(0, 4) : "";
+		if (!year) {
+			alert("급여년월을 선택해 주세요.");
+			return;
+		}
+		try {
+			const pnums = selectedRows.map((r) => r.pnum).join(",");
+			const res = await fetch(
+				`/api/v40100g?salyy=${encodeURIComponent(year)}&pnums=${encodeURIComponent(pnums)}`
+			);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || "V40100G(납부확인) 조회에 실패했습니다.");
+				return;
+			}
+			const list: V40100GPrintRow[] = Array.isArray(json.data) ? json.data : [];
+			const byPnum = new Map<string, V40100GPrintRow>();
+			for (const d of list) {
+				const k = String(d.PNUM ?? "").trim();
+				if (k) byPnum.set(k, d);
+			}
+			const printRows = selectedRows.map(
+				(sr) => byPnum.get(String(sr.pnum).trim()) ?? statementRowToV40100GFallback(payYearMonth, sr)
+			);
+			const html = buildPaymentConfirmation25PrintHtml(payYearMonth, printRows);
+			openPrintPreviewWindow(html);
+		} catch (e) {
+			console.error(e);
+			alert(e instanceof Error ? e.message : "납부확인서 출력 중 오류가 발생했습니다.");
+		}
 	}, [payYearMonth, statementRows, checkedPnums]);
 
 	const handleDocumentKindClick = useCallback(
 		(id: (typeof TABS)[number]["id"]) => {
 			if (id === "occurrence") {
 				setActiveTab("occurrence");
-				printOccurrence();
+				void printOccurrence();
 				return;
 			}
 			if (id === "ledger") {
 				setActiveTab("ledger");
-				printLedger();
+				void printLedger();
 				return;
 			}
 			if (id === "statement") {
 				setActiveTab("statement");
-				printBenefitStatement();
+				void printBenefitStatement();
 				return;
 			}
 			if (id === "payment") {
 				setActiveTab("payment");
-				printPaymentConfirmation();
+				void printPaymentConfirmation();
 				return;
 			}
 			setActiveTab(id);
