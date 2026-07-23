@@ -383,6 +383,22 @@ export default function TabHost() {
     }
   };
 
+  const closeAllTabs = () => {
+    setTabs([]);
+    setActiveId(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (error) {
+      console.error('탭 상태 삭제 실패:', error);
+    }
+    const basePath = pathname?.includes('dayNightCare')
+      ? '/dayNightCare'
+      : pathname?.includes('shortTermCare')
+        ? '/shortTermCare'
+        : '/nursingHome';
+    router.push(basePath);
+  };
+
   if (tabs.length === 0) {
     return <div className="mt-20 text-center text-gray-400">좌측 메뉴를 클릭해 탭을 여세요</div>;
   }
@@ -410,6 +426,16 @@ export default function TabHost() {
             >×</span>
           </button>
         ))}
+        {tabs.length >= 3 ? (
+          <button
+            type="button"
+            onClick={closeAllTabs}
+            className="flex shrink-0 items-center px-3 py-2 text-sm whitespace-nowrap border-r border-b border-gray-200 bg-white text-red-700 hover:bg-red-50"
+            title="열어둔 탭 전체 닫기"
+          >
+            전체닫기
+          </button>
+        ) : null}
       </div>
       {/* 컨텐츠 */}
       <div className="flex-1 bg-white">
