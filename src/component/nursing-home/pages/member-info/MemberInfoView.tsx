@@ -54,6 +54,103 @@ function todayYYYYMMDD(): string {
 	return `${y}-${m}-${day}`;
 }
 
+interface V10010APrintRow {
+	name: string;
+	sex: string;
+	birthday: string;
+	age: number | null;
+	recognitionNo: string;
+	grade: string;
+	validPeriod: string;
+	status: string;
+	admitDate: string;
+	dischargeDate: string;
+	guardianPhone: string;
+}
+
+function buildV10010AListPrintHtml(rows: V10010APrintRow[], institutionName?: string): string {
+	const bodyRows =
+		rows.length === 0
+			? `<tr><td class="c" colspan="12">출력할 데이터가 없습니다.</td></tr>`
+			: rows
+					.map(
+						(r, i) => `<tr>
+			<td class="c">${i + 1}</td>
+			<td class="c">${escapeHtml(r.name || '-')}</td>
+			<td class="c">${escapeHtml(r.sex || '-')}</td>
+			<td class="c">${escapeHtml(r.birthday || '-')}</td>
+			<td class="c">${r.age != null && Number.isFinite(r.age) ? r.age : '-'}</td>
+			<td class="c">${escapeHtml(r.recognitionNo || '-')}</td>
+			<td class="c">${escapeHtml(r.grade || '-')}</td>
+			<td class="c">${escapeHtml(r.validPeriod || '-')}</td>
+			<td class="c">${escapeHtml(r.status || '-')}</td>
+			<td class="c">${escapeHtml(r.admitDate || '-')}</td>
+			<td class="c">${escapeHtml(r.dischargeDate || '-')}</td>
+			<td class="c">${escapeHtml(r.guardianPhone || '-')}</td>
+		</tr>`
+					)
+					.join('');
+
+	return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>수급자 전체 목록</title>
+<style>
+@page { size: A4 landscape; margin: 10mm 8mm 12mm 8mm; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 9pt; color: #000; background: #fff; }
+.head { text-align: center; margin-bottom: 8px; page-break-after: avoid; }
+.title { font-size: 16pt; font-weight: 700; letter-spacing: 0.02em; }
+.meta { margin-top: 4px; font-size: 9.5pt; display: flex; justify-content: space-between; gap: 12px; }
+.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; }
+.tbl thead { display: table-header-group; }
+.tbl tr { page-break-inside: avoid; break-inside: avoid; }
+.tbl th, .tbl td { border: 1px solid #000; padding: 3px 2px; vertical-align: middle; word-break: break-word; }
+.tbl th { background: #e8e8e8; font-weight: 700; text-align: center; font-size: 8.5pt; }
+.tbl td.c { text-align: center; }
+.foot { margin-top: 8px; display: flex; justify-content: space-between; font-size: 9pt; }
+@media print {
+	body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+	<div class="head">
+		<div class="title">수급자 전체 목록</div>
+		<div class="meta">
+			<span>기준일: ${escapeHtml(todayYYYYMMDD())}</span>
+			<span>기관: ${escapeHtml(institutionName || '')}</span>
+			<span>인원: ${rows.length}명</span>
+		</div>
+	</div>
+	<table class="tbl">
+		<thead>
+			<tr>
+				<th style="width:4%">No</th>
+				<th style="width:8%">성명</th>
+				<th style="width:5%">성별</th>
+				<th style="width:9%">생일</th>
+				<th style="width:5%">나이</th>
+				<th style="width:11%">장기요양인증번호</th>
+				<th style="width:8%">요양등급</th>
+				<th style="width:16%">유효기간</th>
+				<th style="width:6%">상태</th>
+				<th style="width:9%">입소일자</th>
+				<th style="width:9%">퇴소일자</th>
+				<th style="width:10%">보호자연락처</th>
+			</tr>
+		</thead>
+		<tbody>${bodyRows}</tbody>
+	</table>
+	<div class="foot">
+		<span>V10010A</span>
+		<span>총 ${rows.length}명</span>
+	</div>
+</body>
+</html>`;
+}
+
 /** DB/API에서 오는 날짜를 date input용 YYYY-MM-DD 문자열로 */
 function toDateInputString(v: unknown): string {
 	if (v == null || v === '') return '';
@@ -770,58 +867,78 @@ export default function MemberInfoView() {
 		setCurrentPage(1);
 	}, [selectedStatus, selectedGrade, selectedFloor]);
 
-	const handlePrintRecipientCard = () => {
+	const handlePrintRecipientCard = async () => {
 		if (!selectedMember) return;
 
-		const instName =
-			institutions.find((i) => String(i.ANCD) === String(selectedMember.ANCD))?.ANNM ||
-			String(selectedMember.ANCD ?? '');
+		const pnum = String(selectedMember.PNUM ?? '').trim();
+		if (!pnum) {
+			alert('선택된 수급자 번호가 없습니다.');
+			return;
+		}
 
-		const title = `${String(selectedMember.P_NM ?? '')} - 수급자카드`;
-		const baseFont = `"Malgun Gothic", "맑은 고딕", Arial, sans-serif`;
+		try {
+			const res = await fetch(`/api/v10010c?pnum=${encodeURIComponent(pnum)}`);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || 'V10010C(수급자카드) 조회에 실패했습니다.');
+				return;
+			}
+			const card = json.data;
+			if (!card) {
+				alert('선택한 수급자의 카드 데이터를 찾을 수 없습니다.');
+				return;
+			}
 
-		const guardianName = selectedMember.BHNM || '';
-		const guardianRelRaw = selectedMember.BHREL || selectedMember.BHETC || '';
-		const guardianRel = (() => {
-			const r = String(guardianRelRaw ?? '').trim();
-			if (r === '10') return '남편';
-			if (r === '11') return '부인';
-			if (r === '20') return '아들';
-			if (r === '21') return '딸';
-			if (r === '22') return '며느리';
-			if (r === '23') return '사위';
-			if (r === '31') return '손주';
-			return r;
-		})();
+			const instName =
+				institutions.find((i) => String(i.ANCD) === String(selectedMember.ANCD))?.ANNM ||
+				String(selectedMember.ANCD ?? '');
 
-		const guardianPhone = selectedMember.GUARDIAN_P_HP || selectedMember.GUARDIAN_P_TEL || '';
-		const guardianAddr = selectedMember.GUARDIAN_P_ADDR || '';
+			const memberName = String(card.name || selectedMember.P_NM || '').trim();
+			const title = `${memberName} - 수급자카드`;
+			const baseFont = `"Malgun Gothic", "맑은 고딕", Arial, sans-serif`;
 
-		const memberNo = selectedMember.P_YYNO || selectedMember.PNUM || '';
-		const rrn = selectedMember.P_NO || '';
-		const birth = fmtDate10(selectedMember.P_BRDT);
-		const grade = formatCareGradeLabel(selectedMember.P_GRD, '');
-		const validFrom = fmtDate10(selectedMember.P_YYSDT);
-		const validTo = fmtDate10(selectedMember.P_YYEDT);
-		const contractDate = fmtDate10(selectedMember.P_CTDT);
-		const admitDate = fmtDate10(selectedMember.P_SDT);
-		const dischargeDate = fmtDate10(selectedMember.P_EDT);
-		const status = fmtStatus(selectedMember.P_ST);
-		const sex = fmtSex(selectedMember.P_SEX);
-		const hospital = selectedMember.HSPT || '';
-		const doctorName = selectedMember.DTNM || '';
-		const doctorTel = selectedMember.DTTEL || '';
-		const insPer = selectedMember.INSPER ?? '';
-		const usrPer = selectedMember.USRPER ?? '';
+			const guardianName = selectedMember.BHNM || '';
+			const guardianRelRaw = selectedMember.BHREL || selectedMember.BHETC || '';
+			const guardianRel = (() => {
+				const r = String(guardianRelRaw ?? '').trim();
+				if (r === '10') return '남편';
+				if (r === '11') return '부인';
+				if (r === '20') return '아들';
+				if (r === '21') return '딸';
+				if (r === '22') return '며느리';
+				if (r === '23') return '사위';
+				if (r === '31') return '손주';
+				return r;
+			})();
 
-		const html = `<!doctype html>
+			const guardianPhone = selectedMember.GUARDIAN_P_HP || selectedMember.GUARDIAN_P_TEL || '';
+			const guardianAddr = selectedMember.GUARDIAN_P_ADDR || '';
+
+			const memberNo = card.recognitionNo || '';
+			const birth = card.birthday || '';
+			const grade = card.grade || '';
+			const validPeriod = card.validPeriod || '';
+			const contractDate = card.contractDate || '';
+			const admitDate = card.admitDate || '';
+			const dischargeDate = card.dischargeDate || '';
+			const status = card.status || fmtStatus(card.P_ST || selectedMember.P_ST);
+			const sex = card.sex || fmtSex(selectedMember.P_SEX);
+			const hospital = card.hospital || '';
+			const doctorName = card.doctorName || '';
+			const doctorTel = card.doctorTel || '';
+			const dischargeReason = card.dischargeReason || '';
+			const zip = card.zip || '';
+			const address = card.address || '';
+			const homePhone = card.homePhone || '';
+			const addrDisp = [zip, address].filter(Boolean).join(' ');
+
+			const html = `<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(title)}</title>
   <style>
-    /* 1페이지 고정을 위해 여백/높이 최적화 */
     @page { size: A4 landscape; margin: 8mm; }
     html, body { height: auto; }
     body { font-family: ${baseFont}; color: #000; margin: 0; padding: 0; }
@@ -931,14 +1048,12 @@ export default function MemberInfoView() {
     .center { text-align: center; }
     .nowrap { white-space: nowrap; }
 
-    /* 표/섹션이 중간에서 페이지 분할되지 않도록 */
     table, tr, td, th { break-inside: avoid; page-break-inside: avoid; }
     .sectionTitle { break-after: avoid; page-break-after: avoid; }
 
     @media print {
       .noPrint { display: none !important; }
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      /* 빈 2페이지 방지: 인쇄 시 100% 높이/여백으로 인한 미세 오버플로 제거 */
       html, body { height: auto !important; }
       .page { min-height: auto !important; height: auto !important; overflow: visible !important; }
     }
@@ -992,11 +1107,11 @@ export default function MemberInfoView() {
           <th>수급자상태</th>
           <td>${escapeHtml(status)}</td>
           <th>퇴소사유</th>
-          <td>${escapeHtml(selectedMember.P_CINFO || '')}</td>
+          <td>${escapeHtml(dischargeReason)}</td>
         </tr>
         <tr>
           <th>요양등급</th>
-          <td>${escapeHtml(grade || '')}</td>
+          <td>${escapeHtml(grade)}</td>
           <th>성별</th>
           <td>${escapeHtml(sex)}</td>
           <th>계약일자</th>
@@ -1006,9 +1121,9 @@ export default function MemberInfoView() {
         </tr>
         <tr>
           <th>유효기간</th>
-          <td>${escapeHtml(validFrom && validTo ? `${validFrom} ~ ${validTo}` : (validFrom || validTo ? `${validFrom}${validTo ? ` ~ ${validTo}` : ''}` : ''))}</td>
-          <th>주민번호</th>
-          <td>${escapeHtml(rrn)}</td>
+          <td>${escapeHtml(validPeriod)}</td>
+          <th>집전화번호</th>
+          <td>${escapeHtml(homePhone)}</td>
           <th>퇴소일자</th>
           <td>${escapeHtml(dischargeDate)}</td>
           <th>이용병원</th>
@@ -1019,10 +1134,10 @@ export default function MemberInfoView() {
           <td>${escapeHtml(doctorName)}</td>
           <th>주치의연락처</th>
           <td>${escapeHtml(doctorTel)}</td>
-          <th>보험자부담율</th>
-          <td>${escapeHtml(insPer)}${insPer !== '' ? '%' : ''}</td>
-          <th>수급자부담율</th>
-          <td>${escapeHtml(usrPer)}${usrPer !== '' ? '%' : ''}</td>
+          <th>우편번호</th>
+          <td>${escapeHtml(zip)}</td>
+          <th>집주소</th>
+          <td>${escapeHtml(addrDisp || address)}</td>
         </tr>
       </tbody>
     </table>
@@ -1070,7 +1185,7 @@ export default function MemberInfoView() {
       <tbody>
         <tr>
           <td>${escapeHtml(contractDate)}</td>
-          <td>${escapeHtml(validFrom && validTo ? `${validFrom} ~ ${validTo}` : '')}</td>
+          <td>${escapeHtml(validPeriod)}</td>
           <td class="right">${escapeHtml(selectedMember.INSPER_AMT || '')}</td>
           <td class="right">${escapeHtml(selectedMember.USRPER_AMT || '')}</td>
           <td>${escapeHtml(selectedMember.BEN_TYPE || '')}</td>
@@ -1084,24 +1199,85 @@ export default function MemberInfoView() {
 </body>
 </html>`;
 
-		// DailyBeneficiaryPerformance.tsx와 동일 패턴(부모창에서 print 호출)로 출력 안정화
-		const w = window.open('', '_blank');
-		if (!w) {
-			alert('팝업이 차단되어 출력창을 열 수 없습니다. 팝업 허용 후 다시 시도해주세요.');
-			return;
-		}
-		w.document.open();
-		w.document.write(html);
-		w.document.close();
-
-		setTimeout(() => {
-			try {
-				w.focus();
-				w.print();
-			} catch (e) {
-				// ignore
+			const w = window.open('', '_blank');
+			if (!w) {
+				alert('팝업이 차단되어 출력창을 열 수 없습니다. 팝업 허용 후 다시 시도해주세요.');
+				return;
 			}
-		}, 250);
+			w.document.open();
+			w.document.write(html);
+			w.document.close();
+
+			setTimeout(() => {
+				try {
+					w.focus();
+					w.print();
+				} catch (e) {
+					// ignore
+				}
+			}, 250);
+		} catch (e) {
+			console.error(e);
+			alert(e instanceof Error ? e.message : '수급자카드 출력 중 오류가 발생했습니다.');
+		}
+	};
+
+	const handlePrintAllMembers = async () => {
+		try {
+			const statusParam =
+				selectedStatus === '입소' || selectedStatus === '퇴소'
+					? `?status=${encodeURIComponent(selectedStatus)}`
+					: '';
+			const res = await fetch(`/api/v10010a${statusParam}`);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || 'V10010A(수급자 목록) 조회에 실패했습니다.');
+				return;
+			}
+			let list: V10010APrintRow[] = Array.isArray(json.data) ? json.data : [];
+
+			const nameQ = String(searchTerm || '').trim().toLowerCase();
+			if (nameQ) {
+				list = list.filter((r) => String(r.name || '').toLowerCase().includes(nameQ));
+			}
+			if (selectedGrade) {
+				list = list.filter((r) => {
+					const g = String(r.grade || '');
+					if (selectedGrade === '9') return g.includes('인지');
+					return g.includes(`${selectedGrade}등급`) || g.startsWith(selectedGrade);
+				});
+			}
+
+			if (list.length === 0) {
+				alert('출력할 수급자 데이터가 없습니다.');
+				return;
+			}
+
+			const instName =
+				institutions.find((i) => String(i.ANCD) === String(selectedMember?.ANCD ?? ''))?.ANNM ||
+				institutions[0]?.ANNM ||
+				'';
+			const html = buildV10010AListPrintHtml(list, instName);
+			const w = window.open('', '_blank');
+			if (!w) {
+				alert('팝업이 차단되어 출력창을 열 수 없습니다. 팝업 허용 후 다시 시도해주세요.');
+				return;
+			}
+			w.document.open();
+			w.document.write(html);
+			w.document.close();
+			setTimeout(() => {
+				try {
+					w.focus();
+					w.print();
+				} catch {
+					// ignore
+				}
+			}, 250);
+		} catch (e) {
+			console.error(e);
+			alert(e instanceof Error ? e.message : '수급자 전체 출력 중 오류가 발생했습니다.');
+		}
 	};
 
 	return (
@@ -1111,7 +1287,16 @@ export default function MemberInfoView() {
 					{/* 좌측: 수급자 목록 */}
 					<aside className="w-1/3 shrink-0">
 						<div className="overflow-hidden bg-white border border-blue-300 rounded-lg shadow-sm">
-							<div className="px-3 py-2 font-semibold text-blue-900 bg-blue-100 border-b border-blue-300">수급자 목록</div>
+							<div className="flex items-center justify-between gap-2 px-3 py-2 font-semibold text-blue-900 bg-blue-100 border-b border-blue-300">
+								<span>수급자 목록</span>
+								<button
+									type="button"
+									onClick={() => void handlePrintAllMembers()}
+									className="shrink-0 rounded border border-blue-400 bg-white px-2 py-1 text-xs font-medium text-blue-900 hover:bg-blue-50"
+								>
+									수급자 전체 출력
+								</button>
+							</div>
 							{/* 상단 상태/검색 영역 */}
 							<div className="px-3 py-2 space-y-2 border-b border-blue-100">
 								{/* 현황 필터 */}

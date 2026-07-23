@@ -178,11 +178,6 @@ function formatUsrguLabel(v: string | number | null | undefined, row?: MemberDat
 	return x;
 }
 
-function usrguLabel(v: string | number | null | undefined, row?: MemberData | null): string {
-	return formatUsrguLabel(v, row);
-}
-
-/** 식대·간식·상급병실 + 기타금액(USRINFO_AMT) */
 function careBenefitTotalWon(row: MemberData | null | undefined): number {
 	if (!row) return 0;
 	return (
@@ -201,46 +196,81 @@ function recipientBurdenAmountWon(row: MemberData | null | undefined): number | 
 	return Math.round(total * (ur / 100));
 }
 
+interface V10010BPrintRow {
+	seq: number | null;
+	ANCD: number | string;
+	PNUM: string;
+	name: string;
+	birthday: string;
+	contractDate: string;
+	recognitionNo: string;
+	grade: string;
+	validPeriod: string;
+	benefitType: string;
+	contractorName: string;
+	relation: string;
+	homePhone: string;
+	mobilePhone: string;
+	contractPeriod: string;
+	serviceType: string;
+}
+
 function buildContractPrintHtml(
 	basisDate: string,
 	printDate: string,
-	groups: Array<{ member: MemberData; contracts: MemberData[]; contractor: string; rel: string }>
+	rows: V10010BPrintRow[]
 ): string {
 	const title = '수급자 계약정보';
-	const rowsHtml = groups
-		.map((g) => {
-			const m = g.member;
-			const birth = formatYmd(m.P_BRDT);
-			const yyno = escapeHtml(m.P_YYNO || '');
-			const grade = escapeHtml(formatCareGradeLabel(m.P_GRD, '-'));
-			const vs = formatYmd(m.P_YYSDT);
-			const ve = formatYmd(m.P_YYEDT);
-			const valid = vs || ve ? `${vs || '-'}~${ve || '-'}` : '-';
-			const tel = escapeHtml(m.P_TEL || '');
-			const hp = escapeHtml(m.P_HP || '');
-			const list = g.contracts.length > 0 ? g.contracts : [null];
-			const n = list.length;
-			return list
-				.map((ct, i) => {
-					const period =
-						ct && (ct as MemberData).SVSDT
-							? `${formatYmd((ct as MemberData).SVSDT)}~${formatYmd((ct as MemberData).SVEDT)}`
-							: '-';
-					const benefit = ct ? usrguLabel((ct as MemberData).USRGU, ct as MemberData) : '-';
-					return `
+
+	// PNUM 기준 그룹 (동일 수급자 연속 행 → 성명/생일 rowspan)
+	type Group = { pnum: string; name: string; birthday: string; items: V10010BPrintRow[] };
+	const groups: Group[] = [];
+	for (const row of rows) {
+		const key = String(row.PNUM || '').trim() || `__${row.name}`;
+		const last = groups[groups.length - 1];
+		if (last && last.pnum === key) {
+			last.items.push(row);
+		} else {
+			groups.push({
+				pnum: key,
+				name: row.name,
+				birthday: row.birthday,
+				items: [row],
+			});
+		}
+	}
+
+	const rowsHtml =
+		groups.length === 0
+			? `<tr><td class="c" colspan="7">출력할 데이터가 없습니다.</td></tr>`
+			: groups
+					.map((g) => {
+						const n = g.items.length;
+						return g.items
+							.map((ct, i) => {
+								const yyno = escapeHtml(ct.recognitionNo || '');
+								const grade = escapeHtml(ct.grade || '');
+								const valid = escapeHtml(ct.validPeriod || '');
+								const benefit = escapeHtml(ct.benefitType || '');
+								const contractor = escapeHtml(ct.contractorName || '');
+								const rel = escapeHtml(ct.relation || '');
+								const tel = escapeHtml(ct.homePhone || '');
+								const hp = escapeHtml(ct.mobilePhone || '');
+								const period = escapeHtml(ct.contractPeriod || '-');
+								return `
 						<tr>
-							${i === 0 ? `<td rowspan="${n}" class="c">${escapeHtml(m.P_NM || '')}</td>` : ''}
-							${i === 0 ? `<td rowspan="${n}" class="c">${escapeHtml(birth)}</td>` : ''}
-							<td class="dual"><div>${yyno}</div><div>${escapeHtml(g.contractor)}</div></td>
-							<td class="dual"><div>${grade}</div><div>${escapeHtml(g.rel)}</div></td>
-							<td class="dual"><div>${escapeHtml(valid)}</div><div>${tel}</div></td>
-							<td class="dual"><div>${escapeHtml(benefit)}</div><div>${hp}</div></td>
-							<td class="c">${escapeHtml(period)}</td>
+							${i === 0 ? `<td rowspan="${n}" class="c name">${escapeHtml(g.name || '')}</td>` : ''}
+							${i === 0 ? `<td rowspan="${n}" class="c">${escapeHtml(g.birthday || '')}</td>` : ''}
+							<td class="dual"><div>${yyno || '&nbsp;'}</div><div>${contractor || '&nbsp;'}</div></td>
+							<td class="dual"><div>${grade || '&nbsp;'}</div><div>${rel || '&nbsp;'}</div></td>
+							<td class="dual"><div>${valid || '&nbsp;'}</div><div>${tel || '&nbsp;'}</div></td>
+							<td class="dual"><div>${benefit || '&nbsp;'}</div><div>${hp || '&nbsp;'}</div></td>
+							<td class="c">${period}</td>
 						</tr>`;
-				})
-				.join('');
-		})
-		.join('');
+							})
+							.join('');
+					})
+					.join('');
 
 	return `<!DOCTYPE html>
 <html lang="ko">
@@ -248,105 +278,127 @@ function buildContractPrintHtml(
 <meta charset="utf-8"/>
 <title>${title}</title>
 <style>
-	body { font-family: 'Malgun Gothic', sans-serif; font-size: 11px; color: #000; margin: 16px; }
-	h1 { text-align: center; font-size: 18px; text-decoration: underline; margin: 0 0 12px; }
-	.meta { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-	.sign { border-collapse: collapse; }
-	.sign th, .sign td { border: 1px solid #333; width: 72px; height: 28px; text-align: center; font-size: 10px; }
-	.basis { font-size: 11px; }
-	table.data { width: 100%; border-collapse: collapse; margin-top: 8px; }
-	table.data th, table.data td { border: 1px solid #333; padding: 4px 6px; vertical-align: middle; }
-	table.data th { background: #f0f0f0; font-weight: bold; text-align: center; font-size: 10px; }
-	td.dual div { line-height: 1.35; }
-	td.dual div:first-child { border-bottom: 1px dashed #ccc; padding-bottom: 2px; margin-bottom: 2px; }
-	td.c { text-align: center; }
-	.footer { margin-top: 12px; display: flex; justify-content: space-between; font-size: 10px; }
-	.hdr2 { line-height: 1.2; }
+@page { size: A4 landscape; margin: 10mm 10mm 14mm 10mm; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 10pt; color: #000; background: #fff; }
+.head {
+	position: relative;
+	min-height: 52px;
+	margin-bottom: 8px;
+	page-break-after: avoid;
+}
+.title {
+	text-align: center;
+	font-size: 18pt;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	padding: 2px 12px 4px;
+	border-bottom: 3px double #000;
+	display: inline-block;
+	min-width: 220px;
+}
+.head-title-wrap { text-align: center; padding-right: 100px; }
+.basis {
+	font-size: 10.5pt;
+	margin-top: 6px;
+}
+.sign {
+	position: absolute;
+	top: 0;
+	right: 0;
+	border-collapse: collapse;
+	font-size: 9pt;
+}
+.sign th, .sign td {
+	border: 1px solid #000;
+	width: 48px;
+	text-align: center;
+	vertical-align: middle;
+	padding: 2px 1px;
+}
+.sign th { font-weight: 700; background: #f2f2f2; height: 18px; }
+.sign td { height: 28px; }
+table.data {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+	border: 1px solid #000;
+	margin-top: 4px;
+}
+table.data thead { display: table-header-group; }
+table.data tr { page-break-inside: avoid; break-inside: avoid; }
+table.data th, table.data td {
+	border: 1px solid #000;
+	padding: 4px 5px;
+	vertical-align: middle;
+	word-break: break-word;
+}
+table.data th {
+	background: #e8e8e8;
+	font-weight: 700;
+	text-align: center;
+	font-size: 9pt;
+	line-height: 1.25;
+}
+td.dual { text-align: left; font-size: 9pt; }
+td.dual div { line-height: 1.35; min-height: 1.2em; }
+td.dual div:first-child {
+	border-bottom: 1px dashed #999;
+	padding-bottom: 3px;
+	margin-bottom: 3px;
+}
+td.c { text-align: center; }
+td.name { font-weight: 600; }
+.footer {
+	margin-top: 10px;
+	display: flex;
+	justify-content: space-between;
+	font-size: 9.5pt;
+}
+.footer .pg::after { content: counter(page); }
+@media print {
+	body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
 </style>
 </head>
 <body>
-	<div class="meta">
-		<div class="basis">기준일자: ${escapeHtml(basisDate)}</div>
-		<table class="sign">
+	<div class="head">
+		<table class="sign" aria-label="결재">
 			<tr><th>담당</th><th>검토</th><th>결재</th></tr>
 			<tr><td></td><td></td><td></td></tr>
 		</table>
+		<div class="head-title-wrap"><h1 class="title">${title}</h1></div>
+		<div class="basis">기준일자: ${escapeHtml(basisDate)}</div>
 	</div>
-	<h1>${title}</h1>
 	<table class="data">
+		<colgroup>
+			<col style="width:9%"/>
+			<col style="width:10%"/>
+			<col style="width:14%"/>
+			<col style="width:12%"/>
+			<col style="width:20%"/>
+			<col style="width:16%"/>
+			<col style="width:19%"/>
+		</colgroup>
 		<thead>
 			<tr>
-				<th class="hdr2">수급자</th>
-				<th class="hdr2">생일</th>
-				<th class="hdr2">인정번호<br/>계약자성명</th>
-				<th class="hdr2">인정등급<br/>수급자와관계</th>
-				<th class="hdr2">인정유효기간<br/>자택전화번호</th>
-				<th class="hdr2">급여종류<br/>핸드폰번호</th>
-				<th class="hdr2">계약기간</th>
+				<th>수급자</th>
+				<th>생일</th>
+				<th>인정번호<br/>계약자성명</th>
+				<th>인정등급<br/>수급자와관계</th>
+				<th>인정유효기간<br/>자택전화번호</th>
+				<th>급여종류<br/>핸드폰번호</th>
+				<th>계약기간</th>
 			</tr>
 		</thead>
 		<tbody>${rowsHtml}</tbody>
 	</table>
 	<div class="footer">
 		<span>R10010B</span>
-		<span>출력일자: ${escapeHtml(printDate)} &nbsp; 페이지: 1</span>
+		<span>출력일자: ${escapeHtml(printDate)} &nbsp; 페이지: <span class="pg"></span></span>
 	</div>
 </body>
 </html>`;
-}
-
-/** 인쇄 1행분: 수급자 1명 + F10110 계약 목록 + 보호자(계약자) */
-async function fetchContractPrintGroupForMember(m: MemberData): Promise<{
-	member: MemberData;
-	contracts: MemberData[];
-	contractor: string;
-	rel: string;
-}> {
-	const [cRes, gRes] = await Promise.all([
-		fetch('/api/f10010', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				query: `
-					SELECT [ANCD],[PNUM],[CDT],[SVSDT],[SVEDT],[USRGU]
-					FROM [돌봄시설DB].[dbo].[F10110]
-					WHERE [ANCD] = @ANCD AND [PNUM] = @PNUM
-					ORDER BY [CDT] DESC
-				`,
-				params: { ANCD: String(m.ANCD), PNUM: String(m.PNUM) }
-			})
-		}),
-		fetch(
-			`/api/f10020?ancd=${encodeURIComponent(String(m.ANCD))}&pnum=${encodeURIComponent(String(m.PNUM))}`
-		)
-	]);
-	const cj = await cRes.json();
-	const gj = await gRes.json();
-	const contracts = cj.success && Array.isArray(cj.data) ? cj.data : [];
-	const guardians = gj.success && Array.isArray(gj.data) ? gj.data : [];
-	const g0 = guardians.find((g: MemberData) => String(g.CONGU) === '1') ?? guardians[0];
-	const contractor = g0?.BHNM != null ? String(g0.BHNM) : '';
-	const rel =
-		g0?.BHREL === '10'
-			? '남편'
-			: g0?.BHREL === '11'
-				? '부인'
-				: g0?.BHREL === '20'
-					? '아들'
-					: g0?.BHREL === '21'
-						? '딸'
-						: g0?.BHREL === '22'
-							? '며느리'
-							: g0?.BHREL === '23'
-								? '사위'
-								: g0?.BHREL === '31'
-									? '손주'
-									: g0?.BHETC && String(g0.BHETC).trim() !== ''
-										? String(g0.BHETC)
-										: g0?.BHREL != null && String(g0.BHREL) !== ''
-											? String(g0.BHREL)
-											: '';
-	return { member: m, contracts, contractor, rel };
 }
 
 export default function MemberContractInfo() {
@@ -646,11 +698,27 @@ export default function MemberContractInfo() {
 		setPrintLoading(true);
 		try {
 			const basis = new Date().toISOString().slice(0, 10);
-			const printDate = basis;
-			const groups = await Promise.all(
-				filteredMembers.map((m) => fetchContractPrintGroupForMember(m))
+			const pnums = Array.from(
+				new Set(
+					filteredMembers
+						.map((m) => String(m.PNUM ?? '').trim())
+						.filter(Boolean)
+				)
 			);
-			const html = buildContractPrintHtml(basis, printDate, groups);
+			if (pnums.length === 0) {
+				alert('출력할 수급자 번호가 없습니다.');
+				return;
+			}
+			const res = await fetch(`/api/v10010b?pnums=${encodeURIComponent(pnums.join(','))}`);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || 'V10010B(계약정보) 조회에 실패했습니다.');
+				return;
+			}
+			const rows: V10010BPrintRow[] = Array.isArray(json.data) ? json.data : [];
+			const pnumSet = new Set(pnums);
+			const filtered = rows.filter((r) => pnumSet.has(String(r.PNUM ?? '').trim()));
+			const html = buildContractPrintHtml(basis, basis, filtered);
 			openPrintWindow(html);
 		} catch (e) {
 			console.error(e);
@@ -668,8 +736,19 @@ export default function MemberContractInfo() {
 		setPrintLoading(true);
 		try {
 			const basis = new Date().toISOString().slice(0, 10);
-			const group = await fetchContractPrintGroupForMember(selectedMember);
-			const html = buildContractPrintHtml(basis, basis, [group]);
+			const pnum = String(selectedMember.PNUM).trim();
+			const res = await fetch(`/api/v10010b?pnum=${encodeURIComponent(pnum)}`);
+			const json = await res.json();
+			if (!json.success) {
+				alert(json.error || 'V10010B(계약정보) 조회에 실패했습니다.');
+				return;
+			}
+			const rows: V10010BPrintRow[] = Array.isArray(json.data) ? json.data : [];
+			if (rows.length === 0) {
+				alert('선택한 수급자의 계약 내역이 없습니다.');
+				return;
+			}
+			const html = buildContractPrintHtml(basis, basis, rows);
 			openPrintWindow(html);
 		} catch (e) {
 			console.error(e);
