@@ -43,11 +43,13 @@ export type F14070DailyRecords = {
 	cognitivePreparer: string[];
 	vitalSigns: string[];
 	healthManagement: boolean[];
+	healthTime: string[];
 	nursingManagement: boolean[];
+	nursingTime: string[];
 	emergencyService: boolean[];
 	healthNotes: string[];
 	healthPreparer: string[];
-	trainingProgram: string[];
+	trainingProgram: boolean[];
 	physicalFunctionTraining: boolean[];
 	cognitiveTraining: boolean[];
 	physicalTherapy: boolean[];
@@ -124,7 +126,8 @@ export function mapF14070ToFormState(row: any): {
 		const mm = pad2(col(row, 'MM', d));
 		const dd = pad2(col(row, 'DD', d));
 		if (y && !year) year = y;
-		weekDates.push(mm && dd ? `${mm}/${dd}` : '');
+		// 서식: "7 / 13" (앞에 0 없음, 슬래시 앞뒤 공백)
+		weekDates.push(mm && dd ? `${Number(mm)} / ${Number(dd)}` : '');
 	}
 	if (!year) {
 		const sv = row?.SVDT_01;
@@ -187,11 +190,13 @@ export function mapF14070ToFormState(row: any): {
 		cognitivePreparer: empty7(),
 		vitalSigns: empty7(),
 		healthManagement: empty7Bool(),
+		healthTime: empty7(),
 		nursingManagement: empty7Bool(),
+		nursingTime: empty7(),
 		emergencyService: empty7Bool(),
 		healthNotes: empty7(),
 		healthPreparer: empty7(),
-		trainingProgram: empty7(),
+		trainingProgram: empty7Bool(),
 		physicalFunctionTraining: empty7Bool(),
 		cognitiveTraining: empty7Bool(),
 		physicalTherapy: empty7Bool(),
@@ -240,12 +245,16 @@ export function mapF14070ToFormState(row: any): {
 
 		daily.vitalSigns[i] = String(col(row, 'NS_SBDP_TMPBD', d) ?? '').trim();
 		daily.healthManagement[i] = f14070Checked(col(row, 'NS_HLTH_HELP', d));
+		const hlthTm = col(row, 'NS_HLTH_TIME', d);
+		daily.healthTime[i] = hlthTm != null && String(hlthTm).trim() !== '' ? String(hlthTm).trim() : '';
 		daily.nursingManagement[i] = f14070Checked(col(row, 'NS_NRSE_HELP', d));
+		const nrseTm = col(row, 'NS_NRSE_TIME', d);
+		daily.nursingTime[i] = nrseTm != null && String(nrseTm).trim() !== '' ? String(nrseTm).trim() : '';
 		daily.emergencyService[i] = f14070Checked(col(row, 'NS_ETC', d));
 		daily.healthNotes[i] = String(col(row, 'NS_PS', d) ?? '').trim();
 		daily.healthPreparer[i] = String(col(row, 'NS_WRITE_NAME', d) ?? '').trim();
 
-		daily.trainingProgram[i] = f14070Checked(col(row, 'FN_COGN_HELP', d)) ? '실시' : '';
+		daily.trainingProgram[i] = f14070Checked(col(row, 'FN_COGN_HELP', d));
 		daily.physicalFunctionTraining[i] = f14070Checked(col(row, 'FN_MOVE_HELP', d));
 		daily.cognitiveTraining[i] = f14070Checked(col(row, 'FN_MIND_TRAIN', d));
 		daily.physicalTherapy[i] = f14070Checked(col(row, 'FN_PHY_HELP', d));
