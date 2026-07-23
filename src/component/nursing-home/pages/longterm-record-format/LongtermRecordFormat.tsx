@@ -9,6 +9,7 @@ import {
 	applyNursingFieldsToDay,
 	formatVitalSignsFromRow
 } from '../../utils/nursingFields';
+import { mapF14070ToFormState } from './mapF14070';
 
 interface MemberData {
 	[key: string]: any;
@@ -21,10 +22,12 @@ function toYmd(d: Date) {
 	return `${yyyy}-${mm}-${dd}`;
 }
 
-function startOfWeekSunday(base: Date) {
+function startOfWeekMonday(base: Date) {
 	const d = new Date(base);
 	d.setHours(0, 0, 0, 0);
-	d.setDate(d.getDate() - d.getDay());
+	const day = d.getDay(); // 0=일 … 6=토
+	const diff = day === 0 ? -6 : 1 - day;
+	d.setDate(d.getDate() + diff);
 	return d;
 }
 
@@ -298,8 +301,18 @@ export default function LongtermRecordFormat() {
 
 	const [year, setYear] = useState(new Date().getFullYear().toString());
 	const [weekDates, setWeekDates] = useState<string[]>([]);
-	const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekSunday(new Date()));
+	const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekMonday(new Date()));
 	const [loading, setLoading] = useState(false);
+
+	const [headerInfo, setHeaderInfo] = useState({
+		name: '',
+		birthDate: '',
+		gradeLabel: '',
+		certNo: '',
+		institutionName: '너싱홈 해원',
+		institutionCode: '14161000067',
+		roomNo: ''
+	});
 
 	const [status, setStatus] = useState<'와상' | '준와상' | '자립'>('준와상');
 	const [dementia, setDementia] = useState(false);
@@ -326,19 +339,31 @@ export default function LongtermRecordFormat() {
 	const [dailyRecords, setDailyRecords] = useState(createEmptyDailyRecords);
 
 	const calculateWeekDates = (start: Date) => {
+		const monday = startOfWeekMonday(start);
 		const dates: string[] = [];
-		const startOfWeek = new Date(start);
-		startOfWeek.setHours(0, 0, 0, 0);
-
 		for (let i = 0; i < 7; i++) {
-			const date = new Date(startOfWeek);
-			date.setDate(startOfWeek.getDate() + i);
+			const date = new Date(monday);
+			date.setDate(monday.getDate() + i);
 			const month = String(date.getMonth() + 1).padStart(2, '0');
 			const day = String(date.getDate()).padStart(2, '0');
 			dates.push(`${month}/${day}`);
 		}
 		setWeekDates(dates);
-		setYear(String(startOfWeek.getFullYear()));
+		setYear(String(monday.getFullYear()));
+	};
+
+	const weekDatesFromMonday = (monday: Date) => {
+		const dates: string[] = [];
+		const start = new Date(monday);
+		start.setHours(0, 0, 0, 0);
+		for (let i = 0; i < 7; i++) {
+			const date = new Date(start);
+			date.setDate(start.getDate() + i);
+			const month = String(date.getMonth() + 1).padStart(2, '0');
+			const day = String(date.getDate()).padStart(2, '0');
+			dates.push(`${month}/${day}`);
+		}
+		return dates;
 	};
 
 	const applyLegacyBeneficiaryJson = (raw: unknown) => {
@@ -441,8 +466,18 @@ export default function LongtermRecordFormat() {
 		setPressureSorePrevention(false);
 		setPressureSorePreventionTool('');
 		setRoomNo('');
+		setHeaderInfo({
+			name: '',
+			birthDate: '',
+			gradeLabel: '',
+			certNo: '',
+			institutionName: '너싱홈 해원',
+			institutionCode: '14161000067',
+			roomNo: ''
+		});
 	};
 
+	/** 조회: Usp_P14070로 F14070 갱신 후, 해당 수급자 F14070 행으로 화면/출력 데이터 구성 */
 	const loadRecordData = async (pnum: string, start: Date) => {
 		if (!pnum) {
 			resetBeneficiaryDefaults();
@@ -453,33 +488,60 @@ export default function LongtermRecordFormat() {
 		resetBeneficiaryDefaults();
 		setDailyRecords(createEmptyDailyRecords());
 		try {
-			const from = toYmd(start);
-			const toD = new Date(start);
-			toD.setDate(toD.getDate() + 6);
-			const to = toYmd(toD);
+			const monday = startOfWeekMonday(start);
+			const frDt = toYmd(monday);
 
-			const [baselineRes, rangeRes] = await Promise.all([
-				fetch(`/api/f30112?pnum=${encodeURIComponent(pnum)}`),
-				fetch(`/api/f30112?pnum=${encodeURIComponent(pnum)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
-			]);
-			const baselineJson = await baselineRes.json().catch(() => ({}));
-			const rangeJson = await rangeRes.json().catch(() => ({}));
-
-			const baselineRow = baselineJson?.success && Array.isArray(baselineJson.data) ? baselineJson.data[0] : null;
-			const rangeRows = rangeJson?.success && Array.isArray(rangeJson.data) ? rangeJson.data : [];
-
-			const beneficiary = baselineRow
-				? applyBeneficiaryFromRow(baselineRow, applyLegacyBeneficiaryJson)
-				: null;
-			if (beneficiary) {
-				applyBeneficiaryState(beneficiary);
-			} else if (baselineRow?.ROOM_NO != null) {
-				setRoomNo(String(baselineRow.ROOM_NO).trim());
+			const genRes = await fetch('/api/f14070', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ frDt })
+			});
+			const genJson = await genRes.json().catch(() => ({}));
+			if (!genJson?.success) {
+				alert(genJson?.error || 'F14070(Usp_P14070) 생성에 실패했습니다.');
+				return;
 			}
 
-			setDailyRecords(buildDailyRecords(baselineRow, rangeRows, start));
+			const getRes = await fetch(`/api/f14070?pnum=${encodeURIComponent(pnum)}`);
+			const getJson = await getRes.json().catch(() => ({}));
+			if (!getJson?.success) {
+				alert(getJson?.error || 'F14070 조회에 실패했습니다.');
+				return;
+			}
+
+			const row =
+				Array.isArray(getJson.data) && getJson.data.length > 0 ? getJson.data[0] : null;
+			if (!row) {
+				alert('선택한 수급자의 F14070 데이터가 없습니다. 기준일을 확인해 주세요.');
+				return;
+			}
+
+			const mapped = mapF14070ToFormState(row);
+			const fallbackDates = weekDatesFromMonday(monday);
+			const dates = mapped.header.weekDates.some((d) => d)
+				? mapped.header.weekDates.map((d, i) => d || fallbackDates[i] || '')
+				: fallbackDates;
+
+			setYear(mapped.header.year || String(monday.getFullYear()));
+			setWeekDates(dates);
+			setHeaderInfo({
+				name: mapped.header.name || String(selectedMember?.P_NM ?? '').trim(),
+				birthDate:
+					mapped.header.birthDate ||
+					(selectedMember?.P_BRDT ? String(selectedMember.P_BRDT).substring(0, 10) : ''),
+				gradeLabel:
+					mapped.header.gradeLabel || formatCareGradeLabel(selectedMember?.P_GRD, ''),
+				certNo:
+					mapped.header.certNo ||
+					String(selectedMember?.P_CERTNO ?? selectedMember?.P_YYNO ?? '').trim(),
+				institutionName: mapped.header.institutionName,
+				institutionCode: mapped.header.institutionCode,
+				roomNo: mapped.header.roomNo
+			});
+			applyBeneficiaryState(mapped.beneficiary);
+			setDailyRecords(mapped.daily);
 		} catch (e) {
-			console.error('F30112 기간 조회 오류:', e);
+			console.error('F14070 조회/생성 오류:', e);
 			alert('기록양식 정보를 불러오는 중 오류가 발생했습니다.');
 		} finally {
 			setLoading(false);
@@ -642,7 +704,7 @@ return (
 						<div className="lt-longterm-card bg-white border border-blue-300 rounded-lg shadow-sm">
 							<div className="lt-no-print flex justify-end px-4 py-3 bg-blue-100 border-b border-blue-200">
 								<div className="mr-auto flex items-center gap-2 text-sm text-blue-900">
-									<span className="font-semibold">기준일(주 시작)</span>
+									<span className="font-semibold">기준일(주 시작·월)</span>
 									<input
 										type="date"
 										value={toYmd(weekStart)}
@@ -650,7 +712,7 @@ return (
 											const v = e.target.value;
 											if (!v) return;
 											const d = new Date(`${v}T00:00:00`);
-											setWeekStart(startOfWeekSunday(d));
+											setWeekStart(startOfWeekMonday(d));
 										}}
 										className="rounded border border-blue-300 bg-white px-2 py-1"
 									/>
@@ -688,29 +750,44 @@ return (
 										<tbody>
 											<tr>
 												<td className="lbl tight" style={{ width: '11%' }}>수급자 성명</td>
-												<td className="lt-left val-bold" style={{ width: '14%' }}>{String(selectedMember?.P_NM ?? '').trim()}</td>
+												<td className="lt-left val-bold" style={{ width: '14%' }}>
+													{headerInfo.name || String(selectedMember?.P_NM ?? '').trim()}
+												</td>
 												<td className="lbl tight" style={{ width: '11%' }}>생년월일</td>
 												<td className="lt-center val-bold" style={{ width: '14%' }}>
-													{selectedMember?.P_BRDT ? String(selectedMember.P_BRDT).substring(0, 10) : ''}
+													{headerInfo.birthDate ||
+														(selectedMember?.P_BRDT
+															? String(selectedMember.P_BRDT).substring(0, 10)
+															: '')}
 												</td>
 												<td className="lbl tight" style={{ width: '11%' }}>장기요양등급</td>
 												<td className="lt-center val-bold" style={{ width: '10%' }}>
-													{formatCareGradeLabel(selectedMember?.P_GRD, '')}
+													{headerInfo.gradeLabel ||
+														formatCareGradeLabel(selectedMember?.P_GRD, '')}
 												</td>
 												<td className="lbl tight" style={{ width: '13%' }}>장기요양인정번호</td>
 												<td className="lt-center val-bold" style={{ width: '16%' }}>
-													{String(selectedMember?.P_CERTNO ?? '').trim()}
+													{headerInfo.certNo ||
+														String(
+															selectedMember?.P_CERTNO ?? selectedMember?.P_YYNO ?? ''
+														).trim()}
 												</td>
 											</tr>
 											<tr>
 												<td className="lbl tight">장기요양기관명</td>
 												<td className="lt-left val-bold" colSpan={3}>
-													너싱홈 해원
+													{headerInfo.institutionName || '너싱홈 해원'}
 												</td>
 												<td className="lbl tight">장기요양기관기호</td>
-												<td className="lt-center val-bold">14161000067</td>
+												<td className="lt-center val-bold">
+													{headerInfo.institutionCode || '14161000067'}
+												</td>
 												<td className="lbl tight">침실</td>
-												<td className="lt-center val-bold">{roomNo || String(selectedMember?.P_ROOM ?? '').trim()}</td>
+												<td className="lt-center val-bold">
+													{roomNo ||
+														headerInfo.roomNo ||
+														String(selectedMember?.P_ROOM ?? '').trim()}
+												</td>
 											</tr>
 										</tbody>
 									</table>
