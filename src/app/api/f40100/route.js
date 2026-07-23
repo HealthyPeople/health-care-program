@@ -306,6 +306,94 @@ export async function POST(req) {
 	}
 }
 
+/** PATCH { salmm, pnum, fields: { SNM?, S_GU?, ENM?, RDES? } } — 발부정보 부분 수정 */
+const LEDGER_PATCH_COLUMNS = ['SNM', 'S_GU', 'ENM', 'RDES'];
+
+export async function PATCH(req) {
+	try {
+		const gate = assertAnCdMatchesSession(req, null);
+		if (!gate.ok) return gate.response;
+
+		const body = await req.json();
+		const salmm = normalizeSalmm(body?.salmm ?? body?.SALMM);
+		const pnum = body?.pnum ?? body?.PNUM;
+		const fields = body?.fields && typeof body.fields === 'object' ? body.fields : body?.row;
+
+		if (!salmm || pnum == null || String(pnum).trim() === '') {
+			return new Response(JSON.stringify({ success: false, error: 'salmm, pnum이 필요합니다.' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+		if (!fields || typeof fields !== 'object') {
+			return new Response(JSON.stringify({ success: false, error: 'fields 객체가 필요합니다.' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const provided = LEDGER_PATCH_COLUMNS.filter((c) => Object.prototype.hasOwnProperty.call(fields, c));
+		if (provided.length === 0) {
+			return new Response(
+				JSON.stringify({ success: false, error: '수정할 필드(SNM, S_GU, ENM, RDES)가 없습니다.' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		const pool = await connPool;
+		if (!pool) {
+			return new Response(JSON.stringify({ success: false, error: '데이터베이스 연결 실패' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		const request = pool.request();
+		request.input('ANCD', sql.VarChar(30), String(gate.sessionAncd));
+		request.input('SALMM', sql.Char(6), salmm);
+		request.input('PNUM', sql.VarChar(30), String(pnum).trim());
+
+		const patchRow = {};
+		for (const c of provided) patchRow[c] = fields[c];
+		// bindDataInputs는 DATA_COLUMNS 전체를 순회하므로 부분 row만 바인딩
+		for (const col of provided) {
+			const v = patchRow[col];
+			if (col === 'S_GU') {
+				const s = v == null || v === '' ? null : String(v).trim().slice(0, 1);
+				request.input(col, sql.Char(1), s);
+			} else if (col === 'RDES') {
+				request.input(col, sql.NVarChar(200), v == null || v === '' ? null : String(v).slice(0, 200));
+			} else if (col === 'SNM' || col === 'ENM') {
+				request.input(col, sql.VarChar(20), v == null || v === '' ? null : String(v).slice(0, 20));
+			}
+		}
+
+		const setSql = provided.map((c) => `[${c}] = @${c}`).join(', ');
+		const result = await request.query(`
+      UPDATE ${TABLE}
+      SET ${setSql}
+      WHERE CAST([ANCD] AS VARCHAR(30)) = @ANCD
+        AND LTRIM(RTRIM([SALMM])) = LTRIM(RTRIM(@SALMM))
+        AND CAST([PNUM] AS VARCHAR(30)) = @PNUM
+    `);
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				rowsAffected: result.rowsAffected?.[0] ?? 0,
+				updated: provided,
+			}),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } }
+		);
+	} catch (err) {
+		console.error('F40100 PATCH 오류:', err);
+		return new Response(JSON.stringify({ success: false, error: err.message, details: String(err) }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+}
+
 function monthRangeFromSalmm(salmm) {
 	const y = parseInt(salmm.slice(0, 4), 10);
 	const m = parseInt(salmm.slice(4, 6), 10);
