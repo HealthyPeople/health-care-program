@@ -389,19 +389,20 @@ export default function TabHost() {
 
   return (
     <div className="flex flex-col h-full min-h-[600px]">
-      {/* 탭 바 */}
-      <div className="print:hidden flex items-center gap-1 bg-white border-b border-gray-200">
+      {/* 탭 바: 제목은 한 줄 유지, 공간 부족 시 탭 행이 다음 줄로 줄바꿈 */}
+      <div className="print:hidden flex flex-wrap items-stretch gap-0 bg-white border-b border-gray-200">
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`group flex items-center gap-2 px-3 py-2 text-sm border-r border-gray-200 ${
+            type="button"
+            className={`group flex shrink-0 items-center gap-2 px-3 py-2 text-sm whitespace-nowrap border-r border-b border-gray-200 ${
               tab.id === activeId ? 'bg-blue-100 text-blue-900 font-semibold' : 'bg-white text-blue-900 hover:bg-gray-50'
             }`}
             onClick={() => handleTabClick(tab)}
           >
-            <span>{tab.title}</span>
+            <span className="whitespace-nowrap">{tab.title}</span>
             <span
-              className="ml-1 text-gray-400 group-hover:text-gray-600"
+              className="ml-1 shrink-0 text-gray-400 group-hover:text-gray-600"
               onClick={(e) => {
                 e.stopPropagation();
                 closeTab(tab.id);
