@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 
 export default function OutingProcessing() {
+	const [isNoticeOpen, setIsNoticeOpen] = useState(true);
 	const [selectedYear, setSelectedYear] = useState(2025);
 	const [selectedMonth, setSelectedMonth] = useState(9);
 	const [outpatientData, setOutpatientData] = useState([
@@ -342,6 +343,46 @@ export default function OutingProcessing() {
 					</button>
 				</div> */}
 			</div>
+
+			{isNoticeOpen && (
+				<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+					<div
+						className="w-full max-w-lg rounded-lg border border-blue-300 bg-white shadow-xl overflow-hidden"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="outing-notice-title"
+					>
+						<div className="flex items-center justify-between border-b border-blue-200 bg-blue-100 px-4 py-3">
+							<div id="outing-notice-title" className="text-base font-semibold text-blue-900">
+								외출·외박 처리 안내
+							</div>
+							<button
+								type="button"
+								onClick={() => setIsNoticeOpen(false)}
+								className="rounded border border-blue-400 bg-blue-200 px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+							>
+								닫기
+							</button>
+						</div>
+						<div className="p-5 space-y-4">
+							<p className="text-sm leading-relaxed text-blue-900 whitespace-pre-wrap">
+								이 페이지는 신규페이지로 입력되는 데이터가 어떤 데이터와 연관되도록 저장되어야하는지에 대한 설계가 아직 되지 않아 개발을 완료하지 못했습니다.
+								{'\n\n'}
+								이에 대한 논의를 마친 후 해당 페이지에 대한 설계가 진행되어야 합니다.
+							</p>
+							<div className="flex justify-end pt-1">
+								<button
+									type="button"
+									onClick={() => setIsNoticeOpen(false)}
+									className="rounded border border-blue-500 bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600"
+								>
+									확인
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

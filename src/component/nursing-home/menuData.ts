@@ -45,7 +45,7 @@ export const sections3: Sections3 = {
       { name: '일 수급자급여실적 등록', link: '/nursingHome/daily-beneficiary-performance' },
       { name: '일 장기요양제공내역 등록', link: '/nursingHome/daily-longterm-care' },
       { name: '간식내역 일괄 등록', link: '/nursingHome/snack-bulk-registration' },
-      { name: '외출/외박 처리', link: '/nursingHome/outing-processing' },
+      { name: '외출/외박 처리(신규_개발중)', link: '/nursingHome/outing-processing' },
     ],
     '수급자서비스 입력기준 정보 등록': [
       { name: '약물복용시간', link: '/nursingHome/medication-time' },
@@ -213,10 +213,10 @@ export const sections3: Sections3 = {
       { name: '공지사항 조회', link: '/nursingHome/notice-inquiry' },
     ],
     '자료실(신규_개발중)': [
-      { name: '자료실', link: '/nursingHome/data-room' },
+      { name: '자료실(신규_개발중)', link: '/nursingHome/data-room' },
     ],
     '평가체크리스트(신규_개발중)': [
-      { name: '평가체크리스트', link: '/nursingHome/evaluation-checklist' },
+      { name: '평가체크리스트(신규_개발중)', link: '/nursingHome/evaluation-checklist' },
     ],
   },
   '요양원 관리시스템': {
