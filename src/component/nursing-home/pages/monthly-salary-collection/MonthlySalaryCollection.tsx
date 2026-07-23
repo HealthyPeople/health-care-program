@@ -93,10 +93,17 @@ function salmmToDisplay(s: string): string {
 	return s || "";
 }
 
-/** `<input type="month">` 값 형식 (YYYY-MM), 로컬 달력 기준 */
-function getLocalYearMonthInput(): string {
+/** 진입 기본값: 전월 (YYYY-MM) */
+function getPreviousYearMonthInput(): string {
 	const d = new Date();
+	d.setDate(1);
+	d.setMonth(d.getMonth() - 1);
 	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getTodayInput(): string {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function num(v: unknown): number {
@@ -113,9 +120,9 @@ function fmtInt(n: number): string {
 function formatInsdT(v: unknown): string {
 	if (v == null) return "";
 	if (v instanceof Date && !Number.isNaN(v.getTime())) {
-		const y = v.getFullYear();
-		const m = String(v.getMonth() + 1).padStart(2, "0");
-		const d = String(v.getDate()).padStart(2, "0");
+		const y = v.getUTCFullYear();
+		const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+		const d = String(v.getUTCDate()).padStart(2, "0");
 		return `${y}-${m}-${d}`;
 	}
 	const s = String(v);
@@ -229,10 +236,7 @@ function buildSelfContributionLedgerPrintHtml(
 			const dateStr = formatInsdT(row.INSDT);
 			const name = escapeHtml(String(row.P_NM ?? "").trim() || "-");
 			const cat = escapeHtml(recipientCategoryLabel(row.USRGU, row.USRPER));
-			const itemCol =
-				nonBen > 0
-					? escapeHtml(String(row.ETC ?? "").trim() || "비급여")
-					: "-";
+			const depositorName = escapeHtml(String(row.ETC ?? "").trim() || "-");
 			return `<tr>
 				<td class="c">${idx + 1}</td>
 				<td class="c">${escapeHtml(dateStr || "-")}</td>
@@ -241,7 +245,7 @@ function buildSelfContributionLedgerPrintHtml(
 				<td class="r">${fmtInt(lineTotal)}</td>
 				<td class="r">${fmtInt(copay)}</td>
 				<td class="r">${fmtInt(nonBen)}</td>
-				<td class="l sm">${itemCol}</td>
+				<td class="l sm">${depositorName}</td>
 			</tr>`;
 		})
 		.join("");
@@ -268,13 +272,13 @@ table.ledger td.l { text-align: left; }
 table.ledger td.sm { font-size: 8.5pt; }
 table.ledger tfoot td { font-weight: 700; background: #f5f5f5; }
 table.ledger col.c0 { width: 5%; }
-table.ledger col.c1 { width: 10%; }
-table.ledger col.c2 { width: 12%; }
-table.ledger col.c3 { width: 14%; }
-table.ledger col.c4 { width: 12%; }
-table.ledger col.c5 { width: 12%; }
-table.ledger col.c6 { width: 12%; }
-table.ledger col.c7 { width: 23%; }
+table.ledger col.c1 { width: 14%; }
+table.ledger col.c2 { width: 14%; }
+table.ledger col.c3 { width: 15%; }
+table.ledger col.c4 { width: 13%; }
+table.ledger col.c5 { width: 14%; }
+table.ledger col.c6 { width: 13%; }
+table.ledger col.c7 { width: 12%; }
 @media print {
 	body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
@@ -301,7 +305,7 @@ table.ledger col.c7 { width: 23%; }
 				<th>계</th>
 				<th>급여<br/>본인부담금</th>
 				<th>비급여<br/>금액</th>
-				<th>비급여<br/>항목</th>
+				<th>입금자명</th>
 			</tr>
 		</thead>
 		<tbody>${body}</tbody>
@@ -318,6 +322,12 @@ table.ledger col.c7 { width: 23%; }
 </div>
 </body>
 </html>`;
+}
+
+function computeUnpaidAmount(s: SalaryCollectionSummaryRow): number | null {
+	const sal2Raw = s.SAL2 != null && s.SAL2 !== "" ? num(s.SAL2) : null;
+	if (sal2Raw == null) return null;
+	return sal2Raw - num(s.SumHAMT) - num(s.SumCAMT) - num(s.SumYAMT);
 }
 
 /** 수금내역서·미수금내역서 공통: 수급자별 부담금·수납·미수금 표 tbody + 합계 */
@@ -406,10 +416,11 @@ table.stmt th, table.stmt td { border: none; border-bottom: 1px solid #000; padd
 table.stmt thead th { border-bottom: 2px solid #000; font-weight: 700; text-align: center; font-size: 10pt; }
 table.stmt td.name { text-align: left; }
 table.stmt td.num { text-align: right; font-variant-numeric: tabular-nums; }
-table.stmt tfoot td { border-top: 1px solid #000; border-bottom: 2px solid #000; font-weight: 700; }
-table.stmt tfoot td.name { text-align: left; }
-table.stmt tfoot td.num { text-align: right; }
-.foot { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 8px; border-top: 2px solid #000; font-size: 9.5pt; }
+table.stmt tr.total td { border-top: 1px solid #000; border-bottom: 2px solid #000; font-weight: 700; }
+table.stmt tr.total td.name { text-align: left; }
+table.stmt tr.total td.num { text-align: right; }
+table.stmt tr.total { page-break-inside: avoid; break-inside: avoid; }
+.foot { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 8px; border-top: 2px solid #000; font-size: 9.5pt; page-break-inside: avoid; break-inside: avoid; }
 @media print {
 	body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
@@ -439,9 +450,9 @@ table.stmt tfoot td.num { text-align: right; }
 				<th style="width:14%">미수금</th>
 			</tr>
 		</thead>
-		<tbody>${body}</tbody>
-		<tfoot>
-			<tr>
+		<tbody>
+			${body}
+			<tr class="total">
 				<td class="name">합계</td>
 				<td class="num">${fmtInt(totSal2)}</td>
 				<td class="num">${fmtInt(totH)}</td>
@@ -449,7 +460,7 @@ table.stmt tfoot td.num { text-align: right; }
 				<td class="num">${fmtInt(totY)}</td>
 				<td class="num">${fmtInt(totUnpaid)}</td>
 			</tr>
-		</tfoot>
+		</tbody>
 	</table>
 	<div class="foot">
 		<span>R40120A</span>
@@ -648,6 +659,7 @@ function buildDetailRows(rows: F40120ApiRow[], pnum: string | null, salmmDisplay
 		.filter((r) => String(r.PNUM ?? "").trim() === p)
 		.map((r) => {
 			const iso = formatInsdT(r.INSDT);
+			const doc = r.DOC != null && r.DOC !== "" ? String(r.DOC) : "";
 			return {
 				pnumKey: p,
 				insdtIso: iso,
@@ -657,32 +669,58 @@ function buildDetailRows(rows: F40120ApiRow[], pnum: string | null, salmmDisplay
 				card: fmtInt(num(r.CAMT)),
 				deposit: fmtInt(num(r.YAMT)),
 				etc: String(r.ETC ?? "").trim() || "-",
-				doc: r.DOC != null && r.DOC !== "" ? String(r.DOC) : "-",
+				doc: doc || "-",
 			};
 		})
-		.sort((a, b) => b.insdtIso.localeCompare(a.insdtIso));
+		.sort((a, b) => {
+			const byDate = b.insdtIso.localeCompare(a.insdtIso);
+			if (byDate !== 0) return byDate;
+			return String(b.doc).localeCompare(String(a.doc), undefined, { numeric: true });
+		});
 }
 
 export default function MonthlySalaryCollection() {
 	const router = useRouter();
 	const [loading, setLoading] = useState(false);
-	const [payYearMonth, setPayYearMonth] = useState<string>(() => getLocalYearMonthInput());
+	const [payYearMonth, setPayYearMonth] = useState<string>(() => getPreviousYearMonthInput());
 	const [recipientFilter, setRecipientFilter] = useState("");
+	/** 전체 | 수금(수납액>0) | 미수금(미수금>0) */
+	const [balanceFilter, setBalanceFilter] = useState<"all" | "collected" | "unpaid">("all");
 	const [apiSummary, setApiSummary] = useState<SalaryCollectionSummaryRow[]>([]);
 	const [rawDetails, setRawDetails] = useState<F40120ApiRow[]>([]);
 	const [selectedPnum, setSelectedPnum] = useState<string | null>(null);
+	/** idle: 미선택 / new: 신규 수금 / edit: 기존 수금 선택 */
+	const [collectionFormMode, setCollectionFormMode] = useState<"idle" | "new" | "edit">("idle");
+	const collectionLineActive = collectionFormMode !== "idle";
 	const [recipientForm, setRecipientForm] = useState<RecipientInfoForm>(() => ({
 		...initialRecipientForm,
-		payYearMonth: monthInputToSalmm(getLocalYearMonthInput()),
+		payYearMonth: monthInputToSalmm(getPreviousYearMonthInput()),
 	}));
 
 	const salmm = useMemo(() => monthInputToSalmm(payYearMonth), [payYearMonth]);
 	const salmmDisplay = useMemo(() => salmmToDisplay(salmm), [salmm]);
 
-	const collectionRows = useMemo(
-		() => summaryToCollectionRows(apiSummary, salmmDisplay),
-		[apiSummary, salmmDisplay]
-	);
+	const collectionRows = useMemo(() => {
+		let summary = apiSummary;
+		if (balanceFilter === "collected") {
+			summary = summary.filter(
+				(s) => num(s.SumHAMT) + num(s.SumCAMT) + num(s.SumYAMT) > 0
+			);
+		} else if (balanceFilter === "unpaid") {
+			summary = summary.filter((s) => {
+				const unpaid = computeUnpaidAmount(s);
+				return unpaid != null && unpaid > 0;
+			});
+		}
+		const rows = summaryToCollectionRows(summary, salmmDisplay);
+		const q = recipientFilter.trim().toLowerCase();
+		if (!q) return rows;
+		return rows.filter(
+			(r) =>
+				r.recipient.toLowerCase().includes(q) ||
+				r.pnumKey.toLowerCase().includes(q)
+		);
+	}, [apiSummary, salmmDisplay, recipientFilter, balanceFilter]);
 
 	const detailRows = useMemo(
 		() => buildDetailRows(rawDetails, selectedPnum, salmmDisplay),
@@ -699,7 +737,6 @@ export default function MonthlySalaryCollection() {
 			setLoading(true);
 			try {
 				const q = new URLSearchParams({ salmm: sm });
-				if (recipientFilter.trim()) q.set("name", recipientFilter.trim());
 				const res = await fetch(`/api/f40120?${q.toString()}`);
 				const json = await res.json();
 				if (!json.success) {
@@ -724,6 +761,7 @@ export default function MonthlySalaryCollection() {
 				const resetUi = opts?.resetUi !== false;
 				if (resetUi) {
 					setSelectedPnum(null);
+					setCollectionFormMode("idle");
 					setRecipientForm({
 						...initialRecipientForm,
 						payYearMonth: sm,
@@ -747,14 +785,14 @@ export default function MonthlySalaryCollection() {
 				setLoading(false);
 			}
 		},
-		[payYearMonth, recipientFilter]
+		[payYearMonth]
 	);
 
 	useEffect(() => {
 		void fetchCollections({ resetUi: true });
-		// 진입 시 현재 달만 자동 조회 (급여년월·이름 변경 시에는 수동 검색)
+		// 급여년월 변경 시 자동 재조회 (수급자명은 클라이언트 즉시 필터)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	}, [payYearMonth]);
 
 	const handleSearch = () => {
 		void fetchCollections({ resetUi: true });
@@ -861,7 +899,15 @@ export default function MonthlySalaryCollection() {
 				);
 				return;
 			}
-			const html = buildUnpaidBalanceStatementPrintHtml(sm, summary);
+			const unpaidOnly = summary.filter((s) => {
+				const unpaid = computeUnpaidAmount(s);
+				return unpaid != null && unpaid > 0;
+			});
+			if (unpaidOnly.length === 0) {
+				alert("미수금이 있는 회원이 없습니다.");
+				return;
+			}
+			const html = buildUnpaidBalanceStatementPrintHtml(sm, unpaidOnly);
 			openPrintPreviewWindow(html);
 		} catch (e) {
 			alert(e instanceof Error ? e.message : "출력 중 오류가 발생했습니다.");
@@ -870,6 +916,7 @@ export default function MonthlySalaryCollection() {
 
 	const handleSelectSummaryRow = (row: CollectionRow) => {
 		setSelectedPnum(row.pnumKey);
+		setCollectionFormMode("idle");
 		const sm = monthInputToSalmm(payYearMonth);
 		setRecipientForm((prev) => ({
 			...prev,
@@ -887,11 +934,17 @@ export default function MonthlySalaryCollection() {
 
 	const handleSelectDetailRow = (d: DetailCollectionRow) => {
 		const p = d.pnumKey;
+		const docKey = d.doc === "-" ? "" : d.doc;
 		const match = rawDetails.find(
 			(r) =>
-				String(r.PNUM ?? "").trim() === p && formatInsdT(r.INSDT) === d.insdtIso
+				String(r.PNUM ?? "").trim() === p &&
+				formatInsdT(r.INSDT) === d.insdtIso &&
+				(docKey === ""
+					? r.DOC == null || r.DOC === ""
+					: String(r.DOC ?? "").trim() === docKey)
 		);
 		setSelectedPnum(p);
+		setCollectionFormMode("edit");
 		const sm = monthInputToSalmm(payYearMonth);
 		setRecipientForm({
 			pnum: p,
@@ -899,7 +952,7 @@ export default function MonthlySalaryCollection() {
 			unpaid: computeUnpaidForPnumFromSummary(apiSummary, p),
 			date: d.insdtIso,
 			etc: match?.ETC != null ? String(match.ETC) : "",
-			doc: match?.DOC != null && match.DOC !== "" ? String(match.DOC) : "",
+			doc: match?.DOC != null && match.DOC !== "" ? String(match.DOC) : docKey,
 			cash: match != null ? String(num(match.HAMT)) : "",
 			card: match != null ? String(num(match.CAMT)) : "",
 			deposit: match != null ? String(num(match.YAMT)) : "",
@@ -912,6 +965,7 @@ export default function MonthlySalaryCollection() {
 			return;
 		}
 		const sm = monthInputToSalmm(payYearMonth);
+		setCollectionFormMode("new");
 		setRecipientForm((prev) => ({
 			...prev,
 			payYearMonth: sm,
@@ -941,7 +995,29 @@ export default function MonthlySalaryCollection() {
 			alert("수금일자를 YYYY-MM-DD 형식으로 입력해 주세요.");
 			return;
 		}
+		if (insdt > getTodayInput()) {
+			alert("수금일자는 오늘 이후 날짜를 선택할 수 없습니다.");
+			return;
+		}
+		const isCreate = collectionFormMode === "new";
+		if (!isCreate && recipientForm.doc.trim() === "") {
+			alert("수정할 출납번호(DOC)가 없습니다. 상세 수금 행을 다시 선택해 주세요.");
+			return;
+		}
+		if (isCreate) {
+			const hasSameDate = rawDetails.some(
+				(r) =>
+					String(r.PNUM ?? "").trim() === pnum && formatInsdT(r.INSDT) === insdt
+			);
+			if (hasSameDate) {
+				alert(
+					"하루에 두 개의 수금 내역을 등록하는 것은 불가능 합니다. 기존 수금 내역을 수정해주세요"
+				);
+				return;
+			}
+		}
 		const payload = {
+			mode: isCreate ? "create" : "update",
 			row: {
 				SALMM: sm,
 				PNUM: pnum,
@@ -950,7 +1026,7 @@ export default function MonthlySalaryCollection() {
 				CAMT: num(recipientForm.card),
 				YAMT: num(recipientForm.deposit),
 				ETC: recipientForm.etc.trim() || null,
-				DOC: recipientForm.doc.trim() === "" ? null : num(recipientForm.doc),
+				DOC: isCreate ? null : num(recipientForm.doc),
 			},
 		};
 		try {
@@ -964,7 +1040,11 @@ export default function MonthlySalaryCollection() {
 				alert(json.error || "저장에 실패했습니다.");
 				return;
 			}
-			alert("저장되었습니다.");
+			alert(isCreate ? "신규 수금이 등록되었습니다." : "수정되었습니다.");
+			if (json.DOC != null && json.DOC !== "") {
+				setRecipientForm((prev) => ({ ...prev, doc: String(json.DOC) }));
+			}
+			setCollectionFormMode("edit");
 			await fetchCollections({ resetUi: false, preservePnum: pnum });
 		} catch (e) {
 			console.error(e);
@@ -976,13 +1056,18 @@ export default function MonthlySalaryCollection() {
 		const sm = recipientForm.payYearMonth.trim() || monthInputToSalmm(payYearMonth);
 		const pnum = recipientForm.pnum.trim();
 		const insdt = recipientForm.date.trim();
+		const doc = recipientForm.doc.trim();
 		if (!sm || !pnum || !/^\d{4}-\d{2}-\d{2}$/.test(insdt)) {
 			alert("삭제할 행의 수급자번호·수금일자를 확인해 주세요.");
 			return;
 		}
-		if (!window.confirm("선택한 수금일자의 수금 내역을 삭제할까요?")) return;
+		if (!doc || !/^\d+$/.test(doc)) {
+			alert("삭제할 출납번호(DOC)를 확인해 주세요.");
+			return;
+		}
+		if (!window.confirm("선택한 수금 내역을 삭제할까요?")) return;
 		try {
-			const q = new URLSearchParams({ salmm: sm, pnum, insdt });
+			const q = new URLSearchParams({ salmm: sm, pnum, insdt, doc });
 			const res = await fetch(`/api/f40120?${q.toString()}`, { method: "DELETE" });
 			const json = await res.json();
 			if (!json.success) {
@@ -990,6 +1075,16 @@ export default function MonthlySalaryCollection() {
 				return;
 			}
 			alert("삭제되었습니다.");
+			setCollectionFormMode("idle");
+			setRecipientForm((prev) => ({
+				...prev,
+				date: "",
+				cash: "",
+				card: "",
+				deposit: "",
+				etc: "",
+				doc: "",
+			}));
 			await fetchCollections({ resetUi: false, preservePnum: pnum });
 		} catch (e) {
 			console.error(e);
@@ -1002,7 +1097,7 @@ export default function MonthlySalaryCollection() {
 			<div className="flex h-[calc(100vh-56px)] flex-col overflow-hidden">
 				<div className="flex flex-1 flex-col overflow-hidden bg-white">
 					<div className="flex flex-wrap items-center gap-4 border-b border-blue-200 bg-blue-50/50 p-4">
-						<h2 className="text-lg font-semibold text-blue-900">급여 수금내역 관리 (F40120)</h2>
+						<h2 className="text-lg font-semibold text-blue-900">급여 수금내역 관리</h2>
 						<div className="flex items-center gap-2">
 							<label className="text-sm font-medium text-blue-900">급여년월</label>
 							<input
@@ -1025,26 +1120,40 @@ export default function MonthlySalaryCollection() {
 								type="text"
 								value={recipientFilter}
 								onChange={(e) => setRecipientFilter(e.target.value)}
-								placeholder="검색 시 이름 필터"
+								placeholder="이름 입력 시 즉시 필터"
 								className="min-w-[120px] rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
 							/>
 						</div>
+						<div className="flex items-center gap-2">
+							<label className="text-sm font-medium text-blue-900">수금구분</label>
+							<select
+								value={balanceFilter}
+								onChange={(e) =>
+									setBalanceFilter(e.target.value as "all" | "collected" | "unpaid")
+								}
+								className="rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+							>
+								<option value="all">전체</option>
+								<option value="collected">수금</option>
+								<option value="unpaid">미수금</option>
+							</select>
+						</div>
 						<div className="ml-auto flex gap-2">
-							<button
+							{/* <button
 								type="button"
 								onClick={handleSearch}
 								disabled={loading}
 								className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300 disabled:opacity-50"
 							>
 								{loading ? "조회 중…" : "검색"}
-							</button>
-							<button
+							</button> */}
+							{/* <button
 								type="button"
 								onClick={handleClose}
 								className="rounded border border-blue-400 bg-blue-200 px-4 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
 							>
 								닫기
-							</button>
+							</button> */}
 						</div>
 					</div>
 
@@ -1109,7 +1218,7 @@ export default function MonthlySalaryCollection() {
 											<td colSpan={8} className="px-2 py-8 text-center text-blue-900/60">
 												{loading
 													? "조회 중…"
-													: "수금 데이터가 없습니다. 급여년월을 선택한 뒤 검색해 주세요."}
+													: "수금 데이터가 없습니다."}
 											</td>
 										</tr>
 									) : (
@@ -1153,8 +1262,18 @@ export default function MonthlySalaryCollection() {
 
 					<div className="flex min-h-0 flex-1 gap-4 border-t border-blue-200 p-4">
 						<div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-blue-300 bg-white">
-							<div className="border-b border-blue-100 bg-blue-50/80 px-2 py-1.5 text-xs font-medium text-blue-900">
-								상세 수금 (수급자별 일자별) — 행을 클릭하면 우측 폼에 불러옵니다.
+							<div className="flex items-center justify-between gap-2 border-b border-blue-100 bg-blue-50/80 px-2 py-1.5">
+								<span className="text-xs font-medium text-blue-900">
+									상세 수금 (수급자별 일자별) — 행을 클릭하면 우측 폼에 불러옵니다.
+								</span>
+								<button
+									type="button"
+									onClick={handleClearLineForm}
+									disabled={!selectedPnum}
+									className="shrink-0 rounded border border-blue-400 bg-blue-200 px-2.5 py-1 text-xs font-medium text-blue-900 hover:bg-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									신규 수금 데이터 생성
+								</button>
 							</div>
 							<div className="overflow-auto">
 								<table className="w-full min-w-[520px] text-xs">
@@ -1176,7 +1295,7 @@ export default function MonthlySalaryCollection() {
 												예금
 											</th>
 											<th className="whitespace-nowrap border-r border-blue-200 px-2 py-1.5 text-center font-semibold text-blue-900">
-												비고
+												입금자명
 											</th>
 											<th className="whitespace-nowrap px-2 py-1.5 text-center font-semibold text-blue-900">
 												출납번호
@@ -1199,10 +1318,13 @@ export default function MonthlySalaryCollection() {
 										) : (
 											detailRows.map((row) => (
 												<tr
-													key={`${row.pnumKey}-${row.insdtIso}`}
+													key={`${row.pnumKey}-${row.insdtIso}-${row.doc}`}
 													onClick={() => handleSelectDetailRow(row)}
 													className={`cursor-pointer border-b border-blue-50 hover:bg-blue-50/50 ${
-														recipientForm.date === row.insdtIso ? "bg-blue-50" : ""
+														recipientForm.date === row.insdtIso &&
+														recipientForm.doc === (row.doc === "-" ? "" : row.doc)
+															? "bg-blue-50"
+															: ""
 													}`}
 												>
 													<td className="border-r border-blue-100 px-2 py-1.5 text-center">
@@ -1232,10 +1354,32 @@ export default function MonthlySalaryCollection() {
 							</div>
 						</div>
 
-						<div className="flex w-80 shrink-0 flex-col gap-3 rounded-lg border border-blue-300 bg-blue-50/50 p-4">
-							<h3 className="text-sm font-semibold text-blue-900">수금 입력 (F40120)</h3>
+						<div className="relative flex w-80 shrink-0 flex-col gap-3 rounded-lg border border-blue-300 bg-blue-50/50 p-4">
+							{!collectionLineActive && (
+								<div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-white/40 px-3 backdrop-blur-[2px]">
+									<p className="rounded-lg border border-blue-300 bg-white/90 px-4 py-2.5 text-center text-sm font-semibold text-blue-900 shadow-sm">
+										수금 데이터를 선택해주세요
+									</p>
+									{selectedPnum ? (
+										<button
+											type="button"
+											onClick={handleClearLineForm}
+											className="rounded border border-blue-400 bg-blue-200 px-3 py-1.5 text-xs font-medium text-blue-900 hover:bg-blue-300"
+										>
+											신규 수금 데이터 생성
+										</button>
+									) : null}
+								</div>
+							)}
+							<div
+								className={`flex flex-col gap-3 ${
+									!collectionLineActive ? "pointer-events-none select-none blur-[2px]" : ""
+								}`}
+								aria-hidden={!collectionLineActive}
+							>
+							<h3 className="text-sm font-semibold text-blue-900">수금 입력</h3>
 							<div className="space-y-2">
-								<div className="flex items-center gap-2">
+								{/* <div className="flex items-center gap-2">
 									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">수급자번호</label>
 									<input
 										type="text"
@@ -1246,24 +1390,23 @@ export default function MonthlySalaryCollection() {
 										placeholder="PNUM"
 										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-xs text-blue-900 focus:border-blue-500 focus:outline-none"
 									/>
-								</div>
+								</div> */}
 								<div className="flex items-center gap-2">
 									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">급여년월</label>
 									<input
-										type="text"
-										value={recipientForm.payYearMonth}
+										type="month"
+										value={salmmToDisplay(recipientForm.payYearMonth) || payYearMonth}
 										onChange={(e) =>
 											setRecipientForm((prev) => ({
 												...prev,
-												payYearMonth: e.target.value.replace(/\D/g, "").slice(0, 6),
+												payYearMonth: monthInputToSalmm(e.target.value),
 											}))
 										}
-										placeholder="YYYYMM"
 										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-xs text-blue-900 focus:border-blue-500 focus:outline-none"
 									/>
 								</div>
 								<div className="flex items-center gap-2">
-									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">미수금(참고)</label>
+									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">미수금</label>
 									<input
 										type="text"
 										readOnly
@@ -1276,14 +1419,20 @@ export default function MonthlySalaryCollection() {
 									<input
 										type="date"
 										value={recipientForm.date}
-										onChange={(e) =>
-											setRecipientForm((prev) => ({ ...prev, date: e.target.value }))
-										}
+										max={getTodayInput()}
+										onChange={(e) => {
+											const v = e.target.value;
+											if (v && v > getTodayInput()) {
+												alert("수금일자는 오늘 이후 날짜를 선택할 수 없습니다.");
+												return;
+											}
+											setRecipientForm((prev) => ({ ...prev, date: v }));
+										}}
 										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-xs text-blue-900 focus:border-blue-500 focus:outline-none"
 									/>
 								</div>
 								<div className="flex items-center gap-2">
-									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">비고(ETC)</label>
+									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">입금자명</label>
 									<input
 										type="text"
 										value={recipientForm.etc}
@@ -1294,7 +1443,7 @@ export default function MonthlySalaryCollection() {
 										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-xs text-blue-900 focus:border-blue-500 focus:outline-none"
 									/>
 								</div>
-								<div className="flex items-center gap-2">
+								{/* <div className="flex items-center gap-2">
 									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">출납번호</label>
 									<input
 										type="text"
@@ -1304,7 +1453,7 @@ export default function MonthlySalaryCollection() {
 										}
 										className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-xs text-blue-900 focus:border-blue-500 focus:outline-none"
 									/>
-								</div>
+								</div> */}
 								<div className="flex items-center gap-2">
 									<label className="w-24 shrink-0 text-xs font-medium text-blue-900">현금</label>
 									<input
@@ -1343,29 +1492,33 @@ export default function MonthlySalaryCollection() {
 								</div>
 							</div>
 							<div className="mt-1 flex flex-col gap-2">
-								<button
-									type="button"
-									onClick={handleClearLineForm}
-									className="w-full rounded border border-blue-300 bg-white py-1.5 text-xs font-medium text-blue-900 hover:bg-blue-50"
-								>
-									새 수금행 입력 (일자·금액 비움)
-								</button>
-								<div className="flex gap-2">
+								{collectionFormMode === "new" ? (
 									<button
 										type="button"
 										onClick={() => void handleSaveCollection()}
-										className="flex-1 rounded border border-blue-400 bg-blue-500 py-1.5 text-sm font-medium text-white hover:bg-blue-600"
+										className="w-full rounded border border-blue-400 bg-blue-500 py-1.5 text-sm font-medium text-white hover:bg-blue-600"
 									>
 										수금 저장
 									</button>
-									<button
-										type="button"
-										onClick={() => void handleDeleteCollection()}
-										className="flex-1 rounded border border-blue-400 bg-blue-200 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
-									>
-										수금 삭제
-									</button>
-								</div>
+								) : (
+									<div className="flex gap-2">
+										<button
+											type="button"
+											onClick={() => void handleSaveCollection()}
+											className="flex-1 rounded border border-blue-400 bg-blue-500 py-1.5 text-sm font-medium text-white hover:bg-blue-600"
+										>
+											수정
+										</button>
+										<button
+											type="button"
+											onClick={() => void handleDeleteCollection()}
+											className="flex-1 rounded border border-blue-400 bg-blue-200 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-300"
+										>
+											삭제
+										</button>
+									</div>
+								)}
+							</div>
 							</div>
 						</div>
 					</div>

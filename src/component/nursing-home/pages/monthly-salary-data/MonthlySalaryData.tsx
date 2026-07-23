@@ -289,6 +289,7 @@ export default function MonthlySalaryData() {
 	// 급여발생자료 (우측) — F40100
 	const [payYearMonth, setPayYearMonth] = useState("2026-01");
 	const [payCalcUnit, setPayCalcUnit] = useState(true); // true: 십미만절사 (추후 계산로직 연동)
+	const [recipientFilter, setRecipientFilter] = useState("");
 	const [salaryRecords, setSalaryRecords] = useState<Record<string, unknown>[]>([]);
 	const [salaryLoading, setSalaryLoading] = useState(false);
 	const [calcLoading, setCalcLoading] = useState(false);
@@ -300,7 +301,16 @@ export default function MonthlySalaryData() {
 	const [detailPage, setDetailPage] = useState(1);
 	const [detailPageWindowStart, setDetailPageWindowStart] = useState(1);
 
-	const salaryRows: SalaryRow[] = salaryRecords.map(mapDbToSalaryRow);
+	const salaryRows: SalaryRow[] = useMemo(() => {
+		const rows = salaryRecords.map(mapDbToSalaryRow);
+		const q = recipientFilter.trim().toLowerCase();
+		if (!q) return rows;
+		return rows.filter(
+			(r) =>
+				r.recipient.toLowerCase().includes(q) ||
+				r.pnum.toLowerCase().includes(q)
+		);
+	}, [salaryRecords, recipientFilter]);
 
 	const detailTotalPages = Math.max(1, Math.ceil(detailRows.length / DETAIL_ITEMS_PER_PAGE));
 	const detailMaxPageWindowStart = useMemo(() => {
@@ -603,6 +613,16 @@ export default function MonthlySalaryData() {
 								value={payYearMonth}
 								onChange={(e) => setPayYearMonth(e.target.value)}
 								className="rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
+							/>
+						</div>
+						<div className="flex items-center gap-2">
+							<label className="text-sm font-medium text-blue-900">수급자명</label>
+							<input
+								type="text"
+								value={recipientFilter}
+								onChange={(e) => setRecipientFilter(e.target.value)}
+								placeholder="이름 입력 시 즉시 필터"
+								className="min-w-[120px] rounded border border-blue-300 bg-white px-3 py-1.5 text-sm text-blue-900 focus:border-blue-500 focus:outline-none"
 							/>
 						</div>
 						<div className="flex items-center gap-2">
