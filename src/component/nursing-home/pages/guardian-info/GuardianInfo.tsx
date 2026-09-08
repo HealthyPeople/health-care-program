@@ -1007,13 +1007,13 @@ export default function GuardianInfo() {
 						{/* 주보호자 */}
 						<div className="mb-4 flex items-center gap-2">
 							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">주보호자</label>
-							<label className="flex items-center gap-2 cursor-pointer">
+							<label className={`flex items-center gap-2 ${isCreating || isEditing ? 'cursor-pointer' : 'cursor-default pointer-events-none'}`}>
 								<input
 									type="checkbox"
 									checked={formData.BHJB === '1'}
 									onChange={(e) => handleFormChange('BHJB', e.target.checked ? '1' : '')}
-									className="w-4 h-4 border-blue-300 rounded"
-									disabled={!isCreating && !isEditing}
+									className="w-4 h-4 rounded border-blue-400 accent-blue-600"
+									tabIndex={!isCreating && !isEditing ? -1 : undefined}
 								/>
 								<span className="text-sm text-blue-900">주 보호자</span>
 							</label>
@@ -1114,13 +1114,13 @@ export default function GuardianInfo() {
 						{/* 계약자구분 */}
 						<div className="mb-4 flex items-center gap-2">
 							<label className="text-sm text-blue-900 font-medium whitespace-nowrap w-24">계약자구분</label>
-							<label className="flex items-center gap-2 cursor-pointer">
+							<label className={`flex items-center gap-2 ${isCreating || isEditing ? 'cursor-pointer' : 'cursor-default pointer-events-none'}`}>
 								<input
 									type="checkbox"
 									checked={formData.CONGU === '1'}
 									onChange={(e) => handleFormChange('CONGU', e.target.checked ? '1' : '0')}
-									className="w-4 h-4 border-blue-300 rounded"
-									disabled={!isCreating && !isEditing}
+									className="w-4 h-4 rounded border-blue-400 accent-blue-600"
+									tabIndex={!isCreating && !isEditing ? -1 : undefined}
 								/>
 								<span className="text-sm text-blue-900">계약자</span>
 							</label>
