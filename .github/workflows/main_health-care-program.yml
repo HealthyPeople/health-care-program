@@ -53,9 +53,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 15
-    environment:
-      name: Production
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+    # GitHub Environment를 쓰면 OIDC subject가 environment:Production 으로 바뀌고,
+    # Azure Portal이 등록한 federated identity(ref:refs/heads/main)와 맞지 않아 로그인이 실패한다.
     permissions:
       id-token: write
       contents: read
