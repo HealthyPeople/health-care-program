@@ -25,6 +25,10 @@ import {
 	employeeJobTitle,
 	formatNameWithJob,
 } from "../../utils/employeeJobList";
+import {
+	SelectionRequiredOverlay,
+	selectionBlockedClass,
+} from "../../components/SelectionRequiredOverlay";
 
 interface Employee {
 	ANCD: number;
@@ -100,6 +104,58 @@ const WORK_CLASSIFICATIONS = [
  * WGU 코드 (근무일정과 동일)
  * 1=근무, 2=연차, 3=월차, 4=정기휴무, 5=대휴, 6=병가, 7=경조사, 9=결근
  */
+function getWorkClassificationCode(text: string): string {
+	switch (String(text ?? "").trim()) {
+		case "근무":
+		case "근무(주간)":
+		case "근무(야간)":
+		case "근무(심야)":
+			return "1";
+		case "연차":
+		case "년차":
+			return "2";
+		case "월차":
+			return "3";
+		case "정기":
+		case "정기휴일":
+		case "정기휴무":
+			return "4";
+		case "대휴":
+			return "5";
+		case "병가":
+			return "6";
+		case "경조사":
+			return "7";
+		case "결근":
+			return "9";
+		default:
+			return "1";
+	}
+}
+
+function defaultHodesForClassification(text: string): string {
+	switch (String(text ?? "").trim()) {
+		case "연차":
+		case "년차":
+			return "연차";
+		case "월차":
+			return "월차";
+		case "정기":
+		case "정기휴일":
+		case "정기휴무":
+			return "정기휴무";
+		case "대휴":
+			return "대휴";
+		case "병가":
+			return "병가";
+		case "경조사":
+			return "경조사";
+		case "결근":
+			return "결근";
+		default:
+			return "";
+	}
+}
 
 export default function EmployeeAttendance() {
 	const [employeeList, setEmployeeList] = useState<Employee[]>([]);
@@ -127,9 +183,13 @@ export default function EmployeeAttendance() {
 	const attendanceFetchSeq = useRef(0);
 	const formDataRef = useRef(formData);
 	formDataRef.current = formData;
-
-	const attendanceRowKey = (row: Pick<AttendanceData, "ANCD" | "EMPNO" | "WDT">) =>
-		`${row.ANCD}-${row.EMPNO}-${String(row.WDT ?? "").slice(0, 10)}`;
+	const savingRef = useRef(false);
+	const lastSavedRef = useRef<{
+		key: string;
+		row: Partial<AttendanceData>;
+		at: number;
+	} | null>(null);
+	const [saving, setSaving] = useState(false);
 
 	// 날짜 포맷팅 함수
 	const formatDate = (date: Date): string => {
@@ -137,6 +197,100 @@ export default function EmployeeAttendance() {
 		const month = String(date.getMonth() + 1).padStart(2, "0");
 		const day = String(date.getDate()).padStart(2, "0");
 		return `${year}-${month}-${day}`;
+	};
+
+	const toYmd = (value: unknown): string => {
+		if (value == null || value === "") return "";
+		if (value instanceof Date && !Number.isNaN(value.getTime())) {
+			return formatDate(value);
+		}
+		const s = String(value).trim();
+		if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+		if (/^\d{4}-\d{2}-\d{2}/.test(s) && !s.includes("T") && !/z$/i.test(s)) {
+			return s.slice(0, 10);
+		}
+		const parsed = new Date(s);
+		if (!Number.isNaN(parsed.getTime())) return formatDate(parsed);
+		return s.slice(0, 10);
+	};
+
+	const attendanceRowKey = (row: Pick<AttendanceData, "ANCD" | "EMPNO" | "WDT">) =>
+		`${Number(row.ANCD)}-${Number(row.EMPNO)}-${toYmd(row.WDT)}`;
+
+	const dedupeAttendance = (rows: AttendanceData[]): AttendanceData[] => {
+		const map = new Map<string, AttendanceData>();
+		for (const row of rows) {
+			const key = attendanceRowKey(row);
+			const prev = map.get(key);
+			if (!prev) {
+				map.set(key, row);
+				continue;
+			}
+			const prevTs = new Date(String(prev.INDT ?? "")).getTime();
+			const nextTs = new Date(String(row.INDT ?? "")).getTime();
+			if ((Number.isNaN(nextTs) ? 0 : nextTs) >= (Number.isNaN(prevTs) ? 0 : prevTs)) {
+				map.set(key, row);
+			}
+		}
+		return Array.from(map.values());
+	};
+
+	const patchFormData = (updater: (prev: AttendanceForm) => AttendanceForm) => {
+		setFormData((prev) => {
+			const next = updater(prev);
+			formDataRef.current = next;
+			return next;
+		});
+	};
+
+	const applyClassificationChange = (prev: AttendanceForm, next: string): AttendanceForm => {
+		const autoHodes = defaultHodesForClassification(next);
+		const prevDefault = defaultHodesForClassification(prev.workClassification);
+		const reason = String(prev.leaveReason ?? "").trim();
+		return {
+			...prev,
+			workClassification: next,
+			workType: isWorkClassification(next)
+				? jobshFromWorkClassification(next)
+				: prev.workType,
+			leaveReason: reason === "" || reason === prevDefault ? autoHodes : prev.leaveReason,
+		};
+	};
+
+	const applySavedAttendance = (
+		base: AttendanceData,
+		saved: Partial<AttendanceData> & Pick<AttendanceData, "ANCD" | "EMPNO" | "WDT">
+	): AttendanceData => ({
+		...base,
+		...saved,
+		ANCD: Number(saved.ANCD),
+		EMPNO: Number(saved.EMPNO),
+		WDT: toYmd(saved.WDT) || toYmd(base.WDT),
+		JOBADD: saved.JOBADD ?? base.JOBADD,
+		JOBSH: saved.JOBSH ?? base.JOBSH,
+		WGU: saved.WGU ?? base.WGU,
+		HODES: saved.HODES ?? base.HODES,
+		STM: saved.STM ?? base.STM,
+		ETM: saved.ETM ?? base.ETM,
+	});
+
+	const upsertAttendanceList = (
+		prev: AttendanceData[],
+		saved: Partial<AttendanceData> & Pick<AttendanceData, "ANCD" | "EMPNO" | "WDT">
+	): AttendanceData[] => {
+		const key = attendanceRowKey(saved);
+		let found = false;
+		const next = prev.map((row) => {
+			if (attendanceRowKey(row) !== key) return row;
+			found = true;
+			return applySavedAttendance(row, saved);
+		});
+		if (!found) {
+			next.push(
+				applySavedAttendance({ ANCD: saved.ANCD, EMPNO: saved.EMPNO, WDT: saved.WDT }, saved)
+			);
+		}
+		return dedupeAttendance(next);
 	};
 
 	// 요일 구하기
@@ -185,36 +339,6 @@ export default function EmployeeAttendance() {
 		return classifyAttendanceDisplay(row);
 	};
 
-	// 텍스트를 근무구분 코드로 변환
-	const getWorkClassificationCode = (text: string): string => {
-		switch (String(text ?? "").trim()) {
-			case "근무":
-			case "근무(주간)":
-			case "근무(야간)":
-			case "근무(심야)":
-				return "1";
-			case "연차":
-			case "년차":
-				return "2";
-			case "월차":
-				return "3";
-			case "정기":
-			case "정기휴일":
-			case "정기휴무":
-				return "4";
-			case "대휴":
-				return "5";
-			case "병가":
-				return "6";
-			case "경조사":
-				return "7";
-			case "결근":
-				return "9";
-			default:
-				return "1";
-		}
-	};
-
 	// 근무구분 코드를 텍스트로 변환 (폼 바인딩)
 	const getWorkClassificationTextFromCode = (
 		wgu?: string,
@@ -224,43 +348,27 @@ export default function EmployeeAttendance() {
 		return classifyAttendanceDisplay({ WGU: wgu, HODES: hodes, JOBSH: jobsh });
 	};
 
-	const defaultHodesForClassification = (text: string): string => {
-		switch (String(text ?? "").trim()) {
-			case "연차":
-			case "년차":
-				return "연차";
-			case "월차":
-				return "월차";
-			case "정기":
-			case "정기휴일":
-			case "정기휴무":
-				return "정기휴무";
-			case "대휴":
-				return "대휴";
-			case "병가":
-				return "병가";
-			case "경조사":
-				return "경조사";
-			case "결근":
-				return "결근";
-			default:
-				return "";
-		}
-	};
-
 	// 근태 데이터 조회
-	const fetchAttendanceData = async (date: string, options?: { resetPrintKeys?: boolean }) => {
+	const fetchAttendanceData = async (
+		date: string,
+		options?: { resetPrintKeys?: boolean; silent?: boolean }
+	) => {
 		const seq = ++attendanceFetchSeq.current;
-		setLoadingAttendance(true);
+		if (!options?.silent) setLoadingAttendance(true);
 		try {
 			const response = await fetch(
-				`/api/f02010?workDate=${encodeURIComponent(date)}&_=${Date.now()}`,
+				`/api/f02010?workDate=${encodeURIComponent(toYmd(date) || date)}&_=${Date.now()}`,
 				{ cache: "no-store", credentials: "include" }
 			);
 			const result = await response.json();
 			if (seq !== attendanceFetchSeq.current) return;
 			if (result.success) {
-				setAttendanceData(result.data || []);
+				let rows = dedupeAttendance(result.data || []);
+				const saved = lastSavedRef.current;
+				if (saved && Date.now() - saved.at < 8000) {
+					rows = upsertAttendanceList(rows, saved.row as AttendanceData);
+				}
+				setAttendanceData(rows);
 				if (options?.resetPrintKeys !== false) {
 					setSelectedPrintKeys(new Set());
 				}
@@ -285,7 +393,7 @@ export default function EmployeeAttendance() {
 
 		if (existingAttendance) {
 			// 기존 데이터가 있으면 폼에 채우기
-			setFormData({
+			patchFormData(() => ({
 				ANCD: existingAttendance.ANCD,
 				EMPNO: existingAttendance.EMPNO,
 				employeeId: String(existingAttendance.EMPNO || ""),
@@ -297,14 +405,14 @@ export default function EmployeeAttendance() {
 					existingAttendance.HODES,
 					existingAttendance.JOBSH || employee.JOBSH
 				),
-				workDate: existingAttendance.WDT || formatDate(workDate),
+				workDate: toYmd(existingAttendance.WDT) || formatDate(workDate),
 				workStartTime: existingAttendance.STM || "",
 				workEndTime: existingAttendance.ETM || "",
 				leaveReason: existingAttendance.HODES || "",
-			});
+			}));
 		} else {
 			// 기존 데이터가 없으면 기본값으로 설정
-			setFormData({
+			patchFormData(() => ({
 				...initialForm,
 				ANCD: employee.ANCD,
 				EMPNO: employee.EMPNO,
@@ -314,7 +422,7 @@ export default function EmployeeAttendance() {
 				workType: normalizeAttendanceJobsh(employee.JOBSH) || "1",
 				workClassification: workShiftLabel(employee.JOBSH),
 				workDate: formatDate(workDate),
-			});
+			}));
 		}
 	};
 
@@ -377,6 +485,7 @@ export default function EmployeeAttendance() {
 	useEffect(() => {
 		fetchAttendanceData(workDateStr);
 		setFormData({ ...initialForm });
+		formDataRef.current = { ...initialForm };
 		setSelectedEmployee(null);
 		setAttendanceCurrentPage(1);
 	}, [workDateStr]);
@@ -666,7 +775,7 @@ export default function EmployeeAttendance() {
 			const payload = {
 				ANCD: createFormData.ANCD,
 				EMPNO: createFormData.EMPNO,
-				WDT: createFormData.workDate || formatDate(workDate),
+				WDT: toYmd(createFormData.workDate) || formatDate(workDate),
 				JOBADD: createFormData.workLocation,
 				JOBSH: jobshFromWorkClassification(
 					createFormData.workClassification,
@@ -778,6 +887,7 @@ export default function EmployeeAttendance() {
 	};
 
 	const handleSave = async () => {
+		if (savingRef.current) return;
 		const current = formDataRef.current;
 		if (!current.ANCD || !current.EMPNO) {
 			alert("사원을 선택해주세요.");
@@ -789,6 +899,8 @@ export default function EmployeeAttendance() {
 			return;
 		}
 
+		savingRef.current = true;
+		setSaving(true);
 		try {
 			const wgu = getWorkClassificationCode(current.workClassification);
 			const hodes =
@@ -798,10 +910,10 @@ export default function EmployeeAttendance() {
 				current.workClassification,
 				normalizeAttendanceJobsh(current.workType) || "1"
 			);
-			const wdt = String(current.workDate || workDateStr).slice(0, 10) || workDateStr;
+			const wdt = toYmd(current.workDate) || workDateStr;
 			const payload = {
-				ANCD: current.ANCD,
-				EMPNO: current.EMPNO,
+				ANCD: Number(current.ANCD),
+				EMPNO: Number(current.EMPNO),
 				WDT: wdt,
 				JOBADD: current.workLocation,
 				JOBSH: jobsh,
@@ -809,6 +921,7 @@ export default function EmployeeAttendance() {
 				HODES: hodes,
 				STM: current.workStartTime,
 				ETM: current.workEndTime,
+				EMPNM: current.employeeName,
 			};
 
 			const response = await fetch("/api/f02010", {
@@ -821,32 +934,55 @@ export default function EmployeeAttendance() {
 
 			const result = await response.json();
 			if (result.success) {
-				setAttendanceData((prev) =>
-					prev.map((row) =>
-						row.ANCD === payload.ANCD &&
-						row.EMPNO === payload.EMPNO &&
-						String(row.WDT ?? "").slice(0, 10) === payload.WDT
-							? {
-									...row,
-									JOBADD: payload.JOBADD,
-									JOBSH: payload.JOBSH,
-									WGU: payload.WGU,
-									HODES: payload.HODES,
-									STM: payload.STM,
-									ETM: payload.ETM,
-								}
-							: row
-					)
-				);
+				const savedRow = {
+					...payload,
+					...(result.data || {}),
+					ANCD: Number(result.data?.ANCD ?? payload.ANCD),
+					EMPNO: Number(result.data?.EMPNO ?? payload.EMPNO),
+					WDT: toYmd(result.data?.WDT ?? payload.WDT),
+					JOBADD: result.data?.JOBADD ?? payload.JOBADD,
+					JOBSH: result.data?.JOBSH ?? payload.JOBSH,
+					WGU: result.data?.WGU ?? payload.WGU,
+					HODES: result.data?.HODES ?? payload.HODES,
+					STM: result.data?.STM ?? payload.STM,
+					ETM: result.data?.ETM ?? payload.ETM,
+					EMPNM: result.data?.EMPNM ?? payload.EMPNM,
+				};
+				lastSavedRef.current = {
+					key: attendanceRowKey(savedRow),
+					row: savedRow,
+					at: Date.now(),
+				};
+				setAttendanceData((prev) => upsertAttendanceList(prev, savedRow));
+				patchFormData((prev) => ({
+					...prev,
+					workDate: savedRow.WDT,
+					workType: normalizeAttendanceJobsh(savedRow.JOBSH) || prev.workType,
+					workClassification: getWorkClassificationTextFromCode(
+						savedRow.WGU,
+						savedRow.HODES,
+						savedRow.JOBSH
+					),
+					leaveReason: savedRow.HODES || "",
+					workStartTime: savedRow.STM || "",
+					workEndTime: savedRow.ETM || "",
+					workLocation: savedRow.JOBADD || prev.workLocation,
+				}));
+				await fetchAttendanceData(savedRow.WDT, { resetPrintKeys: false, silent: true });
+				setAttendanceData((prev) => upsertAttendanceList(prev, savedRow));
 				alert("근태 데이터가 저장되었습니다.");
-				await fetchAttendanceData(payload.WDT, { resetPrintKeys: false });
 			} else {
 				alert(result.error || "저장 중 오류가 발생했습니다.");
 			}
 		} catch (err) {
 			alert("저장 중 오류가 발생했습니다.");
+		} finally {
+			savingRef.current = false;
+			setSaving(false);
 		}
 	};
+
+	const hasSelectedEmployee = Boolean(formData.ANCD && formData.EMPNO);
 
 	return (
 		<div className="flex flex-col min-h-screen w-full max-w-full min-w-0 overflow-x-hidden bg-white text-black">
@@ -1011,14 +1147,15 @@ export default function EmployeeAttendance() {
 								) : (
 									currentAttendanceItems.map((row) => {
 										const isSelected =
-											formData.ANCD === row.ANCD && formData.EMPNO === row.EMPNO;
+											Number(formData.ANCD) === Number(row.ANCD) &&
+											Number(formData.EMPNO) === Number(row.EMPNO);
 										const rowKey = attendanceRowKey(row);
 										const isChecked = selectedPrintKeys.has(rowKey);
 										return (
 											<tr
 												key={rowKey}
 												onClick={() => {
-													setFormData({
+													patchFormData(() => ({
 														ANCD: row.ANCD,
 														EMPNO: row.EMPNO,
 														employeeId: String(row.EMPNO || ""),
@@ -1030,11 +1167,11 @@ export default function EmployeeAttendance() {
 															row.HODES,
 															row.JOBSH
 														),
-														workDate: row.WDT || formatDate(workDate),
+														workDate: toYmd(row.WDT) || formatDate(workDate),
 														workStartTime: row.STM || "",
 														workEndTime: row.ETM || "",
 														leaveReason: row.HODES || "",
-													});
+													}));
 												}}
 												className={`border-b border-blue-50 cursor-pointer hover:bg-blue-50/50 ${
 													isSelected ? "bg-blue-100" : ""
@@ -1137,8 +1274,8 @@ export default function EmployeeAttendance() {
 				</div>
 
 				{/* 오른쪽: 근태 입력 폼 */}
-				<div className="flex flex-1 flex-col rounded-lg border border-blue-300 bg-blue-50/30 p-4">
-					<div className="space-y-4">
+				<div className="relative flex flex-1 flex-col overflow-hidden rounded-lg border border-blue-300 bg-blue-50/30 p-4">
+					<div className={`space-y-4 ${selectionBlockedClass(!hasSelectedEmployee)}`}>
 							{/* 사원명 */}
 							<div className="flex items-center gap-2">
 								<label className="w-24 shrink-0 px-2 py-1.5 text-sm font-medium bg-blue-100 border border-blue-300 rounded text-blue-900">
@@ -1197,27 +1334,13 @@ export default function EmployeeAttendance() {
 											>
 												<input
 													type="radio"
-													name="workClassification"
+													name="editWorkClassification"
 													value={classification}
 													checked={formData.workClassification === classification}
-													onChange={(e) =>
-														setFormData((prev) => {
-															const next = e.target.value;
-															const autoHodes = defaultHodesForClassification(next);
-															return {
-																...prev,
-																workClassification: next,
-																workType: isWorkClassification(next)
-																	? jobshFromWorkClassification(next)
-																	: prev.workType,
-																leaveReason:
-																	prev.leaveReason.trim() === "" ||
-																	prev.leaveReason ===
-																		defaultHodesForClassification(prev.workClassification)
-																		? autoHodes
-																		: prev.leaveReason,
-															};
-														})
+													onChange={() =>
+														patchFormData((prev) =>
+															applyClassificationChange(prev, classification)
+														)
 													}
 													className="rounded border-blue-300 text-blue-600"
 												/>
@@ -1274,12 +1397,17 @@ export default function EmployeeAttendance() {
 								<button
 									type="button"
 									onClick={handleSave}
-									className="rounded border border-blue-500 bg-blue-500 px-8 py-2 text-sm font-medium text-white hover:bg-blue-600"
+									disabled={saving}
+									className="rounded border border-blue-500 bg-blue-500 px-8 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
 								>
-									저장
+									{saving ? "저장 중..." : "저장"}
 								</button>
 							</div>
 					</div>
+					<SelectionRequiredOverlay
+						selectedMember={hasSelectedEmployee}
+						message="직원을 선택해주세요"
+					/>
 				</div>
 			</div>
 
@@ -1447,26 +1575,10 @@ export default function EmployeeAttendance() {
 														checked={
 															createFormData.workClassification === classification
 														}
-														onChange={(e) =>
-															setCreateFormData((prev) => {
-																const next = e.target.value;
-																const autoHodes = defaultHodesForClassification(next);
-																return {
-																	...prev,
-																	workClassification: next,
-																	workType: isWorkClassification(next)
-																		? jobshFromWorkClassification(next)
-																		: prev.workType,
-																	leaveReason:
-																		prev.leaveReason.trim() === "" ||
-																		prev.leaveReason ===
-																			defaultHodesForClassification(
-																				prev.workClassification
-																			)
-																			? autoHodes
-																			: prev.leaveReason,
-																};
-															})
+														onChange={() =>
+															setCreateFormData((prev) =>
+																applyClassificationChange(prev, classification)
+															)
 														}
 														className="rounded border-blue-300 text-blue-600"
 													/>

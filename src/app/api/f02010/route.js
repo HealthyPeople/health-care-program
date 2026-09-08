@@ -97,8 +97,8 @@ export async function GET(req) {
       request.input('endDate', sql.VarChar(10), ymd(endDate));
       query = `${baseSelect}
       WHERE f02010.[ANCD] = @sessionAncd
-        AND CONVERT(varchar(10), f02010.[WDT], 23) >= @startDate
-        AND CONVERT(varchar(10), f02010.[WDT], 23) <= @endDate`;
+        AND CONVERT(date, f02010.[WDT]) >= CONVERT(date, @startDate)
+        AND CONVERT(date, f02010.[WDT]) <= CONVERT(date, @endDate)`;
       if (empnoParam != null && String(empnoParam).trim() !== '') {
         request.input('empno', parseInt(String(empnoParam).trim(), 10));
         query += ` AND f02010.[EMPNO] = @empno`;
@@ -107,7 +107,7 @@ export async function GET(req) {
     } else if (workDate) {
       request.input('workDate', sql.VarChar(10), ymd(workDate));
       query = `${baseSelect}
-      WHERE CONVERT(varchar(10), f02010.[WDT], 23) = @workDate AND f02010.[ANCD] = @sessionAncd
+      WHERE CONVERT(date, f02010.[WDT]) = CONVERT(date, @workDate) AND f02010.[ANCD] = @sessionAncd
       ORDER BY f01010.[EMPNM]`;
     } else {
       return jsonError({
@@ -178,7 +178,7 @@ export async function POST(req) {
         .query(`
           SELECT [EMPNO]
           FROM [돌봄시설DB].[dbo].[F02010]
-          WHERE [ANCD] = @sessionAncd AND CONVERT(varchar(10), [WDT], 23) = @workDate
+          WHERE [ANCD] = @sessionAncd AND CONVERT(date, [WDT]) = CONVERT(date, @workDate)
         `);
 
       const existingSet = new Set(
@@ -247,8 +247,8 @@ export async function POST(req) {
     const jobsh = String(JOBSH ?? '').trim();
     const wgu = String(WGU ?? '').trim();
 
-    // MERGE 대신 날짜(YYYY-MM-DD)만 비교해 동일 일자 행을 갱신한다.
-    // datetime WDT와 문자열 비교 불일치로 INSERT만 되고 이후 UPDATE가 빠지는 경우를 막는다.
+    // 같은 배치에서 UPDATE → 없으면 INSERT. JS에서 @@ROWCOUNT를 잘못 읽으면
+    // 2회째부터 INSERT만 시도하거나 중복 행이 생겨 목록이 옛값을 보여준다.
     const request = pool.request();
     request.input('ANCD', sql.Int, Number(ANCD));
     request.input('EMPNO', sql.Int, Number(EMPNO));
@@ -260,7 +260,9 @@ export async function POST(req) {
     request.input('STM', sql.VarChar(10), STM || '');
     request.input('ETM', sql.VarChar(10), ETM || '');
 
-    const upd = await request.query(`
+    const saved = await request.query(`
+      SET NOCOUNT ON;
+
       UPDATE [돌봄시설DB].[dbo].[F02010]
       SET
         [JOBADD] = @JOBADD,
@@ -272,34 +274,64 @@ export async function POST(req) {
         [INDT] = GETDATE()
       WHERE [ANCD] = @ANCD
         AND [EMPNO] = @EMPNO
-        AND CONVERT(varchar(10), [WDT], 23) = @WDT;
-      SELECT @@ROWCOUNT AS updated;
-    `);
+        AND CONVERT(date, [WDT]) = CONVERT(date, @WDT);
 
-    const updatedRows = upd?.recordset || upd?.recordsets?.[upd.recordsets.length - 1] || [];
-    const updated = Number(updatedRows[0]?.updated ?? 0);
-    if (updated === 0) {
-      const ins = pool.request();
-      ins.input('ANCD', sql.Int, Number(ANCD));
-      ins.input('EMPNO', sql.Int, Number(EMPNO));
-      ins.input('WDT', sql.VarChar(10), wdt);
-      ins.input('JOBADD', sql.VarChar(50), JOBADD || '');
-      ins.input('JOBSH', sql.VarChar(10), jobsh);
-      ins.input('WGU', sql.VarChar(10), wgu);
-      ins.input('HODES', sql.NVarChar(500), HODES || '');
-      ins.input('STM', sql.VarChar(10), STM || '');
-      ins.input('ETM', sql.VarChar(10), ETM || '');
-      await ins.query(`
+      IF @@ROWCOUNT = 0
+      BEGIN
         INSERT INTO [돌봄시설DB].[dbo].[F02010]
           ([ANCD], [EMPNO], [WDT], [JOBADD], [JOBSH], [WGU], [HODES], [STM], [ETM], [INDT])
         VALUES
-          (@ANCD, @EMPNO, @WDT, @JOBADD, @JOBSH, @WGU, @HODES, @STM, @ETM, GETDATE());
-      `);
-    }
+          (@ANCD, @EMPNO, CONVERT(date, @WDT), @JOBADD, @JOBSH, @WGU, @HODES, @STM, @ETM, GETDATE());
+      END
+      ELSE
+      BEGIN
+        ;WITH dup AS (
+          SELECT
+            ROW_NUMBER() OVER (
+              PARTITION BY [ANCD], [EMPNO], CONVERT(date, [WDT])
+              ORDER BY [INDT] DESC
+            ) AS rn
+          FROM [돌봄시설DB].[dbo].[F02010]
+          WHERE [ANCD] = @ANCD
+            AND [EMPNO] = @EMPNO
+            AND CONVERT(date, [WDT]) = CONVERT(date, @WDT)
+        )
+        DELETE FROM dup WHERE rn > 1;
+      END
+
+      SELECT TOP 1
+        f02010.[ANCD],
+        f02010.[EMPNO],
+        CONVERT(varchar(10), f02010.[WDT], 23) AS [WDT],
+        f02010.[JOBADD],
+        f02010.[JOBSH],
+        f02010.[WGU],
+        f02010.[HODES],
+        f02010.[STM],
+        f02010.[ETM],
+        f02010.[INDT],
+        f01010.[EMPNM],
+        f01010.[JOB],
+        f01010.[JOBLIST]
+      FROM [돌봄시설DB].[dbo].[F02010] f02010
+      LEFT JOIN [돌봄시설DB].[dbo].[F01010] f01010
+        ON f02010.[ANCD] = f01010.[ANCD]
+        AND f02010.[EMPNO] = f01010.[EMPNO]
+      WHERE f02010.[ANCD] = @ANCD
+        AND f02010.[EMPNO] = @EMPNO
+        AND CONVERT(date, f02010.[WDT]) = CONVERT(date, @WDT)
+      ORDER BY f02010.[INDT] DESC;
+    `);
+
+    const savedRow =
+      (Array.isArray(saved?.recordsets)
+        ? saved.recordsets[saved.recordsets.length - 1]?.[0]
+        : saved?.recordset?.[0]) || saved?.recordset?.[0] || null;
 
     return jsonOk({
       success: true,
-      message: '근태 데이터가 저장되었습니다'
+      message: '근태 데이터가 저장되었습니다',
+      data: savedRow
     }, 200, NO_STORE);
 
   } catch (err) {
@@ -354,7 +386,7 @@ export async function DELETE(req) {
     await request.query(`
       DELETE FROM [돌봄시설DB].[dbo].[F02010]
       WHERE [ANCD] = @ancd AND [EMPNO] = @empno
-        AND CONVERT(varchar(10), [WDT], 23) = @wdt
+        AND CONVERT(date, [WDT]) = CONVERT(date, @wdt)
     `);
 
     return jsonOk({
