@@ -97,6 +97,7 @@ describe('MemberInfoPrint — HTML builders', () => {
 		assert.equal(typeof P.buildV10010AListPrintHtml, 'function');
 		assert.equal(typeof P.buildRecipientCardPrintHtml, 'function');
 		assert.equal(typeof P.openPrintPreviewWindow, 'function');
+		assert.equal(typeof P.formatValidPeriodHtml, 'function');
 	});
 
 	it('buildV10010AListPrintHtml — 헤더·행·합계', () => {
@@ -110,6 +111,19 @@ describe('MemberInfoPrint — HTML builders', () => {
 		assert.match(html, /장기요양인증번호/);
 		assert.match(html, /<span>V10010A<\/span>/);
 		assert.match(html, /총 1명/);
+		assert.match(html, /2024-01-01 ~/);
+		assert.match(html, /2025-12-31/);
+		assert.match(html, /class="c-no"/);
+		assert.match(html, /class="c-name"/);
+	});
+
+	it('formatValidPeriodHtml — 시작일 ~ / 종료일 두 줄', () => {
+		const html = P.formatValidPeriodHtml('2013-12-14~2020-12-31');
+		assert.match(html, /2013-12-14 ~/);
+		assert.match(html, /2020-12-31/);
+		assert.doesNotMatch(html, /2013-12-14~2020-12-31/);
+		assert.equal(P.formatValidPeriodHtml(''), '-');
+		assert.equal(P.formatValidPeriodHtml('-'), '-');
 	});
 
 	it('buildV10010AListPrintHtml — 데이터 없음', () => {

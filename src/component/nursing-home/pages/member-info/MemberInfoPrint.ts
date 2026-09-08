@@ -28,6 +28,17 @@ export interface V10010APrintRow {
 	guardianPhone: string;
 }
 
+/** 유효기간: '2013-12-14 ~' / '2020-12-31' 두 줄. 날짜 중간에서 줄바꿈되지 않게 한다. */
+export function formatValidPeriodHtml(raw: string | null | undefined): string {
+	const s = String(raw ?? '').trim();
+	if (!s || s === '-') return '-';
+	const parts = s.split(/\s*~\s*/).map((p) => p.trim()).filter(Boolean);
+	if (parts.length >= 2) {
+		return `<div class="period"><span>${escapeHtml(parts[0])} ~</span><span>${escapeHtml(parts[1])}</span></div>`;
+	}
+	return escapeHtml(s);
+}
+
 export function buildV10010AListPrintHtml(rows: V10010APrintRow[], institutionName?: string): string {
 	const bodyRows =
 		rows.length === 0
@@ -35,14 +46,14 @@ export function buildV10010AListPrintHtml(rows: V10010APrintRow[], institutionNa
 			: rows
 					.map(
 						(r, i) => `<tr>
-			<td class="c">${i + 1}</td>
-			<td class="c">${escapeHtml(r.name || '-')}</td>
-			<td class="c">${escapeHtml(r.sex || '-')}</td>
+			<td class="c fit">${i + 1}</td>
+			<td class="c fit">${escapeHtml(r.name || '-')}</td>
+			<td class="c fit">${escapeHtml(r.sex || '-')}</td>
 			<td class="c">${escapeHtml(r.birthday || '-')}</td>
-			<td class="c">${r.age != null && Number.isFinite(r.age) ? r.age : '-'}</td>
+			<td class="c fit">${r.age != null && Number.isFinite(r.age) ? r.age : '-'}</td>
 			<td class="c">${escapeHtml(r.recognitionNo || '-')}</td>
 			<td class="c">${escapeHtml(r.grade || '-')}</td>
-			<td class="c">${escapeHtml(r.validPeriod || '-')}</td>
+			<td class="c period-cell">${formatValidPeriodHtml(r.validPeriod)}</td>
 			<td class="c">${escapeHtml(r.status || '-')}</td>
 			<td class="c">${escapeHtml(r.admitDate || '-')}</td>
 			<td class="c">${escapeHtml(r.dischargeDate || '-')}</td>
@@ -74,11 +85,24 @@ body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 9pt
 .title { font-size: 16pt; font-weight: 700; letter-spacing: 0.02em; }
 .meta { margin-top: 4px; margin-bottom: 8px; font-size: 9.5pt; display: flex; justify-content: space-between; gap: 12px; }
 .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; margin-top: -10mm; }
+.tbl col.c-no { width: 6.5mm; }
+.tbl col.c-name { width: 14mm; }
+.tbl col.c-sex { width: 8mm; }
+.tbl col.c-age { width: 8mm; }
 .tbl thead { display: table-header-group; }
 .tbl tr { page-break-inside: avoid; break-inside: avoid; }
 .tbl th, .tbl td { border: 1px solid #000; padding: 3px 2px; vertical-align: middle; word-break: break-word; }
 .tbl th { background: #e8e8e8; font-weight: 700; text-align: center; font-size: 8.5pt; }
 .tbl td.c { text-align: center; }
+.tbl th.fit, .tbl td.fit { white-space: nowrap; padding: 3px 1px; }
+.tbl td.period-cell { word-break: keep-all; }
+.tbl td.period-cell .period {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	line-height: 1.25;
+}
+.tbl td.period-cell .period span { white-space: nowrap; }
 .tbl thead tr.gap td {
 	height: 10mm; border: none; padding: 0; background: #fff;
 	-webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -100,21 +124,38 @@ body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 9pt
 		</div>
 	</div>
 	<table class="tbl">
+		<colgroup>
+			<col class="c-no" />
+			<col class="c-name" />
+			<col class="c-sex" />
+			<col />
+			<col class="c-age" />
+			<col />
+			<col />
+			<col />
+			<col />
+			<col />
+			<col />
+			<col />
+		</colgroup>
 		<thead>
-			<tr class="gap"><td colspan="12"></td></tr>
+			<tr class="gap">
+				<td></td><td></td><td></td><td></td><td></td><td></td>
+				<td></td><td></td><td></td><td></td><td></td><td></td>
+			</tr>
 			<tr>
-				<th style="width:4%">No</th>
-				<th style="width:8%">성명</th>
-				<th style="width:5%">성별</th>
-				<th style="width:9%">생일</th>
-				<th style="width:5%">나이</th>
-				<th style="width:11%">장기요양인증번호</th>
-				<th style="width:8%">요양등급</th>
-				<th style="width:16%">유효기간</th>
-				<th style="width:6%">상태</th>
-				<th style="width:9%">입소일자</th>
-				<th style="width:9%">퇴소일자</th>
-				<th style="width:10%">보호자연락처</th>
+				<th class="fit">No</th>
+				<th class="fit">성명</th>
+				<th class="fit">성별</th>
+				<th>생일</th>
+				<th class="fit">나이</th>
+				<th>장기요양인증번호</th>
+				<th>요양등급</th>
+				<th>유효기간</th>
+				<th>상태</th>
+				<th>입소일자</th>
+				<th>퇴소일자</th>
+				<th>보호자연락처</th>
 			</tr>
 		</thead>
 		<tbody>${bodyRows}</tbody>
