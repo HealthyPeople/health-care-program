@@ -8,11 +8,110 @@
  */
 import {
 	escapeHtml,
+	fmtDate10,
 	fmtSex,
 	fmtStatus,
 	todayYYYYMMDD,
 	type MemberData,
 } from './MemberInfoUtils';
+
+export function formatPrintBhrel(raw: unknown): string {
+	const r = String(raw ?? '').trim();
+	if (r === '10') return '남편';
+	if (r === '11') return '부인';
+	if (r === '20') return '아들';
+	if (r === '21') return '딸';
+	if (r === '22') return '며느리';
+	if (r === '23') return '사위';
+	if (r === '31') return '손주';
+	if (r === '99' || Number(r) === 99) return '기타';
+	return r;
+}
+
+export function formatPrintCongu(raw: unknown): string {
+	const v = String(raw ?? '').trim().toLowerCase();
+	return v === '1' || v === 'y' || v === 'true' ? '✓' : '';
+}
+
+export function formatPrintUsrgu(raw: unknown): string {
+	const x = String(raw ?? '').trim();
+	if (!x) return '';
+	if (x === '1') return '일반';
+	if (x === '2') return '50%경감대상자';
+	if (x === '3') return '국민기초생활수급권자';
+	if (x === '4') return '60%경감대상자';
+	if (x === '5') return '40%경감대상자';
+	return x;
+}
+
+export function formatPrintPercent(raw: unknown): string {
+	if (raw == null || raw === '') return '';
+	const s = String(raw).trim();
+	if (!s) return '';
+	return /%$/.test(s) ? s : `${s}%`;
+}
+
+export function formatPrintDailyAmt(raw: unknown): string {
+	if (raw == null || raw === '') return '';
+	const n = Number(String(raw).replace(/,/g, ''));
+	const text = Number.isFinite(n) ? n.toLocaleString('ko-KR') : String(raw).trim();
+	if (!text) return '';
+	return `${text} /(일)`;
+}
+
+export function formatPrintContractPeriod(start: unknown, end: unknown): string {
+	const s = fmtDate10(start);
+	const e = fmtDate10(end);
+	if (!s && !e) return '';
+	return `${s || '-'} ~ ${e || '-'}`;
+}
+
+export function buildRecipientCardContractRowsHtml(
+	contracts: MemberData[]
+): string {
+	if (!contracts.length) {
+		return `<tr><td class="center" colspan="8">등록된 계약정보가 없습니다</td></tr>`;
+	}
+	return contracts
+		.map((row) => {
+			const cdt = fmtDate10(row.CDT) || fmtDate10(row.contractDate);
+			const period = formatPrintContractPeriod(row.SVSDT, row.SVEDT);
+			return `<tr>
+          <td>${escapeHtml(cdt)}</td>
+          <td>${escapeHtml(period)}</td>
+          <td class="amt">${escapeHtml(formatPrintPercent(row.INSPER))}</td>
+          <td class="amt">${escapeHtml(formatPrintPercent(row.USRPER))}</td>
+          <td>${escapeHtml(formatPrintUsrgu(row.USRGU))}</td>
+          <td class="amt">${escapeHtml(formatPrintDailyAmt(row.EAMT))}</td>
+          <td class="amt">${escapeHtml(formatPrintDailyAmt(row.ETAMT))}</td>
+          <td class="amt">${escapeHtml(formatPrintDailyAmt(row.ESAMT))}</td>
+        </tr>`;
+		})
+		.join('');
+}
+
+export function buildRecipientCardGuardianRowsHtml(guardians: MemberData[]): string {
+	if (!guardians.length) {
+		return `<tr><td class="center" colspan="7">등록된 보호자가 없습니다</td></tr>`;
+	}
+	return guardians
+		.map((g) => {
+			const relRaw =
+				g.BHREL != null && String(g.BHREL).trim() !== '' ? g.BHREL : g.BHETC;
+			const phone = g.P_HP || g.P_TEL || g.GUARDIAN_P_HP || g.GUARDIAN_P_TEL || '';
+			const addr = g.P_ADDR || g.GUARDIAN_P_ADDR || '';
+			return `<tr>
+          <td>${escapeHtml(g.BHNM || '')}</td>
+          <td>${escapeHtml(formatPrintBhrel(relRaw))}</td>
+          <td>${escapeHtml(g.BHETC || '')}</td>
+          <td class="center">${escapeHtml(formatPrintCongu(g.CONGU))}</td>
+          <td>${escapeHtml(phone)}</td>
+          <td>${escapeHtml(g.GUARDIAN_QA_NO || '')}</td>
+          <td>${escapeHtml(addr)}</td>
+        </tr>`;
+		})
+		.join('');
+}
 
 export interface V10010APrintRow {
 	name: string;
@@ -181,29 +280,45 @@ export function buildRecipientCardPrintHtml(
 	selectedMember: MemberData,
 	card: MemberData,
 	instName: string,
-	diseases: RecipientCardDiseaseRow[] = []
+	diseases: RecipientCardDiseaseRow[] = [],
+	contracts?: MemberData[],
+	guardians?: MemberData[]
 ): string {
 	const memberName = String(card.name || selectedMember.P_NM || '').trim();
 	const title = `${memberName} - 수급자카드`;
 	const baseFont = `"Malgun Gothic", "맑은 고딕", Arial, sans-serif`;
 
-	const guardianName = selectedMember.BHNM || '';
-	const guardianRelRaw = selectedMember.BHREL || selectedMember.BHETC || '';
-	const guardianRel = (() => {
-		const r = String(guardianRelRaw ?? '').trim();
-		if (r === '10') return '남편';
-		if (r === '11') return '부인';
-		if (r === '20') return '아들';
-		if (r === '21') return '딸';
-		if (r === '22') return '며느리';
-		if (r === '23') return '사위';
-		if (r === '31') return '손주';
-		if (r === '99') return '기타';
-		return r;
-	})();
-
-	const guardianPhone = selectedMember.GUARDIAN_P_HP || selectedMember.GUARDIAN_P_TEL || '';
-	const guardianAddr = selectedMember.GUARDIAN_P_ADDR || '';
+	const contractRows = Array.isArray(contracts)
+		? contracts
+		: [
+				{
+					CDT: selectedMember.P_CTDT || card.contractDate,
+					SVSDT: selectedMember.SVSDT,
+					SVEDT: selectedMember.SVEDT,
+					INSPER: selectedMember.INSPER,
+					USRPER: selectedMember.USRPER,
+					USRGU: selectedMember.USRGU,
+					EAMT: selectedMember.EAMT,
+					ETAMT: selectedMember.ETAMT,
+					ESAMT: selectedMember.ESAMT,
+				},
+			];
+	const contractRowsHtml = buildRecipientCardContractRowsHtml(contractRows);
+	const guardianRows = Array.isArray(guardians)
+		? guardians
+		: [
+				{
+					BHNM: selectedMember.BHNM,
+					BHREL: selectedMember.BHREL,
+					BHETC: selectedMember.BHETC,
+					CONGU: selectedMember.CONGU,
+					GUARDIAN_P_HP: selectedMember.GUARDIAN_P_HP,
+					GUARDIAN_P_TEL: selectedMember.GUARDIAN_P_TEL,
+					GUARDIAN_P_ADDR: selectedMember.GUARDIAN_P_ADDR,
+					GUARDIAN_QA_NO: selectedMember.GUARDIAN_QA_NO,
+				},
+			];
+	const guardianRowsHtml = buildRecipientCardGuardianRowsHtml(guardianRows);
 
 	const memberNo = card.recognitionNo || '';
 	const birth = card.birthday || '';
@@ -229,7 +344,7 @@ export function buildRecipientCardPrintHtml(
 			: diseases
 					.map(
 						(d) => `<tr>
-          <td>${escapeHtml(String(d.JDES || '').trim() || '-')}</td>
+          <td class="center">${escapeHtml(String(d.JDES || '').trim() || '-')}</td>
           <td class="center nowrap">${escapeHtml(String(d.JDT || '').trim() || '-')}</td>
           <td>${escapeHtml(String(d.ETC || '').trim() || '-')}</td>
         </tr>`
@@ -477,15 +592,7 @@ export function buildRecipientCardPrintHtml(
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td>${escapeHtml(guardianName)}</td>
-          <td>${escapeHtml(guardianRel)}</td>
-          <td>${escapeHtml(selectedMember.BHETC || '')}</td>
-          <td>${escapeHtml(selectedMember.GUARDIAN_TYPE || '')}</td>
-          <td>${escapeHtml(guardianPhone)}</td>
-          <td>${escapeHtml(selectedMember.GUARDIAN_QA_NO || '')}</td>
-          <td>${escapeHtml(guardianAddr)}</td>
-        </tr>
+        ${guardianRowsHtml}
       </tbody>
     </table>
 
@@ -504,16 +611,7 @@ export function buildRecipientCardPrintHtml(
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td>${escapeHtml(contractDate)}</td>
-          <td>${escapeHtml(validPeriod)}</td>
-          <td class="amt">${escapeHtml(selectedMember.INSPER_AMT || '')}</td>
-          <td class="amt">${escapeHtml(selectedMember.USRPER_AMT || '')}</td>
-          <td>${escapeHtml(selectedMember.BEN_TYPE || '')}</td>
-          <td class="amt">${escapeHtml(selectedMember.EAMT || '')}</td>
-          <td class="amt">${escapeHtml(selectedMember.ETAMT || '')}</td>
-          <td class="amt">${escapeHtml(selectedMember.ESAMT || '')}</td>
-        </tr>
+        ${contractRowsHtml}
       </tbody>
     </table>
 

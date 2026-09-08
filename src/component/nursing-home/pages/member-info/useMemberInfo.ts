@@ -772,9 +772,20 @@ export function useMemberInfo() {
 		}
 
 		try {
-			const [cardRes, diseaseRes] = await Promise.all([
+			const [cardRes, diseaseRes, contractRes, guardianRes] = await Promise.all([
 				fetch(`/api/v10010c?pnum=${encodeURIComponent(pnum)}`),
 				fetch(`/api/f30030?pnum=${encodeURIComponent(pnum)}`, { cache: 'no-store' }),
+				fetch('/api/f10010', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						action: 'contract.list',
+						params: { ANCD: String(selectedMember.ANCD ?? ''), PNUM: pnum },
+					}),
+				}),
+				fetch(
+					`/api/f10020?ancd=${encodeURIComponent(String(selectedMember.ANCD ?? ''))}&pnum=${encodeURIComponent(pnum)}`
+				),
 			]);
 			const json = await cardRes.json();
 			if (!json.success) {
@@ -797,11 +808,38 @@ export function useMemberInfo() {
 				console.warn('질병내역(F30030) 조회 경고:', diseaseErr);
 			}
 
+			let contracts: MemberData[] = [];
+			try {
+				const contractJson = await contractRes.json();
+				if (contractJson?.success && Array.isArray(contractJson.data)) {
+					contracts = contractJson.data;
+				}
+			} catch (contractErr) {
+				console.warn('계약정보(F10110) 조회 경고:', contractErr);
+			}
+
+			let guardians: MemberData[] = [];
+			try {
+				const guardianJson = await guardianRes.json();
+				if (guardianJson?.success && Array.isArray(guardianJson.data)) {
+					guardians = guardianJson.data;
+				}
+			} catch (guardianErr) {
+				console.warn('보호자정보(F10020) 조회 경고:', guardianErr);
+			}
+
 			const instName =
 				institutions.find((i) => String(i.ANCD) === String(selectedMember.ANCD))?.ANNM ||
 				String(selectedMember.ANCD ?? '');
 
-			const html = buildRecipientCardPrintHtml(selectedMember, card, instName, diseases);
+			const html = buildRecipientCardPrintHtml(
+				selectedMember,
+				card,
+				instName,
+				diseases,
+				contracts,
+				guardians
+			);
 			openPrintPreviewWindow(html);
 		} catch (e) {
 			console.error(e);

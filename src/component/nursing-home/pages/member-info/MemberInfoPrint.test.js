@@ -97,6 +97,14 @@ describe('MemberInfoPrint — HTML builders', () => {
 		assert.equal(typeof P.buildV10010AListPrintHtml, 'function');
 		assert.equal(typeof P.buildRecipientCardPrintHtml, 'function');
 		assert.equal(typeof P.openPrintPreviewWindow, 'function');
+		assert.equal(typeof P.formatPrintBhrel, 'function');
+		assert.equal(typeof P.formatPrintCongu, 'function');
+		assert.equal(typeof P.formatPrintUsrgu, 'function');
+		assert.equal(typeof P.formatPrintPercent, 'function');
+		assert.equal(typeof P.formatPrintDailyAmt, 'function');
+		assert.equal(typeof P.formatPrintContractPeriod, 'function');
+		assert.equal(typeof P.buildRecipientCardContractRowsHtml, 'function');
+		assert.equal(typeof P.buildRecipientCardGuardianRowsHtml, 'function');
 		assert.equal(typeof P.formatValidPeriodHtml, 'function');
 	});
 
@@ -177,13 +185,141 @@ describe('MemberInfoPrint — HTML builders', () => {
 
 	it('buildRecipientCardPrintHtml — 보호자 관계 99는 기타', () => {
 		const html = P.buildRecipientCardPrintHtml(
-			{ P_NM: '홍길동', BHREL: '99' },
+			{ P_NM: '홍길동', BHREL: 99 },
 			{ name: '홍길동' },
 			'우리요양원',
 			[]
 		);
 		assert.match(html, />기타</);
 		assert.doesNotMatch(html, />99</);
+		assert.equal(P.formatPrintBhrel('99'), '기타');
+		assert.equal(P.formatPrintBhrel(99), '기타');
+	});
+
+	it('buildRecipientCardPrintHtml — 계약자구분·부담금·일 단가·진단명 가운데', () => {
+		const html = P.buildRecipientCardPrintHtml(
+			{
+				P_NM: '홍길동',
+				BHREL: '99',
+				BHETC: '지인',
+				CONGU: '1',
+				INSPER: 80,
+				USRPER: 20,
+				USRGU: '1',
+				EAMT: 5000,
+				ETAMT: 2000,
+				ESAMT: 10000,
+			},
+			{ name: '홍길동' },
+			'우리요양원',
+			[{ JDES: '고혈압', JDT: '2023-05-01', ETC: '' }]
+		);
+		assert.match(html, />기타</);
+		assert.match(html, />✓</);
+		assert.match(html, /80%/);
+		assert.match(html, /20%/);
+		assert.match(html, /일반/);
+		assert.match(html, /5,000 \/\(일\)/);
+		assert.match(html, /2,000 \/\(일\)/);
+		assert.match(html, /10,000 \/\(일\)/);
+		assert.match(html, /<td class="center">고혈압<\/td>/);
+	});
+
+	it('buildRecipientCardPrintHtml — 계약건별 기간 나열', () => {
+		const html = P.buildRecipientCardPrintHtml(
+			{ P_NM: '홍길동' },
+			{ name: '홍길동', validPeriod: '2013-12-14~2020-12-31' },
+			'우리요양원',
+			[],
+			[
+				{
+					CDT: '2024-01-15',
+					SVSDT: '2024-02-01',
+					SVEDT: '2024-12-31',
+					INSPER: 80,
+					USRPER: 20,
+					USRGU: '1',
+					EAMT: 5000,
+					ETAMT: 0,
+					ESAMT: 10000,
+				},
+				{
+					CDT: '2023-01-10',
+					SVSDT: '2023-02-01',
+					SVEDT: '2023-12-31',
+					INSPER: 90,
+					USRPER: 10,
+					USRGU: '2',
+				},
+			]
+		);
+		assert.match(html, /2024-02-01 ~ 2024-12-31/);
+		assert.match(html, /2023-02-01 ~ 2023-12-31/);
+		assert.match(html, /2024-01-15/);
+		assert.match(html, /2023-01-10/);
+		assert.match(html, /80%/);
+		assert.match(html, /90%/);
+		assert.match(html, /일반/);
+		assert.match(html, /50%경감대상자/);
+		assert.equal(P.formatPrintContractPeriod('2024-02-01', '2024-12-31'), '2024-02-01 ~ 2024-12-31');
+	});
+
+	it('buildRecipientCardPrintHtml — 계약 없으면 안내 문구', () => {
+		const html = P.buildRecipientCardPrintHtml(
+			{ P_NM: '홍길동' },
+			{ name: '홍길동' },
+			'우리요양원',
+			[],
+			[]
+		);
+		assert.match(html, /등록된 계약정보가 없습니다/);
+	});
+
+	it('buildRecipientCardPrintHtml — 보호자 전원 나열', () => {
+		const html = P.buildRecipientCardPrintHtml(
+			{ P_NM: '홍길동' },
+			{ name: '홍길동' },
+			'우리요양원',
+			[],
+			[],
+			[
+				{
+					BHNM: '김보호',
+					BHREL: '20',
+					CONGU: '1',
+					P_HP: '010-1111-2222',
+					P_ADDR: '서울시 강남구',
+				},
+				{
+					BHNM: '이보호',
+					BHREL: '99',
+					BHETC: '지인',
+					CONGU: '0',
+					P_TEL: '02-000-0000',
+					P_ADDR: '서울시 서초구',
+				},
+			]
+		);
+		assert.match(html, /김보호/);
+		assert.match(html, /아들/);
+		assert.match(html, /이보호/);
+		assert.match(html, />기타</);
+		assert.match(html, /지인/);
+		assert.match(html, /010-1111-2222/);
+		assert.match(html, /02-000-0000/);
+		assert.match(html, />✓</);
+	});
+
+	it('buildRecipientCardPrintHtml — 보호자 없으면 안내 문구', () => {
+		const html = P.buildRecipientCardPrintHtml(
+			{ P_NM: '홍길동' },
+			{ name: '홍길동' },
+			'우리요양원',
+			[],
+			[],
+			[]
+		);
+		assert.match(html, /등록된 보호자가 없습니다/);
 	});
 
 	it('buildRecipientCardPrintHtml — 질병내역 없으면 안내 문구', () => {
@@ -243,7 +379,9 @@ describe('MemberInfoPrint — HTML builders', () => {
 		assert.doesNotMatch(view, /window\.open\(/);
 
 		const hook = fs.readFileSync(HOOK_TS, 'utf8');
-		assert.match(hook, /buildRecipientCardPrintHtml\(selectedMember, card, instName, diseases\)/);
+		assert.match(hook, /buildRecipientCardPrintHtml\(/);
+		assert.match(hook, /action: 'contract.list'/);
+		assert.match(hook, /\/api\/f10020\?ancd=/);
 		assert.match(hook, /\/api\/f30030\?pnum=/);
 		assert.match(hook, /buildV10010AListPrintHtml\(list, instName\)/);
 		assert.match(hook, /openPrintPreviewWindow\(html\)/);

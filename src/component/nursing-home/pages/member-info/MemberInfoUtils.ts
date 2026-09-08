@@ -155,21 +155,15 @@ export function buildMemberForEdit(m: MemberData): MemberData {
 /** 보호자 정보 카드 조회 모드의 관계 표시 (BHREL 코드 → 라벨, 없으면 GUARDIAN_P_TEL) */
 export function formatGuardianRelation(member: MemberData | null | undefined): string {
 	const m = member ?? ({} as MemberData);
-	return m.BHREL === '10'
-		? '남편'
-		: m.BHREL === '11'
-			? '부인'
-			: m.BHREL === '20'
-				? '아들'
-				: m.BHREL === '21'
-					? '딸'
-					: m.BHREL === '22'
-						? '며느리'
-						: m.BHREL === '23'
-							? '사위'
-							: m.BHREL === '31'
-								? '손주'
-								: !m.BHREL || m.BHREL === null || m.BHREL === ''
-									? m.GUARDIAN_P_TEL || '-'
-									: m.BHREL || m.BHETC || '-';
+	const code = String(m.BHREL ?? '').trim();
+	if (code === '10') return '남편';
+	if (code === '11') return '부인';
+	if (code === '20') return '아들';
+	if (code === '21') return '딸';
+	if (code === '22') return '며느리';
+	if (code === '23') return '사위';
+	if (code === '31') return '손주';
+	if (code === '99' || Number(code) === 99) return '기타';
+	if (!code) return m.GUARDIAN_P_TEL || '-';
+	return code || m.BHETC || '-';
 }

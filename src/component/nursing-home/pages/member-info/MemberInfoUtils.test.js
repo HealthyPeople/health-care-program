@@ -165,7 +165,8 @@ describe('MemberInfoUtils — pure helpers', () => {
 		assert.equal(U.formatGuardianRelation({ BHREL: null, GUARDIAN_P_TEL: '02-000-0000' }), '02-000-0000');
 		assert.equal(U.formatGuardianRelation({}), '-');
 		assert.equal(U.formatGuardianRelation(null), '-');
-		assert.equal(U.formatGuardianRelation({ BHREL: '99', BHETC: '지인' }), '99');
+		assert.equal(U.formatGuardianRelation({ BHREL: '99', BHETC: '지인' }), '기타');
+		assert.equal(U.formatGuardianRelation({ BHREL: 99 }), '기타');
 	});
 
 	it('View는 유틸을 재정의하지 않음', () => {

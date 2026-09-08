@@ -49,6 +49,8 @@ describe('useMemberInfo — wiring', () => {
 		assert.doesNotMatch(hook, /newMemberDetailAddr/);
 		assert.doesNotMatch(hook, /editedMemberDetailAddr/);
 		assert.match(hook, /const handlePrintRecipientCard = async/);
+		assert.match(hook, /action: 'contract.list'/);
+		assert.match(hook, /\/api\/f10020\?ancd=/);
 		assert.match(hook, /const handlePrintAllMembers = async/);
 		assert.match(hook, /const handleStatusChange =/);
 		assert.match(hook, /const handleGradeChange =/);
