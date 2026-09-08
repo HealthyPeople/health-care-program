@@ -175,6 +175,17 @@ describe('MemberInfoPrint — HTML builders', () => {
 		assert.match(html, /<td>입소<\/td>/);
 	});
 
+	it('buildRecipientCardPrintHtml — 보호자 관계 99는 기타', () => {
+		const html = P.buildRecipientCardPrintHtml(
+			{ P_NM: '홍길동', BHREL: '99' },
+			{ name: '홍길동' },
+			'우리요양원',
+			[]
+		);
+		assert.match(html, />기타</);
+		assert.doesNotMatch(html, />99</);
+	});
+
 	it('buildRecipientCardPrintHtml — 질병내역 없으면 안내 문구', () => {
 		const html = P.buildRecipientCardPrintHtml(
 			{ P_NM: '홍길동' },

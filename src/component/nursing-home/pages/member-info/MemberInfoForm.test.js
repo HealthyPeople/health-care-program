@@ -114,7 +114,6 @@ describe('MemberInfoForm — presentational', () => {
 				mode: 'create',
 				institutions: INSTITUTIONS,
 				newMember: { P_NM: '신규자' },
-				newMemberDetailAddr: '101동 101호',
 			})
 		);
 		assert.match(html, /기관명 \*/);
@@ -123,7 +122,7 @@ describe('MemberInfoForm — presentational', () => {
 		assert.match(html, /수급자명 \*/);
 		assert.match(html, /value="신규자"/);
 		assert.match(html, /주소 검색/);
-		assert.match(html, /value="101동 101호"/);
+		assert.doesNotMatch(html, />상세주소</);
 		assert.match(html, /간호지시서정보/);
 		assert.match(html, /생활실/);
 		assert.match(html, /placeholder="예: 101호"/);
@@ -149,6 +148,8 @@ describe('MemberInfoForm — presentational', () => {
 		assert.match(html, /비고내용/);
 		assert.doesNotMatch(html, /<input/);
 		assert.doesNotMatch(html, /주소 검색/);
+		assert.doesNotMatch(html, /주소 입력란을 클릭하거나/);
+		assert.doesNotMatch(html, />상세주소</);
 	});
 
 	it('edit 모드 — input/select + 주소 검색 버튼', () => {
@@ -158,16 +159,17 @@ describe('MemberInfoForm — presentational', () => {
 				institutions: INSTITUTIONS,
 				selectedMember: SELECTED,
 				editedMember: { ...SELECTED, P_BRDT: '1950-01-01', selectedANCD: '190001' },
-				editedMemberDetailAddr: '',
 				onFieldChange: () => {},
 			})
 		);
 		assert.match(html, /<input/);
 		assert.match(html, /<select/);
 		assert.match(html, /주소 검색/);
+		assert.match(html, /주소 입력란을 클릭하거나 주소 검색 버튼으로 주소를 수정할 수 있습니다\./);
 		assert.match(html, /value="홍길동"/);
 		assert.match(html, /value="1950-01-01"/);
 		assert.match(html, /No\.7/);
+		assert.doesNotMatch(html, />상세주소</);
 	});
 
 	it('placeholder 모드 — 개인정보 스켈레톤', () => {

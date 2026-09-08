@@ -21,12 +21,8 @@ export type MemberInfoFormProps = {
 	selectedMember?: MemberData | null;
 	editedMember?: MemberData | null;
 	newMember?: MemberData;
-	newMemberDetailAddr?: string;
-	editedMemberDetailAddr?: string;
 	onNewMemberFieldChange?: (field: string, value: any) => void;
 	onFieldChange?: (field: string, value: any) => void;
-	onNewMemberDetailAddrChange?: (value: string) => void;
-	onEditedMemberDetailAddrChange?: (value: string) => void;
 	onNewMemberPhoneChange?: (value: string) => void;
 	onEditedMemberPhoneChange?: (value: string) => void;
 	onAddressSearch?: (isNewMember: boolean) => void;
@@ -39,12 +35,8 @@ export default function MemberInfoForm({
 	selectedMember = null,
 	editedMember = null,
 	newMember = {},
-	newMemberDetailAddr = '',
-	editedMemberDetailAddr = '',
 	onNewMemberFieldChange,
 	onFieldChange,
-	onNewMemberDetailAddrChange,
-	onEditedMemberDetailAddrChange,
 	onNewMemberPhoneChange,
 	onEditedMemberPhoneChange,
 	onAddressSearch,
@@ -165,17 +157,6 @@ export default function MemberInfoForm({
 								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
 								placeholder="주소를 검색하세요"
 								readOnly
-							/>
-						</div>
-						{/* 상세주소 */}
-						<div className="flex flex-col col-span-12 gap-1">
-							<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">상세주소</label>
-							<input
-								type="text"
-								value={newMemberDetailAddr}
-								onChange={(e) => onNewMemberDetailAddrChange?.(e.target.value)}
-								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
-								placeholder="상세주소를 입력하세요 (예: 101동 101호)"
 							/>
 						</div>
 
@@ -514,7 +495,7 @@ export default function MemberInfoForm({
 					</div>
 
 					{isEditing && editedMember && (
-						<div className="flex col-span-12 gap-2">
+						<div className="flex flex-col col-span-12 gap-1 sm:flex-row sm:items-center sm:gap-3">
 							<button
 								type="button"
 								onClick={() => onAddressSearch?.(false)}
@@ -522,6 +503,9 @@ export default function MemberInfoForm({
 							>
 								주소 검색
 							</button>
+							<p className="text-sm text-blue-800">
+								주소 입력란을 클릭하거나 주소 검색 버튼으로 주소를 수정할 수 있습니다.
+							</p>
 						</div>
 					)}
 					<div className="flex flex-col col-span-12 gap-1 md:col-span-6">
@@ -531,8 +515,10 @@ export default function MemberInfoForm({
 								type="text"
 								value={editedMember.P_ZIP || ''}
 								onChange={(e) => onFieldChange?.('P_ZIP', e.target.value)}
-								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+								onClick={() => onAddressSearch?.(false)}
+								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded cursor-pointer"
 								readOnly
+								title="주소 검색으로 수정할 수 있습니다."
 							/>
 						) : (
 							<span className="w-full border-b border-blue-200 py-1">{member.P_ZIP || '-'}</span>
@@ -545,25 +531,13 @@ export default function MemberInfoForm({
 								type="text"
 								value={editedMember.P_ADDR || ''}
 								onChange={(e) => onFieldChange?.('P_ADDR', e.target.value)}
-								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
+								onClick={() => onAddressSearch?.(false)}
+								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded cursor-pointer"
 								readOnly
+								title="주소 검색으로 수정할 수 있습니다."
 							/>
 						) : (
 							<span className="w-full border-b border-blue-200 py-1">{member.P_ADDR || '-'}</span>
-						)}
-					</div>
-					<div className="flex flex-col col-span-12 gap-1">
-						<label className="px-2 py-1 text-sm text-blue-900 bg-blue-100 border border-blue-300 rounded">상세주소</label>
-						{isEditing && editedMember ? (
-							<input
-								type="text"
-								value={editedMemberDetailAddr}
-								onChange={(e) => onEditedMemberDetailAddrChange?.(e.target.value)}
-								className="w-full px-2 py-1 text-sm bg-white border border-blue-300 rounded"
-								placeholder="상세주소를 입력하세요 (예: 101동 101호)"
-							/>
-						) : (
-							<span className="w-full border-b border-blue-200 py-1 text-blue-900/70">—</span>
 						)}
 					</div>
 

@@ -131,6 +131,8 @@ describe('MemberInfoDetailHeader — presentational', () => {
 		assert.match(html, />취소</);
 		assert.match(html, />삭제</);
 		assert.doesNotMatch(html, /수정 및 삭제/);
+		assert.match(html, /수급자카드출력/);
+		assert.match(html, /disabled=""/);
 	});
 
 	it('canPrintCard=false 이면 출력 버튼 disabled', () => {

@@ -12,6 +12,7 @@ import React from 'react';
 import MemberInfoList from './MemberInfoList';
 import MemberInfoDetailHeader from './MemberInfoDetailHeader';
 import MemberInfoForm from './MemberInfoForm';
+import MemberInfoAddressDetailModal from './MemberInfoAddressDetailModal';
 import MemberInfoContractCard from './MemberInfoContractCard';
 import MemberInfoGuardianCard from './MemberInfoGuardianCard';
 import MemberInfoDiseaseCard from './MemberInfoDiseaseCard';
@@ -30,8 +31,7 @@ export default function MemberInfoView() {
 		editedMember,
 		isCreating,
 		newMember,
-		newMemberDetailAddr,
-		editedMemberDetailAddr,
+		addressSearchDraft,
 		institutions,
 		availableFloors,
 		noRoomValue,
@@ -48,8 +48,8 @@ export default function MemberInfoView() {
 		handleNewMemberFieldChange,
 		handleNewMemberPhoneChange,
 		handleEditedMemberPhoneChange,
-		handleNewMemberDetailAddrChange,
-		handleEditedMemberDetailAddrChange,
+		handleAddressDetailSave,
+		handleAddressDetailCancel,
 		handleCreateClick,
 		handleCreateCancel,
 		handleCreateSave,
@@ -110,10 +110,8 @@ export default function MemberInfoView() {
 										mode="create"
 										institutions={institutions}
 										newMember={newMember}
-										newMemberDetailAddr={newMemberDetailAddr}
 										onNewMemberFieldChange={handleNewMemberFieldChange}
 										onNewMemberPhoneChange={handleNewMemberPhoneChange}
-										onNewMemberDetailAddrChange={handleNewMemberDetailAddrChange}
 										onAddressSearch={handleAddressSearch}
 									/>
 								</div>
@@ -133,7 +131,7 @@ export default function MemberInfoView() {
 													mode="detail"
 													loading={loading}
 													isEditing={isEditing}
-													canPrintCard={!!selectedMember}
+													canPrintCard={!!selectedMember && !isEditing}
 													onSave={() => void handleSave()}
 													onCancel={handleCancel}
 													onEditClick={handleEditClick}
@@ -145,10 +143,8 @@ export default function MemberInfoView() {
 													institutions={institutions}
 													selectedMember={selectedMember}
 													editedMember={editedMember}
-													editedMemberDetailAddr={editedMemberDetailAddr}
 													onFieldChange={handleFieldChange}
 													onEditedMemberPhoneChange={handleEditedMemberPhoneChange}
-													onEditedMemberDetailAddrChange={handleEditedMemberDetailAddrChange}
 													onAddressSearch={handleAddressSearch}
 												/>
 											</div>
@@ -187,6 +183,14 @@ export default function MemberInfoView() {
 					</section>
 				</div>
 			</div>
+			{addressSearchDraft && (
+				<MemberInfoAddressDetailModal
+					zip={addressSearchDraft.zip}
+					baseAddress={addressSearchDraft.baseAddress}
+					onCancel={handleAddressDetailCancel}
+					onSave={handleAddressDetailSave}
+				/>
+			)}
 		</div>
     );
 }

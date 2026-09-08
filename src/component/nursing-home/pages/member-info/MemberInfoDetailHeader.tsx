@@ -63,8 +63,8 @@ export default function MemberInfoDetailHeader({
 			<div className="flex flex-wrap items-center gap-2">
 				<button
 					onClick={onPrintRecipientCard}
-					disabled={!canPrintCard}
-					className="px-3 py-1 text-sm text-blue-900 bg-white border border-blue-400 rounded hover:bg-blue-50 disabled:opacity-50"
+					disabled={!canPrintCard || isEditing}
+					className="px-3 py-1 text-sm text-blue-900 bg-white border border-blue-400 rounded hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					수급자카드출력
 				</button>

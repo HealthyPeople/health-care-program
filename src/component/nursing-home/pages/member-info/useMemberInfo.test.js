@@ -43,6 +43,11 @@ describe('useMemberInfo — wiring', () => {
 		assert.match(hook, /const handleCreateCancel =/);
 		assert.match(hook, /const getNextPNUM = async/);
 		assert.match(hook, /const handleAddressSearch =/);
+		assert.match(hook, /const handleAddressDetailSave =/);
+		assert.match(hook, /const handleAddressDetailCancel =/);
+		assert.match(hook, /setAddressSearchDraft/);
+		assert.doesNotMatch(hook, /newMemberDetailAddr/);
+		assert.doesNotMatch(hook, /editedMemberDetailAddr/);
 		assert.match(hook, /const handlePrintRecipientCard = async/);
 		assert.match(hook, /const handlePrintAllMembers = async/);
 		assert.match(hook, /const handleStatusChange =/);

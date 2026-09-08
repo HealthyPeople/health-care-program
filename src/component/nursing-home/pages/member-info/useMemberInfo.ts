@@ -17,10 +17,17 @@ import {
 } from '../../utils/roomNoFloor';
 import {
 	buildMemberForEdit,
+	composeMemberAddress,
 	toDateInputString,
 	toTimeInputString,
 	type MemberData,
 } from './MemberInfoUtils';
+
+export type AddressSearchDraft = {
+	isNewMember: boolean;
+	zip: string;
+	baseAddress: string;
+};
 
 /** 입소/퇴소 당일 F14020 실적 생성·급여50% 반영 */
 async function syncAdmitDischargeF14020(opts: {
@@ -99,8 +106,7 @@ export function useMemberInfo() {
 	const [editedMember, setEditedMember] = useState<MemberData | null>(null);
 	const [isCreating, setIsCreating] = useState(false);
 	const [newMember, setNewMember] = useState<MemberData>({});
-	const [newMemberDetailAddr, setNewMemberDetailAddr] = useState('');
-	const [editedMemberDetailAddr, setEditedMemberDetailAddr] = useState('');
+	const [addressSearchDraft, setAddressSearchDraft] = useState<AddressSearchDraft | null>(null);
 	const [institutions, setInstitutions] = useState<Array<{ANCD: string, ANNM: string}>>([]);
 	const hasUnsavedChanges = useRef(false);
 
@@ -141,24 +147,22 @@ export function useMemberInfo() {
 
 	const handleMemberSelect = (member: MemberData) => {
 		if (isCreating) {
-			if (Object.keys(newMember).length > 1 || newMemberDetailAddr.trim() !== '') {
+			if (Object.keys(newMember).length > 1) {
 				if (confirm('입력한 내용이 저장되지 않았습니다. 정말 이동하시겠습니까?')) {
 					setIsCreating(false);
 					setNewMember({});
-					setNewMemberDetailAddr('');
+					setAddressSearchDraft(null);
 					setSelectedMember(member);
 					setIsEditing(false);
 					setEditedMember(null);
-					setEditedMemberDetailAddr('');
 				}
 			} else {
 				setIsCreating(false);
 				setNewMember({});
-				setNewMemberDetailAddr('');
+				setAddressSearchDraft(null);
 				setSelectedMember(member);
 				setIsEditing(false);
 				setEditedMember(null);
-				setEditedMemberDetailAddr('');
 			}
 		} else if (hasUnsavedChanges.current) {
 			if (confirm('수정된 내용이 저장되지 않았습니다. 정말 이동하시겠습니까?')) {
@@ -178,7 +182,7 @@ export function useMemberInfo() {
 		if (selectedMember) {
 			setIsEditing(true);
 			setEditedMember(buildMemberForEdit({ ...selectedMember, selectedANCD: selectedMember.ANCD }));
-			setEditedMemberDetailAddr('');
+			setAddressSearchDraft(null);
 			hasUnsavedChanges.current = false;
 		}
 	};
@@ -188,10 +192,7 @@ export function useMemberInfo() {
 		
 		setLoading(true);
 		try {
-			// 주소와 상세주소 합치기
-			const fullAddress = editedMember.P_ADDR?.trim() 
-				? (editedMember.P_ADDR.trim() + (editedMemberDetailAddr.trim() ? ' ' + editedMemberDetailAddr.trim() : ''))
-				: null;
+			const fullAddress = editedMember.P_ADDR?.trim() || null;
 
 			// 날짜 형식 변환 함수
 			const formatDate = (dateStr: string | undefined): string | null => {
@@ -280,7 +281,7 @@ export function useMemberInfo() {
 				setSelectedMember(updatedMember);
 				setIsEditing(false);
 				setEditedMember(null);
-				setEditedMemberDetailAddr('');
+				setAddressSearchDraft(null);
 				hasUnsavedChanges.current = false;
 			} else {
 				const errorMessage = result?.error || result?.details || '알 수 없는 오류';
@@ -300,13 +301,13 @@ export function useMemberInfo() {
 			if (confirm('수정된 내용이 저장되지 않았습니다. 정말 취소하시겠습니까?')) {
 				setIsEditing(false);
 				setEditedMember(null);
-				setEditedMemberDetailAddr('');
+				setAddressSearchDraft(null);
 				hasUnsavedChanges.current = false;
 			}
 		} else {
 			setIsEditing(false);
 			setEditedMember(null);
-			setEditedMemberDetailAddr('');
+			setAddressSearchDraft(null);
 		}
 	};
 
@@ -336,7 +337,7 @@ export function useMemberInfo() {
 					setSelectedMember(null);
 					setIsEditing(false);
 					setEditedMember(null);
-					setEditedMemberDetailAddr('');
+					setAddressSearchDraft(null);
 					hasUnsavedChanges.current = false;
 				} else {
 					const errorMessage = result?.error || result?.details || '알 수 없는 오류';
@@ -386,13 +387,32 @@ export function useMemberInfo() {
 		setEditedMember((prev) => (prev ? { ...prev, P_HP: value, P_TEL: value } : null));
 	};
 
-	const handleNewMemberDetailAddrChange = (value: string) => {
-		setNewMemberDetailAddr(value);
+	const handleAddressDetailCancel = () => {
+		setAddressSearchDraft(null);
 	};
 
-	const handleEditedMemberDetailAddrChange = (value: string) => {
-		setEditedMemberDetailAddr(value);
-		hasUnsavedChanges.current = true;
+	const handleAddressDetailSave = (detailAddress: string) => {
+		if (!addressSearchDraft) return;
+		const fullAddress = composeMemberAddress(addressSearchDraft.baseAddress, detailAddress);
+		if (addressSearchDraft.isNewMember) {
+			setNewMember((prev) => ({
+				...prev,
+				P_ZIP: addressSearchDraft.zip,
+				P_ADDR: fullAddress,
+			}));
+		} else {
+			setEditedMember((prev) =>
+				prev
+					? {
+							...prev,
+							P_ZIP: addressSearchDraft.zip,
+							P_ADDR: fullAddress,
+						}
+					: null
+			);
+			hasUnsavedChanges.current = true;
+		}
+		setAddressSearchDraft(null);
 	};
 
 	// ANCD별 최대 PNUM 조회 및 새 PNUM 생성
@@ -422,25 +442,24 @@ export function useMemberInfo() {
 	const handleCreateClick = () => {
 		setIsCreating(true);
 		setNewMember({});
-		setNewMemberDetailAddr('');
+		setAddressSearchDraft(null);
 		setSelectedMember(null);
 		setIsEditing(false);
 		setEditedMember(null);
-		setEditedMemberDetailAddr('');
 		hasUnsavedChanges.current = false;
 	};
 
 	const handleCreateCancel = () => {
-		if (Object.keys(newMember).length > 1 || newMemberDetailAddr.trim() !== '') {
+		if (Object.keys(newMember).length > 1) {
 			if (confirm('입력한 내용이 저장되지 않았습니다. 정말 취소하시겠습니까?')) {
 				setIsCreating(false);
 				setNewMember({});
-				setNewMemberDetailAddr('');
+				setAddressSearchDraft(null);
 			}
 		} else {
 			setIsCreating(false);
 			setNewMember({});
-			setNewMemberDetailAddr('');
+			setAddressSearchDraft(null);
 		}
 	};
 
@@ -484,10 +503,7 @@ export function useMemberInfo() {
 				}
 			};
 
-			// 주소와 상세주소 합치기
-			const fullAddress = newMember.P_ADDR?.trim() 
-				? (newMember.P_ADDR.trim() + (newMemberDetailAddr.trim() ? ' ' + newMemberDetailAddr.trim() : ''))
-				: null;
+			const fullAddress = newMember.P_ADDR?.trim() || null;
 
 			const params = {
 				ANCD: selectedANCD,
@@ -546,7 +562,7 @@ export function useMemberInfo() {
 				alert('수급자가 생성되었습니다.');
 				setIsCreating(false);
 				setNewMember({});
-				setNewMemberDetailAddr('');
+				setAddressSearchDraft(null);
 				// 목록 새로고침
 				await fetchMembers();
 			} else {
@@ -711,26 +727,11 @@ export function useMemberInfo() {
 				const zipCode = data.zonecode;
 				const address = data.address;
 				const extraAddress = data.addressType === 'R' ? data.bname + data.buildingName : '';
-
-				if (isNewMember) {
-					setNewMember((prev) => ({
-						...prev,
-						P_ZIP: zipCode,
-						P_ADDR: address + (extraAddress ? ' ' + extraAddress : '')
-					}));
-					setNewMemberDetailAddr(''); // 상세주소 초기화
-				} else {
-					setEditedMember((prev) => {
-						if (!prev) return null;
-						return {
-							...prev,
-							P_ZIP: zipCode,
-							P_ADDR: address + (extraAddress ? ' ' + extraAddress : '')
-						};
-					});
-					setEditedMemberDetailAddr(''); // 상세주소 초기화
-					hasUnsavedChanges.current = true;
-				}
+				setAddressSearchDraft({
+					isNewMember,
+					zip: zipCode,
+					baseAddress: composeMemberAddress(address, extraAddress),
+				});
 			}
 		}).open();
 	};
@@ -864,8 +865,7 @@ export function useMemberInfo() {
 		editedMember,
 		isCreating,
 		newMember,
-		newMemberDetailAddr,
-		editedMemberDetailAddr,
+		addressSearchDraft,
 		institutions,
 		availableFloors,
 		noRoomCount,
@@ -884,8 +884,8 @@ export function useMemberInfo() {
 		handleNewMemberFieldChange,
 		handleNewMemberPhoneChange,
 		handleEditedMemberPhoneChange,
-		handleNewMemberDetailAddrChange,
-		handleEditedMemberDetailAddrChange,
+		handleAddressDetailSave,
+		handleAddressDetailCancel,
 		handleCreateClick,
 		handleCreateCancel,
 		handleCreateSave,

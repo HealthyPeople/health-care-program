@@ -12,6 +12,14 @@ export interface MemberData {
 	[key: string]: any;
 }
 
+/** 주소 검색 결과와 상세주소를 한 줄로 이어 붙인다 */
+export function composeMemberAddress(...parts: unknown[]): string {
+	return parts
+		.map((v) => String(v ?? '').trim())
+		.filter(Boolean)
+		.join(' ');
+}
+
 export function escapeHtml(v: unknown): string {
 	const s = String(v ?? '');
 	return s

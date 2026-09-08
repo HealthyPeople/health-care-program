@@ -198,6 +198,7 @@ export function buildRecipientCardPrintHtml(
 		if (r === '22') return '며느리';
 		if (r === '23') return '사위';
 		if (r === '31') return '손주';
+		if (r === '99') return '기타';
 		return r;
 	})();
 

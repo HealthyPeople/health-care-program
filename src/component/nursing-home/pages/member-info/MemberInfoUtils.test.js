@@ -85,6 +85,14 @@ describe('MemberInfoUtils — pure helpers', () => {
 		assert.equal(typeof U.toDateInputString, 'function');
 		assert.equal(typeof U.buildMemberForEdit, 'function');
 		assert.equal(typeof U.formatGuardianRelation, 'function');
+		assert.equal(typeof U.composeMemberAddress, 'function');
+	});
+
+	it('composeMemberAddress — 주소와 상세주소를 한 줄로', () => {
+		assert.equal(U.composeMemberAddress('서울시 강남구 테헤란로 1', '101동 101호'), '서울시 강남구 테헤란로 1 101동 101호');
+		assert.equal(U.composeMemberAddress('서울시 강남구', ''), '서울시 강남구');
+		assert.equal(U.composeMemberAddress('', '101호'), '101호');
+		assert.equal(U.composeMemberAddress(null, null), '');
 	});
 
 	it('escapeHtml / fmtStatus / fmtSex', () => {
