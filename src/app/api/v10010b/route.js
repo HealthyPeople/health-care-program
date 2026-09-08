@@ -14,14 +14,51 @@ const sql = require('mssql');
 
 const { normalizeYmdEmptyRaw: normalizeYmd } = require('../../../utils/normalizeYmd');
 const VIEW = '[돌봄시설DB].[dbo].[V10010B]';
+const F10110 = '[돌봄시설DB].[dbo].[F10110]';
 
 function str(v) {
 	if (v == null) return '';
 	return String(v).trim();
 }
 
+/** 화면 계약목록과 동일: F10110.SVSDT ~ SVEDT */
+function periodFromDates(start, end) {
+	const s = normalizeYmd(start);
+	const e = normalizeYmd(end);
+	if (!s && !e) return '';
+	return `${s || '-'} ~ ${e || '-'}`;
+}
+
+const SELECT_PRINT = `
+  SELECT
+    v.[순번],
+    v.[ANCD],
+    v.[PNUM],
+    v.[성명],
+    v.[생일],
+    v.[계약일자],
+    v.[인정번호],
+    v.[인정등급],
+    v.[인정유효기간],
+    v.[급여종류],
+    v.[계약자성명],
+    v.[수급자와관계],
+    v.[자택전화번호],
+    v.[헨드폰번호],
+    v.[계약기간],
+    v.[서비스구분1],
+    f.[SVSDT],
+    f.[SVEDT]
+  FROM ${VIEW} v
+  LEFT JOIN ${F10110} f
+    ON v.[ANCD] = f.[ANCD]
+   AND CAST(v.[PNUM] AS VARCHAR(30)) = CAST(f.[PNUM] AS VARCHAR(30))
+   AND CONVERT(date, v.[계약일자]) = CONVERT(date, f.[CDT])
+`;
 
 function mapRow(r) {
+	const fromContract = periodFromDates(r.SVSDT, r.SVEDT);
+	const fromView = str(r['계약기간']);
 	return {
 		seq: r['순번'] != null ? Number(r['순번']) : null,
 		ANCD: r.ANCD,
@@ -38,9 +75,80 @@ function mapRow(r) {
 		homePhone: str(r['자택전화번호']),
 		// DB 뷰 컬럼명 오타(헨드폰번호) 대응
 		mobilePhone: str(r['헨드폰번호'] ?? r['핸드폰번호']),
-		contractPeriod: str(r['계약기간']),
+		contractPeriod: fromContract || fromView,
 		serviceType: str(r['서비스구분1'] ?? r['서비스구분']),
 	};
+}
+
+function rowKey(row) {
+	return `${String(row.ANCD ?? '')}|${String(row.PNUM ?? '').trim()}|${normalizeYmd(row.contractDate) || ''}`;
+}
+
+function dedupePrintRows(rows) {
+	const map = new Map();
+	for (const row of rows) {
+		const key = rowKey(row);
+		const prev = map.get(key);
+		if (!prev || (!prev.contractPeriod && row.contractPeriod)) {
+			map.set(key, row);
+		}
+	}
+	return Array.from(map.values());
+}
+
+/** 뷰에 빠진 계약 건은 F10110(화면 계약목록) 기준으로 보강 */
+async function mergeMissingContracts(pool, sessionAncd, rows) {
+	const deduped = dedupePrintRows(rows);
+	const pnums = [...new Set(deduped.map((r) => String(r.PNUM ?? '').trim()).filter(Boolean))];
+	if (pnums.length === 0) return deduped;
+
+	const request = pool.request();
+	request.input('sessionAncd', sessionAncd);
+	const placeholders = pnums
+		.map((p, i) => {
+			request.input(`mp${i}`, sql.VarChar(30), p);
+			return `@mp${i}`;
+		})
+		.join(',');
+
+	const result = await request.query(`
+    SELECT [ANCD], [PNUM], [CDT], [SVSDT], [SVEDT]
+    FROM ${F10110}
+    WHERE [ANCD] = @sessionAncd
+      AND CAST([PNUM] AS VARCHAR(30)) IN (${placeholders})
+    ORDER BY [PNUM], [CDT] DESC
+  `);
+
+	const existing = new Set(deduped.map(rowKey));
+	const byPnum = new Map();
+	for (const row of deduped) {
+		const p = String(row.PNUM ?? '').trim();
+		if (!byPnum.has(p)) byPnum.set(p, row);
+	}
+
+	const extra = [];
+	for (const c of result.recordset || []) {
+		const pnum = String(c.PNUM ?? '').trim();
+		const cdt = normalizeYmd(c.CDT);
+		const key = `${String(c.ANCD ?? '')}|${pnum}|${cdt || ''}`;
+		if (existing.has(key)) continue;
+		const tmpl = byPnum.get(pnum) || {};
+		extra.push({
+			...tmpl,
+			ANCD: c.ANCD,
+			PNUM: pnum,
+			seq: null,
+			contractDate: cdt,
+			contractPeriod: periodFromDates(c.SVSDT, c.SVEDT),
+		});
+		existing.add(key);
+	}
+
+	return [...deduped, ...extra].sort((a, b) => {
+		const nameCmp = String(a.name || '').localeCompare(String(b.name || ''), 'ko');
+		if (nameCmp !== 0) return nameCmp;
+		return String(b.contractDate || '').localeCompare(String(a.contractDate || ''));
+	});
 }
 
 /**
@@ -71,11 +179,10 @@ export async function GET(req) {
 		if (pnum != null && String(pnum).trim() !== '') {
 			request.input('pnum', sql.VarChar(30), String(pnum).trim());
 			result = await request.query(`
-        SELECT *
-        FROM ${VIEW}
-        WHERE [ANCD] = @sessionAncd
-          AND CAST([PNUM] AS VARCHAR(30)) = @pnum
-        ORDER BY [성명] ASC, [순번] ASC, [계약일자] DESC
+        ${SELECT_PRINT}
+        WHERE v.[ANCD] = @sessionAncd
+          AND CAST(v.[PNUM] AS VARCHAR(30)) = @pnum
+        ORDER BY v.[성명] ASC, v.[순번] ASC, v.[계약일자] DESC
       `);
 		} else if (pnumsRaw != null && String(pnumsRaw).trim() !== '') {
 			const list = String(pnumsRaw)
@@ -92,22 +199,21 @@ export async function GET(req) {
 				})
 				.join(',');
 			result = await request.query(`
-        SELECT *
-        FROM ${VIEW}
-        WHERE [ANCD] = @sessionAncd
-          AND CAST([PNUM] AS VARCHAR(30)) IN (${placeholders})
-        ORDER BY [성명] ASC, [순번] ASC, [계약일자] DESC
+        ${SELECT_PRINT}
+        WHERE v.[ANCD] = @sessionAncd
+          AND CAST(v.[PNUM] AS VARCHAR(30)) IN (${placeholders})
+        ORDER BY v.[성명] ASC, v.[순번] ASC, v.[계약일자] DESC
       `);
 		} else {
 			result = await request.query(`
-        SELECT *
-        FROM ${VIEW}
-        WHERE [ANCD] = @sessionAncd
-        ORDER BY [성명] ASC, [순번] ASC, [계약일자] DESC
+        ${SELECT_PRINT}
+        WHERE v.[ANCD] = @sessionAncd
+        ORDER BY v.[성명] ASC, v.[순번] ASC, v.[계약일자] DESC
       `);
 		}
 
-		const data = (result.recordset || []).map(mapRow);
+		let data = (result.recordset || []).map(mapRow);
+		data = await mergeMissingContracts(pool, gate.sessionAncd, data);
 		return jsonOk({
 				success: true,
 				data,

@@ -348,9 +348,8 @@ table.data th {
 	font-size: 9pt;
 	line-height: 1.25;
 }
-td.dual, th.dual { text-align: left; font-size: 9pt; }
-th.dual { text-align: center; }
-td.dual div, th.dual div { line-height: 1.35; min-height: 1.2em; }
+td.dual, th.dual { text-align: center; font-size: 9pt; }
+td.dual div, th.dual div { line-height: 1.35; min-height: 1.2em; text-align: center; }
 td.dual div:first-child,
 th.dual div:first-child {
 	border-bottom: 1px dashed #999;
