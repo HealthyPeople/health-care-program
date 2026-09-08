@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "cross-env NODE_PATH= next dev",
-    "build": "npm run clean && cross-env NODE_PATH= next build",
+    "build": "npm run clean && next build",
     "postbuild": "node scripts/postbuild.js",
     "start": "node .next/standalone/server.js",
     "lint": "next lint",

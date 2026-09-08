@@ -69,10 +69,34 @@ if (fs.existsSync(publicSrc)) {
 }
 
 if (fs.existsSync('package.json')) {
-  console.log('Copying package.json to .next/standalone/package.json...');
-  fs.copyFileSync('package.json', path.join(standalone, 'package.json'));
-  console.log('Copied package.json');
+  const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const azurePkg = {
+    name: rootPkg.name,
+    version: rootPkg.version,
+    private: true,
+    scripts: {
+      start: 'node server.js',
+    },
+    engines: rootPkg.engines || { node: '>=22.0.0' },
+  };
+  console.log('Writing Azure standalone package.json (start: node server.js)...');
+  fs.writeFileSync(
+    path.join(standalone, 'package.json'),
+    `${JSON.stringify(azurePkg, null, 2)}\n`
+  );
 }
+
+fs.writeFileSync(
+  path.join(standalone, '.deployment'),
+  '[config]\nSCM_DO_BUILD_DURING_DEPLOYMENT=false\n'
+);
+console.log('Wrote .deployment to disable App Service Oryx rebuild');
+
+fs.writeFileSync(
+  path.join(standalone, 'startup.sh'),
+  '#!/bin/bash\nexport HOSTNAME="${HOSTNAME:-0.0.0.0}"\nexec node server.js\n'
+);
+console.log('Wrote startup.sh');
 
 if (fs.existsSync(path.join(standalone, 'server.js'))) {
   console.log('Verified server.js exists');
