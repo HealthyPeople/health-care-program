@@ -12,6 +12,11 @@ import { assertAnCdMatchesSession } from '../../../config/sessionServer';
 import { jsonOk, jsonError } from '../../../utils/apiResponse';
 const sql = require('mssql');
 const { adjustSnackCopayAfterSalaryCalc } = require('../../../lib/adjustSnackCopayAfterSalaryCalc');
+const {
+	snapshotRoomAdjustFees,
+	restoreRoomAdjustFees,
+	mergeRoomAdjustSnapshots,
+} = require('../../../lib/preserveRoomAdjustAfterSalaryCalc');
 
 /** 급여 HEAD — 스키마: ANCD, SALMM(YYYYMM), PNUM 복합키 */
 const TABLE = '[돌봄시설DB].[dbo].[F40100]';
@@ -417,6 +422,20 @@ export async function PUT(req) {
 			return jsonError({ success: false, error: '세션 기관코드(ANCD)가 올바르지 않습니다' }, 401);
 		}
 
+		let roomAdjustSnapshot = [];
+		try {
+			const fromDb = await snapshotRoomAdjustFees(pool, gate.sessionAncd, salmm, pnum);
+			const fromClient = Array.isArray(body?.roomAdjusts) ? body.roomAdjusts : [];
+			roomAdjustSnapshot = mergeRoomAdjustSnapshots(fromDb, fromClient);
+		} catch (snapErr) {
+			console.error('급여계산 전 병실조정료 스냅샷 실패:', snapErr);
+			return jsonError({
+				success: false,
+				error: `급여계산 전 병실조정료를 읽지 못했습니다: ${snapErr.message}`,
+				details: String(snapErr),
+			});
+		}
+
 		await pool
 			.request()
 			.input('pv_ancd', sql.Int, ancd)
@@ -427,14 +446,30 @@ export async function PUT(req) {
 			.input('pv_pnum', sql.Int, pnum)
 			.execute('[돌봄시설DB].[dbo].[Usp_P40100]');
 
+		let snackError = null;
 		try {
 			await adjustSnackCopayAfterSalaryCalc(pool, gate.sessionAncd, salmm, pnum);
 		} catch (snackErr) {
 			console.error('급여계산 후 비급여 식대·간식 보정 실패:', snackErr);
+			snackError = snackErr;
+		}
+
+		try {
+			await restoreRoomAdjustFees(pool, gate.sessionAncd, salmm, roomAdjustSnapshot);
+		} catch (roomErr) {
+			console.error('급여계산 후 병실조정료 복원 실패:', roomErr);
 			return jsonError({
 				success: false,
-				error: `급여계산은 완료됐으나 비급여 식대·간식 보정에 실패했습니다: ${snackErr.message}`,
-				details: String(snackErr),
+				error: `급여계산은 완료됐으나 병실조정료 복원에 실패했습니다: ${roomErr.message}`,
+				details: String(roomErr),
+			});
+		}
+
+		if (snackError) {
+			return jsonError({
+				success: false,
+				error: `급여계산은 완료됐으나 비급여 식대·간식 보정에 실패했습니다: ${snackError.message}`,
+				details: String(snackError),
 			});
 		}
 

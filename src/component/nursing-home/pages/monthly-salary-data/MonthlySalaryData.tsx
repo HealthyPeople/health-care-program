@@ -11,284 +11,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCareGradeLabel } from "../../utils/careGrade";
 import { useTabRefresh } from "../../hooks/useTabRefresh";
-
-interface MemberData {
-	ANCD: string;
-	PNUM: string;
-	P_NM: string;
-	P_SEX: string;
-	P_GRD: string;
-	P_BRDT: string;
-	P_ST: string;
-	P_YYNO?: string;
-	P_YYDT?: string;
-	P_YYSDT?: string;
-	P_YYEDT?: string;
-	[key: string]: unknown;
-}
-
-function num(v: unknown): number {
-	const n = parseInt(String(v ?? "0").replace(/,/g, ""), 10);
-	return Number.isFinite(n) ? n : 0;
-}
-
-function fmtAmt(n: number): string {
-	return Math.round(n).toLocaleString("ko-KR");
-}
-
-/** 금액 입력값 → 콤마 포맷 (숫자만 허용) */
-function formatAmountInput(raw: string): string {
-	const digits = String(raw ?? "").replace(/[^\d]/g, "");
-	if (digits === "") return "";
-	const n = parseInt(digits, 10);
-	if (!Number.isFinite(n)) return "";
-	return n.toLocaleString("ko-KR");
-}
-
-function formatAmountCell(v: unknown): string {
-	if (v == null || v === "") return "0";
-	const n = Number(String(v).replace(/,/g, ""));
-	if (!Number.isFinite(n)) return "0";
-	return Math.round(n).toLocaleString("ko-KR");
-}
-
-function formatPercentCell(v: unknown): string {
-	if (v == null || v === "") return "";
-	const n = Number(String(v).replace(/,/g, ""));
-	if (!Number.isFinite(n)) return "";
-	return n.toFixed(1);
-}
-
-function formatBirthFromDb(v: unknown): string {
-	if (v == null) return "";
-	const s = String(v).trim();
-	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10).replace(/-/g, "");
-	if (/^\d{8}$/.test(s)) return s;
-	return s;
-}
-
-function displayBirth(s: string): string {
-	if (!s) return "";
-	if (s.length === 8 && /^\d{8}$/.test(s)) {
-		return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-	}
-	if (s.includes("-") && s.length >= 10) return s.slice(0, 10);
-	return s;
-}
-
-/** F40100 한 행 → 상단 테이블 행 */
-function mapDbToSalaryRow(r: Record<string, unknown>): SalaryRow {
-	const sal1 = num(r.SAL1);
-	const sal2 = num(r.SAL2);
-	const b1 = num(r.BSAL1);
-	const b2 = num(r.BSAL2);
-	const b3 = num(r.BSAL3);
-	const b4 = num(r.BSAL4);
-	const b6 = num(r.BSAL6);
-	const b7 = num(r.BSAL7);
-	const b8 = num(r.BSAL8);
-	const b9 = num(r.BSAL9);
-	const esal = num(r.ESAL);
-	const sumBs = b1 + b2 + b3 + b4 + b6 + b7 + b8 + b9;
-	/** 급여합계 = 공단부담금 + 수급자부담금 (V40100). 비급여는 수급자부담금합에만 포함 */
-	/** BSAL1/BSAL2 = 계약 식대·간식비 1회가 있는 수급자만. 저녁 간식은 미포함 */
-	const benefitTotal = sal1 + sal2;
-	const recipientTotal = sal2 + sumBs + esal;
-	return {
-		pnum: String(r.PNUM ?? ""),
-		recipient: String(r.P_NM ?? ""),
-		birthday: displayBirth(formatBirthFromDb(r.P_BRDT)),
-		grade: formatCareGradeLabel(String(r.P_GRD ?? "")),
-		benefitTotal: fmtAmt(benefitTotal),
-		nhaContribution: fmtAmt(sal1),
-		recipientContribution: fmtAmt(sal2),
-		nonBenefitMeal: fmtAmt(b1 + b2),
-		roomUpgradeFee: fmtAmt(b6),
-		outpatientFee: fmtAmt(b3),
-		contractedMedical: fmtAmt(b8),
-		contractedPrescription: fmtAmt(b9),
-		otherCosts: fmtAmt(esal),
-		recipientContributionTotal: fmtAmt(recipientTotal),
-	};
-}
-
-/** F40100 → 하단 상세 */
-function mapDbToDetailForm(r: Record<string, unknown>): SalaryDetailForm {
-	const b9 = num(r.BSAL9);
-	return {
-		recipient: String(r.P_NM ?? ""),
-		birthday: displayBirth(formatBirthFromDb(r.P_BRDT)),
-		inSper: r.INSPER != null && r.INSPER !== "" ? String(r.INSPER) : "",
-		usrPer: r.USRPER != null && r.USRPER !== "" ? String(r.USRPER) : "",
-		usrGu: String(r.USRGU ?? "1").trim() || "1",
-		nhaContribution: fmtAmt(num(r.SAL1)),
-		recipientContribution: fmtAmt(num(r.SAL2)),
-		beautyCost: fmtAmt(num(r.BSAL4)),
-		nonBenefitMeal: fmtAmt(num(r.BSAL1)),
-		/** 계약 간식비 1회가 있는 수급자의 오전·오후만. 저녁은 제외 */
-		nonBenefitSnack: fmtAmt(num(r.BSAL2)),
-		otherCosts: fmtAmt(num(r.ESAL)),
-		otherCostDesc: String(r.ESALDES ?? ""),
-		premiumRoomFee: fmtAmt(num(r.BSAL6)),
-		outpatientFee: fmtAmt(num(r.BSAL3)),
-		roomAdjustFee: "",
-		bathFee: fmtAmt(num(r.BSAL7)),
-		dementiaFee: fmtAmt(num(r.BSAL8)),
-		contractedMedicalFee: fmtAmt(0),
-		prescriptionFee: fmtAmt(b9),
-	};
-}
-
-function parseAmt(s: string): number {
-	const n = parseInt(String(s ?? "").replace(/,/g, "").trim(), 10);
-	return Number.isFinite(n) ? n : 0;
-}
-
-function toYmd(v: unknown): string | null {
-	if (v == null || v === "") return null;
-	const s = String(v).trim();
-	if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-	if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-	return null;
-}
-
-/** 상세 폼 + 수급자 → F40100 MERGE용 row */
-function buildF40100Row(
-	member: MemberData,
-	salmm6: string,
-	form: SalaryDetailForm
-): Record<string, unknown> {
-	const bsal9 =
-		parseAmt(form.roomAdjustFee) +
-		parseAmt(form.contractedMedicalFee) +
-		parseAmt(form.prescriptionFee);
-	return {
-		ANCD: member.ANCD,
-		SALMM: salmm6,
-		PNUM: member.PNUM,
-		INSPER: form.inSper.trim() === "" ? null : Number(form.inSper.replace(",", ".")),
-		USRPER: form.usrPer.trim() === "" ? null : Number(form.usrPer.replace(",", ".")),
-		USRGU: (form.usrGu || "1").trim().slice(0, 1),
-		SAL1: parseAmt(form.nhaContribution),
-		SAL2: parseAmt(form.recipientContribution),
-		BSAL1: parseAmt(form.nonBenefitMeal),
-		BSAL2: parseAmt(form.nonBenefitSnack),
-		BSAL3: parseAmt(form.outpatientFee),
-		BSAL4: parseAmt(form.beautyCost),
-		BSAL6: parseAmt(form.premiumRoomFee),
-		BSAL7: parseAmt(form.bathFee),
-		BSAL8: parseAmt(form.dementiaFee),
-		BSAL9: bsal9,
-		ESAL: parseAmt(form.otherCosts),
-		ESALDES: form.otherCostDesc.trim() || null,
-		SNM: null,
-		S_GU: null,
-		ENM: null,
-		RDES: null,
-		P_GRD: String(member.P_GRD ?? "").trim().slice(0, 2) || null,
-		P_YYNO: member.P_YYNO != null ? String(member.P_YYNO) : null,
-		P_YYDT: toYmd(member.P_YYDT),
-		P_YYSDT: toYmd(member.P_YYSDT),
-		P_YYEDT: toYmd(member.P_YYEDT),
-		ETC: null,
-		P_NM: member.P_NM || null,
-		P_BRDT: member.P_BRDT || null,
-		P_SEX: String(member.P_SEX ?? "").trim().slice(0, 1) || null,
-		P_ST: String(member.P_ST ?? "").trim().slice(0, 1) || null,
-		ANGH: null,
-		ANNM: null,
-		ANADD: null,
-		TAXNUM: null,
-		TAXOWN: null,
-		ANTEL: null,
-	};
-}
-
-/** 급여 그리드(F40100) 행 → 저장용 수급자 스텁 (좌측 목록 제거 후 행 선택 시 사용) */
-function salaryRecordToMemberData(r: Record<string, unknown>): MemberData {
-	return {
-		ANCD: String(r.ANCD ?? ""),
-		PNUM: String(r.PNUM ?? ""),
-		P_NM: String(r.P_NM ?? ""),
-		P_SEX: String(r.P_SEX ?? ""),
-		P_GRD: String(r.P_GRD ?? ""),
-		P_BRDT: String(r.P_BRDT ?? ""),
-		P_ST: String(r.P_ST ?? ""),
-		P_YYNO: r.P_YYNO != null ? String(r.P_YYNO) : undefined,
-		P_YYDT: r.P_YYDT != null ? String(r.P_YYDT) : undefined,
-		P_YYSDT: r.P_YYSDT != null ? String(r.P_YYSDT) : undefined,
-		P_YYEDT: r.P_YYEDT != null ? String(r.P_YYEDT) : undefined,
-	};
-}
-
-function payYearMonthToSalmm(ym: string): string | null {
-	const d = String(ym || "").replace(/\D/g, "");
-	if (d.length === 6) return d;
-	return null;
-}
-
-// 급여 발생 행 타입 (테이블용)
-interface SalaryRow {
-	pnum: string;
-	recipient: string;
-	birthday: string;
-	grade: string;
-	benefitTotal: string;
-	nhaContribution: string;
-	recipientContribution: string;
-	nonBenefitMeal: string;
-	roomUpgradeFee: string;
-	outpatientFee: string;
-	contractedMedical: string;
-	contractedPrescription: string;
-	otherCosts: string;
-	recipientContributionTotal: string;
-}
-
-// 하단 상세 폼 데이터 (F40100 매핑)
-interface SalaryDetailForm {
-	recipient: string;
-	birthday: string;
-	inSper: string;
-	usrPer: string;
-	usrGu: string;
-	nhaContribution: string;
-	recipientContribution: string;
-	beautyCost: string;
-	nonBenefitMeal: string;
-	nonBenefitSnack: string;
-	otherCosts: string;
-	otherCostDesc: string;
-	premiumRoomFee: string;
-	outpatientFee: string;
-	roomAdjustFee: string;
-	bathFee: string;
-	dementiaFee: string;
-	contractedMedicalFee: string;
-	prescriptionFee: string;
-}
-
-const initialDetailForm: SalaryDetailForm = {
-	recipient: "",
-	birthday: "",
-	inSper: "",
-	usrPer: "",
-	usrGu: "1",
-	nhaContribution: "",
-	recipientContribution: "",
-	beautyCost: "",
-	nonBenefitMeal: "",
-	nonBenefitSnack: "",
-	otherCosts: "",
-	otherCostDesc: "",
-	premiumRoomFee: "",
-	outpatientFee: "",
-	roomAdjustFee: "",
-	bathFee: "",
-	dementiaFee: "",
-	contractedMedicalFee: "",
-	prescriptionFee: "",
-};
+import {
+	type MemberData,
+	type SalaryDetailForm,
+	type SalaryRow,
+	buildF40100Row,
+	calcRecipientBurdenTotal,
+	fmtAmt,
+	formatAmountCell,
+	formatAmountInput,
+	formatPercentCell,
+	formatSignedAmountInput,
+	initialDetailForm,
+	mapDbToDetailForm,
+	mapDbToSalaryRow,
+	parseAmt,
+	payYearMonthToSalmm,
+	salaryRecordToMemberData,
+	toYmd,
+	collectRoomAdjustsForCalc,
+} from "./MonthlySalaryDataUtils";
 
 const DETAIL_ITEMS_PER_PAGE = 20;
 const DETAIL_PAGE_NUMBER_BLOCK = 5;
@@ -346,23 +88,8 @@ export default function MonthlySalaryData() {
 		return detailRows.slice(start, start + DETAIL_ITEMS_PER_PAGE);
 	}, [detailRows, detailPage]);
 
-	/** 수급자부담금 + 비급여/기타 등 (상단 그리드 수급자부담금합과 동일 구성) */
-	const recipientBurdenTotal = useMemo(() => {
-		return (
-			parseAmt(detailForm.recipientContribution) +
-			parseAmt(detailForm.nonBenefitMeal) +
-			parseAmt(detailForm.nonBenefitSnack) +
-			parseAmt(detailForm.outpatientFee) +
-			parseAmt(detailForm.beautyCost) +
-			parseAmt(detailForm.premiumRoomFee) +
-			parseAmt(detailForm.bathFee) +
-			parseAmt(detailForm.dementiaFee) +
-			parseAmt(detailForm.roomAdjustFee) +
-			parseAmt(detailForm.contractedMedicalFee) +
-			parseAmt(detailForm.prescriptionFee) +
-			parseAmt(detailForm.otherCosts)
-		);
-	}, [detailForm]);
+	/** 수급자부담금 + 비급여/기타 등 (상단 그리드 수급자부담금합과 동일 구성). 병실조정료 음수는 할인 */
+	const recipientBurdenTotal = useMemo(() => calcRecipientBurdenTotal(detailForm), [detailForm]);
 
 	const readOnlyInputClass =
 		"h-9 min-w-0 flex-1 rounded border border-blue-200 bg-slate-50 px-2.5 text-sm text-blue-900/90 outline-none cursor-default";
@@ -456,6 +183,11 @@ export default function MonthlySalaryData() {
 					salmm,
 					pnum,
 					wonflag: payCalcUnit ? 1 : 0,
+					roomAdjusts: collectRoomAdjustsForCalc(
+						salaryRecords,
+						selectedMember?.PNUM,
+						detailForm.roomAdjustFee
+					),
 				}),
 			});
 			const result = await res.json().catch(() => ({}));
@@ -625,7 +357,13 @@ export default function MonthlySalaryData() {
 				return;
 			}
 			alert("저장되었습니다.");
-			await fetchSalaryList();
+			const rows = await fetchSalaryList();
+			const savedPnum = String(selectedMember.PNUM).trim();
+			const rec = rows.find((r) => String(r.PNUM ?? "").trim() === savedPnum);
+			if (rec) {
+				setSelectedMember(salaryRecordToMemberData(rec));
+				setDetailForm(mapDbToDetailForm(rec));
+			}
 		} catch (err) {
 			console.error("F40100 저장 오류:", err);
 			alert("저장 중 오류가 발생했습니다.");
@@ -1006,7 +744,6 @@ export default function MonthlySalaryData() {
 									value={detailForm.bathFee}
 									readOnly
 									className={amountReadOnlyClass}
-									placeholder="BSAL7"
 								/>
 							</div>
 							<div className="flex items-center gap-2">
@@ -1045,7 +782,7 @@ export default function MonthlySalaryData() {
 								/>
 							</div>
 							<div className="flex items-center gap-2">
-								<label className={fieldLabelClass}>
+								<label className={fieldLabelClass} title="음수 입력 시 상급병실료에서 할인됩니다">
 									병실조정료
 								</label>
 								<input
@@ -1054,7 +791,7 @@ export default function MonthlySalaryData() {
 									onChange={(e) =>
 										setDetailForm((prev) => ({
 											...prev,
-											roomAdjustFee: formatAmountInput(e.target.value),
+											roomAdjustFee: formatSignedAmountInput(e.target.value),
 										}))
 									}
 									className={amountEditableClass}
