@@ -109,8 +109,16 @@ describe("MonthlySalaryStatementUtils — pure helpers", () => {
 		assert.equal(U.initialForm.deliveryMethod, "2");
 		assert.equal(U.initialForm.deliverer, "");
 		assert.equal(U.loginFacilityDeliverer("로아기관", "너싱홈 해원"), "로아기관");
+		assert.equal(U.loginFacilityDeliverer("로아기관", "너싱홈해원"), "로아기관");
 		assert.equal(U.loginFacilityDeliverer("로아기관", "해원기관"), "로아기관");
 		assert.equal(U.loginFacilityDeliverer("", "담당자"), "담당자");
+		assert.equal(U.loginFacilityDeliverer("", "너싱홈해원"), "");
+		const replaced = U.mergeF40100FacilityFromF00110(
+			{ ANNM: "너싱홈해원", ANGH: "14161000067" },
+			{ ANNM: "너싱홈 로아", ANGH: "ROA-CODE" }
+		);
+		assert.equal(replaced.ANNM, "너싱홈 로아");
+		assert.equal(replaced.ANGH, "ROA-CODE");
 	});
 
 	it("payYearMonthToSalmm / num / fmtInt", () => {

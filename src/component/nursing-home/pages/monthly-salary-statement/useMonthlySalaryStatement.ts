@@ -26,6 +26,7 @@ import {
 	type V40100DPrintRow,
 	type V40100EPrintRow,
 	type V40100GPrintRow,
+	type LoginFacilityPrintInfo,
 } from "./MonthlySalaryStatementPrint";
 import {
 	payYearMonthToSalmm,
@@ -63,6 +64,7 @@ export function useMonthlySalaryStatement() {
 	const [issueDateModalOpen, setIssueDateModalOpen] = useState(false);
 	const [issueDateDraft, setIssueDateDraft] = useState("");
 	const [facilityName, setFacilityName] = useState("");
+	const [facilityInfo, setFacilityInfo] = useState<LoginFacilityPrintInfo | null>(null);
 
 	const tabTitle = activeTab ? TAB_TITLES[activeTab] : TAB_TITLES.ledger;
 
@@ -237,14 +239,17 @@ export function useMonthlySalaryStatement() {
 				return statementRowToV40100EFallback(payYearMonth, sr);
 			});
 			const body = printRows
-				.map((row) => `<div class="f24-page">${buildBenefitStatement24Body(payYearMonth, row)}</div>`)
+				.map(
+					(row) =>
+						`<div class="f24-page">${buildBenefitStatement24Body(payYearMonth, row, facilityInfo)}</div>`
+				)
 				.join("");
 			openPrintPreviewWindow(wrapF24PrintHtml(body));
 		} catch (e) {
 			console.error(e);
 			alert(e instanceof Error ? e.message : "급여명세서 출력 중 오류가 발생했습니다.");
 		}
-	}, [payYearMonth, statementRows, checkedPnums]);
+	}, [payYearMonth, statementRows, checkedPnums, facilityInfo]);
 
 	const printPaymentConfirmation = useCallback(async () => {
 		const selectedRows = statementRows.filter((r) => checkedPnums.has(r.pnum));
@@ -278,13 +283,13 @@ export function useMonthlySalaryStatement() {
 			const printRows = selectedRows.map(
 				(sr) => byPnum.get(String(sr.pnum).trim()) ?? statementRowToV40100GFallback(payYearMonth, sr)
 			);
-			const html = buildPaymentConfirmation25PrintHtml(payYearMonth, printRows);
+			const html = buildPaymentConfirmation25PrintHtml(payYearMonth, printRows, facilityInfo);
 			openPrintPreviewWindow(html);
 		} catch (e) {
 			console.error(e);
 			alert(e instanceof Error ? e.message : "납부확인서 출력 중 오류가 발생했습니다.");
 		}
-	}, [payYearMonth, statementRows, checkedPnums]);
+	}, [payYearMonth, statementRows, checkedPnums, facilityInfo]);
 
 	const handleDocumentKindClick = useCallback(
 		(id: (typeof TABS)[number]["id"]) => {
@@ -359,6 +364,19 @@ export function useMonthlySalaryStatement() {
 
 			const facilityNameFromRow = String(facilityRow?.ANNM ?? "").trim();
 			setFacilityName(facilityNameFromRow);
+			setFacilityInfo(
+				facilityRow
+					? {
+							name: facilityNameFromRow,
+							code: String(facilityRow.ANGH ?? "").trim(),
+							address: String(facilityRow.ANADD ?? "").trim(),
+							businessNo: String(facilityRow.TAXNUM ?? "").trim(),
+							representative: String(facilityRow.TAXOWN ?? "").trim(),
+							tel: String(facilityRow.ANTEL ?? "").trim(),
+							bankAccount: String(facilityRow.ETC ?? "").trim(),
+						}
+					: null
+			);
 
 			const merged = f401Rows.map((row) =>
 				mergeF40100FacilityFromF00110(mergeF40100WithF10010(row, byPnum), facilityRow)

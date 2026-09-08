@@ -10,7 +10,7 @@
  * 월별 급여명세서 — 순수 유틸·매핑·상수 (React state/fetch 없음)
  */
 import { formatCareGradeLabel } from "../../utils/careGrade";
-import { normalizeSGu } from "./MonthlySalaryStatementPrint";
+import { isHaewonHardcodedLabel, normalizeSGu } from "./MonthlySalaryStatementPrint";
 
 export function num(v: unknown): number {
 	const n = parseInt(String(v ?? "0").replace(/,/g, ""), 10);
@@ -223,7 +223,7 @@ export function mergeF40100WithF10010(
 	};
 }
 
-/** F40100 기관정보가 비어 있으면 F00110 값으로 보완 */
+/** F40100 기관정보가 비어 있거나 구 해원 하드코딩이면 F00110 값으로 대체 */
 export function mergeF40100FacilityFromF00110(
 	f401: Record<string, unknown>,
 	facility: Record<string, unknown> | null
@@ -231,8 +231,13 @@ export function mergeF40100FacilityFromF00110(
 	if (!facility) return { ...f401 };
 	const pick = (key: string) => {
 		const cur = String(f401[key] ?? "").trim();
-		if (cur) return cur;
-		return String(facility[key] ?? "").trim() || f401[key];
+		const fromFac = String(facility[key] ?? "").trim();
+		if (fromFac) {
+			if (!cur) return fromFac;
+			if (isHaewonHardcodedLabel(cur) && !isHaewonHardcodedLabel(fromFac)) return fromFac;
+			if (cur === "14161000067" && fromFac !== cur) return fromFac;
+		}
+		return cur || fromFac || f401[key];
 	};
 	return {
 		...f401,
@@ -278,13 +283,11 @@ export const initialForm: StatementForm = {
 	deliverer: "",
 };
 
-const HARDCODED_DELIVERER_PLACEHOLDERS = new Set(["너싱홈 해원", "너싱홈 혜원"]);
-
 /** 전달자: 로그인 기관명(F00110.ANNM) 우선. 구 하드코딩 기본값은 쓰지 않는다. */
 export function loginFacilityDeliverer(facilityName: string, savedSnm?: string): string {
 	const facility = String(facilityName ?? "").trim();
 	if (facility) return facility;
 	const saved = String(savedSnm ?? "").trim();
-	if (saved && !HARDCODED_DELIVERER_PLACEHOLDERS.has(saved)) return saved;
+	if (saved && !isHaewonHardcodedLabel(saved)) return saved;
 	return "";
 }

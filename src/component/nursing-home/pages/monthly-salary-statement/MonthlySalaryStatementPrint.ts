@@ -316,7 +316,87 @@ export interface V40100DPrintRow {
 
 export const LEDGER_DEFAULT_RECEIVE =
 	"소식지, 급여제공기록지, 급여비용명세서, 식단표, 프로그램계획표";
-export const LEDGER_DEFAULT_DELIVERER = "너싱홈 해원";
+export const LEDGER_DEFAULT_DELIVERER = "";
+
+/** 구 서식에 박혀 있던 해원 기관명(공백 유무 모두) */
+export function normalizeFacilityLabel(s: string): string {
+	return String(s ?? "").replace(/\s+/g, "");
+}
+
+export function isHaewonHardcodedLabel(s: string): boolean {
+	return normalizeFacilityLabel(s) === "너싱홈해원";
+}
+
+export interface LoginFacilityPrintInfo {
+	code?: string;
+	name?: string;
+	address?: string;
+	businessNo?: string;
+	representative?: string;
+	tel?: string;
+	/** F00110.ETC 입금통장정보 */
+	bankAccount?: string;
+}
+
+export function isStaleHaewonBank(bank: string, loginFacilityName?: string): boolean {
+	const b = String(bank ?? "").trim();
+	if (!b) return false;
+	const login = String(loginFacilityName ?? "").trim();
+	if (login && isHaewonHardcodedLabel(login)) return false;
+	return isHaewonHardcodedLabel(b) || normalizeFacilityLabel(b).includes("너싱홈해원");
+}
+
+/** 명세서 입금통장정보 = 로그인 기관 F00110.ETC */
+export function buildFacilityBankLine(facility?: LoginFacilityPrintInfo | null): string {
+	return String(facility?.bankAccount ?? "").trim();
+}
+
+function overlayLoginFacilityOnOrgFields<
+	T extends {
+		orgName?: string;
+		orgCode?: string;
+		orgAddr?: string;
+		orgBizNo?: string;
+		orgOwner?: string;
+		orgTel?: string;
+		ANGH?: string;
+		bankAccount?: string;
+	},
+>(row: T, facility?: LoginFacilityPrintInfo | null): T {
+	const name = String(facility?.name ?? "").trim();
+	const code = String(facility?.code ?? "").trim();
+	const address = String(facility?.address ?? "").trim();
+	const businessNo = String(facility?.businessNo ?? "").trim();
+	const representative = String(facility?.representative ?? "").trim();
+	const tel = String(facility?.tel ?? "").trim();
+	const bank = String(row.bankAccount ?? "").trim();
+	const fromFac = buildFacilityBankLine(facility);
+	return {
+		...row,
+		orgName: name || row.orgName,
+		orgCode: code || row.orgCode,
+		orgAddr: address || row.orgAddr,
+		orgBizNo: businessNo || row.orgBizNo,
+		orgOwner: representative || row.orgOwner,
+		orgTel: tel || row.orgTel,
+		ANGH: code || row.ANGH,
+		bankAccount: fromFac || (isStaleHaewonBank(bank, name) ? "" : bank),
+	};
+}
+
+export function overlayLoginFacilityOnStatementRow(
+	row: V40100EPrintRow,
+	facility?: LoginFacilityPrintInfo | null
+): V40100EPrintRow {
+	return overlayLoginFacilityOnOrgFields(row, facility);
+}
+
+export function overlayLoginFacilityOnPaymentRow(
+	row: V40100GPrintRow,
+	facility?: LoginFacilityPrintInfo | null
+): V40100GPrintRow {
+	return overlayLoginFacilityOnOrgFields(row, facility);
+}
 
 export function lastDayOfPayYearMonth(payYearMonth: string): string {
 	if (payYearMonth.length < 7) return "";
@@ -329,8 +409,7 @@ export function lastDayOfPayYearMonth(payYearMonth: string): string {
 }
 
 function isHardcodedDelivererPlaceholder(name: string): boolean {
-	const t = String(name ?? "").trim();
-	return t === "너싱홈 해원" || t === "너싱홈 혜원";
+	return isHaewonHardcodedLabel(name);
 }
 
 function pickLedgerDeliverer(rowVal: string, formVal: string): string {
@@ -497,15 +576,7 @@ body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 9pt
 </html>`;
 }
 
-/** 장기요양급여명세서 [별지 제24호] — 기관 고정값(인쇄 서식, F40100 공란 시 보조) */
-const F24_FACILITY = {
-	code: "14161000067",
-	name: "너싱홈 혜원",
-	address: "경기도 광주시 초월읍 하오개길71번길 42-29 (초월읍)",
-	businessNo: "126-90-05254",
-	representative: "권영기",
-	bankLine: "입금통장정보 : 기업은행:210-105122-01-015 예금주:너싱홈혜원",
-} as const;
+/** 장기요양급여명세서 [별지 제24호] — 기관값은 로그인 F00110 / 행 데이터만 사용 (해원 하드코딩 금지) */
 
 function firstDayOfPayYearMonth(payYearMonth: string): string {
 	if (payYearMonth.length < 7) return "";
@@ -624,11 +695,13 @@ function formatYmdDisp(ymd: string): string {
 	return s;
 }
 
-/** 한 명분 본문(페이지 래퍼는 바깥에서 감쌈) — V40100E 기준 */
+/** 한 명분 본문(페이지 래퍼는 바깥에서 감쌈) — V40100E + 로그인 기관(F00110) */
 export function buildBenefitStatement24Body(
 	payYearMonth: string,
-	row: V40100EPrintRow
+	row: V40100EPrintRow,
+	facility?: LoginFacilityPrintInfo | null
 ): string {
+	row = overlayLoginFacilityOnStatementRow(row, facility);
 	const salmm = row.SALMM || payYearMonthToSalmm(payYearMonth) || "";
 	const periodFrom = formatYmdDisp(row.periodFrom) || firstDayOfPayYearMonth(payYearMonth);
 	const periodTo = formatYmdDisp(row.periodTo) || lastDayOfPayYearMonth(payYearMonth);
@@ -656,14 +729,17 @@ export function buildBenefitStatement24Body(
 	const days = row.daysUsed > 0 ? row.daysUsed : daysInPayMonth(payYearMonth);
 
 	const recognition = String(row.recognitionNo || "").trim() || "—";
-	const orgCode = row.orgCode || F24_FACILITY.code;
-	const orgName = row.orgName || F24_FACILITY.name;
-	const orgAddr = row.orgAddr || F24_FACILITY.address;
-	const orgBiz = row.orgBizNo || F24_FACILITY.businessNo;
-	const orgOwner = row.orgOwner || F24_FACILITY.representative;
-	const bankLine = row.bankAccount
-		? `입금통장정보 : ${row.bankAccount}`
-		: F24_FACILITY.bankLine;
+	const orgCode = row.orgCode || "";
+	const orgName = row.orgName || "";
+	const orgAddr = row.orgAddr || "";
+	const orgBiz = row.orgBizNo || "";
+	const orgOwner = row.orgOwner || "";
+	const bankRaw = String(row.bankAccount || "").trim();
+	const bankLine = bankRaw
+		? bankRaw.includes("입금통장")
+			? bankRaw
+			: `입금통장정보 : ${bankRaw}`
+		: "";
 	const footerYm = salmm.length === 6 ? `${salmm.slice(0, 4)}-${salmm.slice(4, 6)}` : payYearMonth;
 
 	const MAIN_BODY_ROWS = 12;
@@ -1287,11 +1363,13 @@ export function statementRowToV40100GFallback(
 	};
 }
 
-/** 장기요양급여비 납부확인서 [별지 제25호] — V40100G 기준 본문 */
+/** 장기요양급여비 납부확인서 [별지 제25호] — V40100G + 로그인 기관(F00110) */
 function buildPaymentConfirmation25Body(
 	payYearMonth: string,
-	row: V40100GPrintRow
+	row: V40100GPrintRow,
+	facility?: LoginFacilityPrintInfo | null
 ): string {
+	row = overlayLoginFacilityOnPaymentRow(row, facility);
 	const year =
 		(row.SALYY && String(row.SALYY).replace(/\D/g, "").slice(0, 4)) ||
 		(payYearMonth.length >= 4 ? payYearMonth.slice(0, 4) : String(new Date().getFullYear()));
@@ -1364,11 +1442,11 @@ function buildPaymentConfirmation25Body(
 	const f25IncomeDeductionTotal = fmtAmt0Blank(sum3tot);
 	const rrnRaw = String(row.rrn || "").trim();
 	const rrn = escapeHtml(rrnRaw || maskResidentIdFromBirthday(row.birthday));
-	const orgCode = row.orgCode || row.ANGH || F24_FACILITY.code;
-	const orgName = row.orgName || F24_FACILITY.name;
-	const orgAddr = row.orgAddr || F24_FACILITY.address;
-	const orgBiz = row.orgBizNo || F24_FACILITY.businessNo;
-	const orgOwner = row.orgOwner || F24_FACILITY.representative;
+	const orgCode = row.orgCode || row.ANGH || "";
+	const orgName = row.orgName || "";
+	const orgAddr = row.orgAddr || "";
+	const orgBiz = row.orgBizNo || "";
+	const orgOwner = row.orgOwner || "";
 	const orgTel = row.orgTel || "";
 	const uniqueLine = `${escapeHtml(orgCode)} (${escapeHtml(orgBiz)})`;
 	const addrLine = orgTel
@@ -1558,10 +1636,11 @@ ${bodyPages}
 
 export function buildPaymentConfirmation25PrintHtml(
 	payYearMonth: string,
-	rows: V40100GPrintRow[]
+	rows: V40100GPrintRow[],
+	facility?: LoginFacilityPrintInfo | null
 ): string {
 	const body = rows
-		.map((row) => `<div class="f25-page">${buildPaymentConfirmation25Body(payYearMonth, row)}</div>`)
+		.map((row) => `<div class="f25-page">${buildPaymentConfirmation25Body(payYearMonth, row, facility)}</div>`)
 		.join("");
 	return wrapF25PrintHtml(body);
 }

@@ -98,8 +98,48 @@ describe("MonthlySalaryStatementPrint — builders", () => {
 		assert.match(hook, /\/api\/v40100d\?/);
 		assert.match(hook, /\/api\/v40100e\?/);
 		assert.match(hook, /\/api\/v40100g\?/);
+		assert.match(hook, /buildBenefitStatement24Body\(payYearMonth, row, facilityInfo\)/);
+		assert.match(hook, /facilityRow\.ETC/);
 		assert.doesNotMatch(hook, /function openPrintPreviewWindow/);
 		assert.doesNotMatch(hook, /function buildSalaryOccurrencePrintHtml/);
 		assert.doesNotMatch(hook, /function wrapF24PrintHtml/);
+	});
+
+	it("급여명세서 하단 기관명은 로그인 기관을 쓰고 해원 하드코딩을 쓰지 않는다", () => {
+		const html = Print.buildBenefitStatement24Body(
+			"2026-08",
+			{
+				PNUM: "47",
+				SALMM: "202608",
+				recipient: "김도순",
+				recognitionNo: "L000",
+				periodFrom: "2026-08-01",
+				periodTo: "2026-08-31",
+				orgCode: "14161000067",
+				orgName: "너싱홈해원",
+				orgAddr: "경기도 광주시",
+				orgBizNo: "126-90-05254",
+				orgOwner: "권영기",
+				orgTel: "",
+				bankAccount: "기업은행:210-105122-01-015 예금주:너싱홈 해원",
+				otherCostDesc: "",
+				daysUsed: 31,
+				nhaContribution: 0,
+				recipientContribution: 0,
+				mealFee: 0,
+				nonBenefitSnack: 0,
+				nonBenefitMedical: 0,
+				beautyCost: 0,
+				roomUpgradeFee: 0,
+				contractedMedical: 0,
+				contractedPrescription: 0,
+				otherCost: 0,
+			},
+			{ name: "너싱홈 로아", code: "182020CODE", representative: "로아대표", bankAccount: "기업은행:110-123-456 예금주:너싱홈 로아" }
+		);
+		assert.match(html, /장기요양기관명 : 너싱홈 로아/);
+		assert.match(html, /대표자명 : 로아대표/);
+		assert.match(html, /입금통장정보 : 기업은행:110-123-456 예금주:너싱홈 로아/);
+		assert.doesNotMatch(html, /너싱홈\s*해원/);
 	});
 });
